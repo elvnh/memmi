@@ -7,6 +7,7 @@
 
 #include "process.h"
 
+#include <stdio.h>
 #include <stdbool.h>
 
 #include "utils.h"
@@ -21,6 +22,10 @@ typedef struct {
     size_t count;
     size_t capacity;
 } ProcessDynArray;
+
+typedef struct {
+    memmi_PID pid;
+} memmi_ProcessImpl;
 
 static ProcessName get_process_name(int proc_dir_fd, memmi_Allocator allocator)
 {
@@ -111,4 +116,57 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     };
 
     return result;
+}
+
+static bool pid_exists(memmi_PID pid)
+{
+    bool result = false;
+
+    DIR *proc_dir = opendir("/proc");
+    int proc_dir_fd = dirfd(proc_dir);
+
+    if (proc_dir_fd != -1) {
+        char pid_str[64];
+        int chars_written = snprintf(pid_str, ARRAY_COUNT(pid_str), "%ld", pid.value);
+        ASSERT(chars_written < (int)ARRAY_COUNT(pid_str));
+
+        struct stat stat_buf = {0};
+        int stat_result = fstatat(proc_dir_fd, pid_str, &stat_buf, 0);
+
+        if (stat_result != -1) {
+            result = true;
+        }
+
+    }
+
+    closedir(proc_dir);
+
+    return result;
+}
+
+memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
+{
+    memmi_OpenProcess result = {0};
+
+    if (!pid_exists(pid)) {
+        result.status = MEMMI_OPEN_PROC_NO_SUCH_PID;
+    } else {
+        memmi_ProcessImpl *data = allocate(allocator, memmi_ProcessImpl, 1);
+
+        if (!data) {
+            result.status = MEMMI_OPEN_PROC_ALLOCATION_FAILED;
+        } else {
+            result.status = MEMMI_OPEN_PROC_OK;
+
+            data->pid = pid;
+            result.process.data = data;
+        }
+    }
+
+    return result;
+}
+
+void memmi_close_process(memmi_Process process, memmi_Allocator allocator)
+{
+    deallocate(allocator, process.data, sizeof(memmi_ProcessImpl));
 }
