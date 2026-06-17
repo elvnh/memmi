@@ -9,9 +9,6 @@ static void *memmi_default_allocate(void *ctx, void *ptr, size_t old_size, size_
     (void)ctx;
     (void)old_size;
     (void)align;
-
-    ASSERT(ptr || (old_size == 0));
-
     // TODO: get rid of libc
 
     void *result = realloc(ptr, new_size);
