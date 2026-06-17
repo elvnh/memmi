@@ -62,15 +62,12 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     DIR *proc_dir = opendir("/proc");
     int proc_dir_fd = dirfd(proc_dir); // Automatically closed by closedir
 
-    if (!proc_dir) {
-
-    } else {
+    if (proc_dir) {
         struct dirent *subdir_entry = 0;
 
         while ((subdir_entry = readdir(proc_dir))) {
             int subdir_fd = openat(proc_dir_fd, subdir_entry->d_name, O_RDONLY);
 
-            // TODO: can we skip this first if-case and juist call fstat on invalid fd?
             if (subdir_fd != -1) {
                 struct stat subdir_info = {0};
                 int stat_result = fstat(subdir_fd, &subdir_info);
@@ -97,7 +94,18 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 
     closedir(proc_dir);
 
+    memmi_GetProcsStatus status = 0;
+
+    // We can't possibly have succeeded if no processes were found, since we should at the very
+    // least find this process.
+    if (processes.count > 0) {
+        status = MEMMI_GET_PROCS_OK;
+    } else {
+        status = MEMMI_GET_PROCS_FAIL;
+    }
+
     memmi_ProcessList result = {
+        .status = status,
         .data = processes.data,
         .count = processes.count
     };
