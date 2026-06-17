@@ -326,38 +326,41 @@ memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void 
 
 static memmi_MemoryRegion parse_memory_region(memmi_String line)
 {
-    Cut cut = str_cut(line, str("-"));
-    ASSERT(cut.ok);
+    memmi_String fields[6];
 
-    memmi_String address_base_str = str_null_terminate_in_place(cut.head);
-    cut = str_cut(cut.tail, str(" "));
-    ASSERT(cut.ok);
+    Cut cut = str_cut(line, str(" "));
 
-    memmi_String address_end_str = str_null_terminate_in_place(cut.head);
-    cut = str_cut(cut.tail, str(" "));
-    ASSERT(cut.ok);
+    for (size_t i = 0; i < ARRAY_COUNT(fields); ++i) {
+        if (cut.head.count > 0) {
+            fields[i] = str_null_terminate_in_place(cut.head);
 
-    memmi_String perms_str = str_null_terminate_in_place(cut.head);
-    cut = str_cut(cut.tail, str(" "));
-    ASSERT(cut.ok);
+            memmi_String trimmed_tail = str_trim_leading_whitespace(cut.tail);
+            cut = str_cut(trimmed_tail, str(" "));
+        } else {
+            break;
+        }
+    }
 
-    memmi_String offset_str = str_null_terminate_in_place(cut.head);
-    cut = str_cut(cut.tail, str(" "));
-    ASSERT(cut.ok);
+    const size_t address_index = 0;
+    const size_t perms_index = 1;
+    /* const size_t offset_index = 2; */
+    /* const size_t dev_index = 3; */
+    /* const size_t inode_index = 4; */
+    /* const size_t pathname_index = 5; */
 
-    cut = str_cut(cut.tail, str(" "));
-    ASSERT(cut.ok);
+    Cut addresses = str_cut(fields[address_index], str("-"));
+    memmi_String base_address_str = str_null_terminate_in_place(addresses.head);
+    memmi_String end_address_str = str_null_terminate_in_place(addresses.tail);
 
-    memmi_String pathname = str_trim_leading_whitespace(cut.tail);
+    memmi_String perms_str = fields[perms_index];
 
     uintptr_t base_address = 0;
     uintptr_t end_address = 0;
     memmi_MemoryRegionPermission permissions = 0;
 
-    ASSERT(end_address >= base_address);
-
-    sscanf(address_base_str.data, "%zx", &base_address);
-    sscanf(address_end_str.data, "%zx", &end_address);
+    // TODO: don't use sscanf so we don't have to null terminate
+    sscanf(base_address_str.data, "%zx", &base_address);
+    sscanf(end_address_str.data, "%zx", &end_address);
 
     if (perms_str.data[0] == 'r') {
         permissions |= MEMMI_REGION_PERMISSION_READ;

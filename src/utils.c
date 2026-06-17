@@ -16,6 +16,7 @@ memmi_String str_from_c_str(char *str)
 int64_t str_to_int64(memmi_String str)
 {
     ASSERT(is_number(str));
+    // TODO: don't use atol
     int64_t result = atol(str.data);
 
     return result;
@@ -77,8 +78,6 @@ Cut str_cut(memmi_String str, memmi_String pattern)
 
 memmi_String str_trim_leading_whitespace(memmi_String str)
 {
-    ASSERT(str.data);
-
     memmi_String result = str;
 
     while ((result.count > 0) && is_whitespace(*result.data)) {

@@ -76,4 +76,5 @@ int64_t        str_to_int64(memmi_String str);
 bool           str_starts_with(memmi_String str, memmi_String substr);
 Cut            str_cut(memmi_String str, memmi_String pattern);
 memmi_String   str_trim_leading_whitespace(memmi_String str);
+// TODO: get rid of the need for this
 memmi_String   str_null_terminate_in_place(memmi_String s);
