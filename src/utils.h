@@ -47,6 +47,22 @@ static inline bool is_digit(char ch)
     return result;
 }
 
+static inline bool is_alpha(char ch)
+{
+    bool result = ((ch >= 'a') && (ch <= 'z'))
+        || ((ch >= 'A') && (ch <= 'Z'));
+
+    return result;
+}
+
+static inline bool is_hex(char ch)
+{
+    bool result = ((ch >= 'a') && (ch <= 'f'))
+        || ((ch >= 'A') && (ch <= 'F'));
+
+    return result;
+}
+
 static inline bool is_number(memmi_String str)
 {
     bool result = str.count > 0;
@@ -69,7 +85,12 @@ static inline bool is_whitespace(char ch)
 }
 
 
-#define str(s) (memmi_String) { s, ARRAY_COUNT(s) - 1 }
+#define str_lit(s) (memmi_String) { s, ARRAY_COUNT(s) - 1 }
+
+typedef enum {
+    NUM_BASE_DEC = 10,
+    NUM_BASE_HEX = 16,
+} NumberBase;
 
 typedef struct {
     uint64_t value;
@@ -83,6 +104,6 @@ memmi_String   str_trim_leading_whitespace(memmi_String str);
 // TODO: get rid of the need for this
 memmi_String   str_null_terminate_in_place(memmi_String s);
 int64_t        str_to_s64(memmi_String str);
-ParseU64       str_to_u64(memmi_String str);
+ParseU64       str_to_u64(memmi_String str, NumberBase base);
 bool           add_would_overflow_u64(uint64_t a, uint64_t b);
 bool           multiply_would_overflow_u64(uint64_t a, uint64_t b);

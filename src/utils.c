@@ -26,15 +26,9 @@ bool str_eq(memmi_String a, memmi_String b)
 
 bool str_starts_with(memmi_String str, memmi_String substr)
 {
-    ASSERT(str.data);
-    ASSERT(str.count);
-
-    ASSERT(substr.data);
-    ASSERT(substr.count);
-
     bool result = false;
 
-    if (substr.count <= str.count) {
+    if (str.data && (substr.count <= str.count)) {
         memmi_String start = {str.data, substr.count};
         result = str_eq(start, substr);
     }
@@ -96,22 +90,47 @@ int64_t str_to_s64(memmi_String str)
     return result;
 }
 
-ParseU64 str_to_u64(memmi_String str)
+static uint32_t parse_digit(char c, NumberBase base)
+{
+    ASSERT(is_digit(c) || is_hex(c));
+
+    if (c >= 'a') {
+        // Convert to upper
+        c -= 'a' - 'A';
+    }
+
+    uint32_t result = 0;
+    if (is_alpha(c)) {
+        result = 10 + (uint32_t)(c - 'A');
+    } else {
+        result = (uint32_t)(c - '0');
+    }
+
+    return result;
+}
+
+ParseU64 str_to_u64(memmi_String str, NumberBase base)
 {
     ParseU64 result = {0};
+
+    if (str_starts_with(str, str_lit("0x")) || str_starts_with(str, str_lit("0X"))) {
+        str.data += 2;
+        str.count -= 2;
+    }
+
     result.ok = str.count > 0;
 
     for (size_t i = 0; i < str.count; ++i) {
         char c = str.data[i];
 
-        if (!is_digit(c)) {
+        if (!is_digit(c) && !((base == NUM_BASE_HEX) && is_hex(c))) {
             result.ok = false;
             break;
         } else {
-            if (!multiply_would_overflow_u64(result.value, 10)) {
-                result.value *= 10;
+            if (!multiply_would_overflow_u64(result.value, base)) {
+                result.value *= base;
 
-                uint64_t digit = (uint64_t)(c - '0');
+                uint32_t digit = parse_digit(c, base);
 
                 if (!add_would_overflow_u64(result.value, digit)) {
                     result.value += digit;

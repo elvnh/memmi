@@ -94,7 +94,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                         ProcessName proc_name = get_process_name(subdir_fd, allocator);
 
                         if (proc_name.ok) {
-                            int64_t pid_value = str_to_int64(dir_name);
+                            int64_t pid_value = str_to_s64(dir_name);
 
                             memmi_ProcessInfo proc = {proc_name.value, {pid_value}};
                             dyn_arr_push(&processes, proc, allocator);
@@ -328,14 +328,14 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
 {
     memmi_String fields[6];
 
-    Cut cut = str_cut(line, str(" "));
+    Cut cut = str_cut(line, str_lit(" "));
 
     for (size_t i = 0; i < ARRAY_COUNT(fields); ++i) {
         if (cut.head.count > 0) {
-            fields[i] = str_null_terminate_in_place(cut.head);
+            fields[i] = cut.head;
 
             memmi_String trimmed_tail = str_trim_leading_whitespace(cut.tail);
-            cut = str_cut(trimmed_tail, str(" "));
+            cut = str_cut(trimmed_tail, str_lit(" "));
         } else {
             break;
         }
@@ -348,19 +348,23 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
     /* const size_t inode_index = 4; */
     /* const size_t pathname_index = 5; */
 
-    Cut addresses = str_cut(fields[address_index], str("-"));
-    memmi_String base_address_str = str_null_terminate_in_place(addresses.head);
-    memmi_String end_address_str = str_null_terminate_in_place(addresses.tail);
+    Cut addresses = str_cut(fields[address_index], str_lit("-"));
+    memmi_String base_address_str = addresses.head;
+    memmi_String end_address_str = addresses.tail;
 
     memmi_String perms_str = fields[perms_index];
 
-    uintptr_t base_address = 0;
-    uintptr_t end_address = 0;
+    ParseU64 base_address_opt = str_to_u64(base_address_str, NUM_BASE_HEX);
+    ParseU64 end_address_opt = str_to_u64(end_address_str, NUM_BASE_HEX);
+    ASSERT(base_address_opt.ok);
+    ASSERT(end_address_opt.ok);
+
+    uintptr_t base_address = base_address_opt.value;
+    uintptr_t end_address = end_address_opt.value;
+
     memmi_MemoryRegionPermission permissions = 0;
 
     // TODO: don't use sscanf so we don't have to null terminate
-    sscanf(base_address_str.data, "%zx", &base_address);
-    sscanf(end_address_str.data, "%zx", &end_address);
 
     if (perms_str.data[0] == 'r') {
         permissions |= MEMMI_REGION_PERMISSION_READ;
