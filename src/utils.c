@@ -73,14 +73,6 @@ memmi_String str_trim_leading_whitespace(memmi_String str)
     return result;
 }
 
-memmi_String str_null_terminate_in_place(memmi_String s)
-{
-    memmi_String result = s;
-    result.data[result.count] = '\0';
-
-    return result;
-}
-
 int64_t str_to_s64(memmi_String str)
 {
     ASSERT(is_number(str));
@@ -92,7 +84,7 @@ int64_t str_to_s64(memmi_String str)
 
 static uint32_t parse_digit(char c, NumberBase base)
 {
-    ASSERT(is_digit(c) || is_hex(c));
+    ASSERT(is_digit(c) || ((base == NUM_BASE_HEX) && is_hex(c)));
 
     if (c >= 'a') {
         // Convert to upper

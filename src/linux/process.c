@@ -364,8 +364,6 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
 
     memmi_MemoryRegionPermission permissions = 0;
 
-    // TODO: don't use sscanf so we don't have to null terminate
-
     if (perms_str.data[0] == 'r') {
         permissions |= MEMMI_REGION_PERMISSION_READ;
     }

@@ -101,8 +101,6 @@ memmi_String   str_from_c_str(char *str);
 bool           str_starts_with(memmi_String str, memmi_String substr);
 Cut            str_cut(memmi_String str, memmi_String pattern);
 memmi_String   str_trim_leading_whitespace(memmi_String str);
-// TODO: get rid of the need for this
-memmi_String   str_null_terminate_in_place(memmi_String s);
 int64_t        str_to_s64(memmi_String str);
 ParseU64       str_to_u64(memmi_String str, NumberBase base);
 bool           add_would_overflow_u64(uint64_t a, uint64_t b);
