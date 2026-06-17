@@ -242,6 +242,62 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, siz
         }
     }
 
+    return result;
+}
+
+memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size)
+{
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    memmi_WriteMemory result = {0};
+
+    if (src_size > (size_t)SSIZE_MAX) {
+        result.status = MEMMI_WRITE_MEM_WRITE_TOO_LARGE;
+    } else {
+        struct iovec local_iov = {
+            .iov_base = src,
+            .iov_len = src_size
+        };
+
+        struct iovec remote_iov = {
+            .iov_base = (void *)dst,
+            .iov_len = src_size
+        };
+
+        ssize_t bytes_written = process_vm_writev((int)pid.value, &local_iov, 1, &remote_iov, 1, 0);
+
+        if (bytes_written == -1) {
+            switch (errno) {
+                case EFAULT: {
+                    result.status = MEMMI_WRITE_MEM_ACCESS_ERROR;
+                } break;
+
+                case ENOMEM: {
+                    result.status = MEMMI_WRITE_MEM_ALLOCATION_FAILURE;
+                } break;
+
+                case EPERM: {
+                    // Requires root or capability CAP_SYS_PTRACE.
+                    result.status = MEMMI_WRITE_MEM_INSUFFICIENT_PERMISSIONS;
+                } break;
+
+                case ESRCH: {
+                    result.status = MEMMI_WRITE_MEM_NO_SUCH_PROCESS;
+                } break;
+
+                default: {
+                    ASSERT(false);
+                } break;
+            }
+        } else {
+            result.bytes_written = (size_t)bytes_written;
+
+            if (result.bytes_written < src_size) {
+                result.status = MEMMI_WRITE_MEM_PARTIAL_WRITE;
+            } else {
+                result.status = MEMMI_WRITE_MEM_OK;
+            }
+        }
+    }
 
     return result;
 }

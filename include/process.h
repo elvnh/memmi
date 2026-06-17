@@ -59,7 +59,24 @@ typedef struct {
     size_t bytes_read;
 } memmi_ReadMemory;
 
+// TODO: the status codes between read/write memory should probably be shared
+typedef enum {
+    MEMMI_WRITE_MEM_ACCESS_ERROR,
+    MEMMI_WRITE_MEM_ALLOCATION_FAILURE,
+    MEMMI_WRITE_MEM_INSUFFICIENT_PERMISSIONS,
+    MEMMI_WRITE_MEM_NO_SUCH_PROCESS,
+    MEMMI_WRITE_MEM_WRITE_TOO_LARGE,
+    MEMMI_WRITE_MEM_PARTIAL_WRITE,
+    MEMMI_WRITE_MEM_OK,
+} memmi_WriteMemoryStatus;
+
+typedef struct {
+    memmi_WriteMemoryStatus status;
+    size_t bytes_written;
+} memmi_WriteMemory;
+
 memmi_ProcessList  memmi_get_running_processes(memmi_Allocator allocator);
 memmi_OpenProcess  memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
 void               memmi_close_process(memmi_Process process, memmi_Allocator allocator);
 memmi_ReadMemory   memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator);
+memmi_WriteMemory  memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size);
