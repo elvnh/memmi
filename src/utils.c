@@ -96,8 +96,15 @@ ParseS64 str_to_s64(memmi_String str, NumberBase base)
 {
     // TODO: reduce code duplication between this and str_to_u64
     ParseS64 result = {0};
-
     // negativ hex?
+
+    int32_t sign = 1;
+    if (str_starts_with(str, str_lit("-"))) {
+        sign = -1;
+
+        ++str.data;
+        --str.count;
+    }
 
     if (str_starts_with(str, str_lit("0x")) || str_starts_with(str, str_lit("0X"))) {
         str.data += 2;
@@ -118,12 +125,12 @@ ParseS64 str_to_s64(memmi_String str, NumberBase base)
             if (product.ok) {
                 result.value = product.value;
 
-                uint32_t digit = parse_digit(c, base);
+                int32_t digit = (int32_t)parse_digit(c, base) * sign;
 
-                AddS64 sum = safe_add_s64(result.value, (int32_t)digit);
+                AddS64 sum = safe_add_s64(result.value, digit);
 
                 if (sum.ok) {
-                    result.value = digit;
+                    result.value = sum.value;
                 } else {
                     result.ok = false;
                     break;
@@ -168,7 +175,7 @@ ParseU64 str_to_u64(memmi_String str, NumberBase base)
                 AddU64 sum = safe_add_u64(result.value, digit);
 
                 if (sum.ok) {
-                    result.value += digit;
+                    result.value = sum.value;
                 } else {
                     result.ok = false;
                     break;

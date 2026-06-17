@@ -92,6 +92,7 @@ typedef enum {
     NUM_BASE_HEX = 16,
 } NumberBase;
 
+// TODO: convert these to MaybeS64/MaybeU64
 typedef struct {
     int64_t value;
     bool ok;
