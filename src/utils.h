@@ -1,14 +1,29 @@
 #pragma once
 
+#include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
 
 #include "allocator.h"
 #include "string8.h"
 
-#define allocate(a, t, count) (a).function((a).context, 0, 0, sizeof(t) * (count), ALIGNOF(t))
-#define reallocate(a, ptr, old, new) (a).function((a).context, (ptr), (old), (new), ALIGNOF(*(ptr)))
-#define deallocate(a, ptr, size) (a).function((a).context, (ptr), (size), 0, 0)
+#define allocate(a, t, count) (t *)((a).function((a).context, 0, 0, (count) * sizeof(t), ALIGNOF(t)))
+#define reallocate(a, ptr, old, new) (a).function((a).context, (ptr), (old) * sizeof(*(ptr)), \
+        (new) * sizeof(*(ptr)), ALIGNOF(*(ptr)))
+#define deallocate(a, ptr, size) (a).function((a).context, (ptr), (size) * sizeof(*(ptr)), 0, 0)
+
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+#define dyn_arr_push(arr, item, alloc)                                  \
+do {                                                                    \
+    if ((arr)->count == (arr)->capacity) {                              \
+        (arr)->capacity = MAX((arr)->capacity, 32);                     \
+        (arr)->data = reallocate((alloc), (arr)->data,                  \
+            (arr)->capacity, (arr)->capacity * 2);                      \
+        (arr)->capacity *= 2;                                           \
+    }                                                                   \
+    (arr)->data[((arr)->count)++] = (item);                             \
+} while (0)
 
 #if defined(__GNUC__)
 #    define ALIGNOF(t) __alignof__(t)
@@ -41,3 +56,4 @@ static inline bool is_number(memmi_String str)
 }
 
 memmi_String str_from_c_str(char *str);
+int64_t      str_to_int64(memmi_String str);
