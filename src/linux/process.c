@@ -89,7 +89,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 
                 if ((stat_result == 0) && S_ISDIR(subdir_info.st_mode)) {
                     memmi_String dir_name = str_from_c_str(subdir_entry->d_name);
-                    ParseS64 number_opt = str_to_s64(dir_name, NUM_BASE_DEC);
+                    MaybeS64 number_opt = str_to_s64(dir_name, NUM_BASE_DEC);
 
                     if (number_opt.ok) {
                         ProcessName proc_name = get_process_name(subdir_fd, allocator);
@@ -355,8 +355,8 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
 
     memmi_String perms_str = fields[perms_index];
 
-    ParseU64 base_address_opt = str_to_u64(base_address_str, NUM_BASE_HEX);
-    ParseU64 end_address_opt = str_to_u64(end_address_str, NUM_BASE_HEX);
+    MaybeU64 base_address_opt = str_to_u64(base_address_str, NUM_BASE_HEX);
+    MaybeU64 end_address_opt = str_to_u64(end_address_str, NUM_BASE_HEX);
     ASSERT(base_address_opt.ok);
     ASSERT(end_address_opt.ok);
 

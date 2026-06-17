@@ -92,45 +92,24 @@ typedef enum {
     NUM_BASE_HEX = 16,
 } NumberBase;
 
-// TODO: convert these to MaybeS64/MaybeU64
 typedef struct {
     int64_t value;
     bool ok;
-} ParseS64;
+} MaybeS64;
 
 typedef struct {
     uint64_t value;
     bool ok;
-} ParseU64;
-
-typedef struct {
-    int64_t value;
-    bool ok;
-} AddS64;
-
-typedef struct {
-    uint64_t value;
-    bool ok;
-} AddU64;
-
-typedef struct {
-    int64_t value;
-    bool ok;
-} MultiplyS64;
-
-typedef struct {
-    uint64_t value;
-    bool ok;
-} MultiplyU64;
+} MaybeU64;
 
 memmi_String   str_from_c_str(char *str);
 bool           str_starts_with(memmi_String str, memmi_String substr);
 Cut            str_cut(memmi_String str, memmi_String pattern);
 memmi_String   str_trim_leading_whitespace(memmi_String str);
-ParseS64       str_to_s64(memmi_String str, NumberBase base);
-ParseU64       str_to_u64(memmi_String str, NumberBase base);
+MaybeS64       str_to_s64(memmi_String str, NumberBase base);
+MaybeU64       str_to_u64(memmi_String str, NumberBase base);
 
-AddS64         safe_add_s64(int64_t a, int64_t b);
-AddU64         safe_add_u64(uint64_t a, uint64_t b);
-MultiplyS64    safe_mul_s64(int64_t a, int64_t b);
-MultiplyU64    safe_mul_u64(uint64_t a, uint64_t b);
+MaybeS64       safe_add_s64(int64_t a, int64_t b);
+MaybeU64       safe_add_u64(uint64_t a, uint64_t b);
+MaybeS64       safe_mul_s64(int64_t a, int64_t b);
+MaybeU64       safe_mul_u64(uint64_t a, uint64_t b);
