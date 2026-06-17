@@ -27,6 +27,12 @@ typedef struct {
 } ProcessDynArray;
 
 typedef struct {
+    memmi_MemoryRegion *data;
+    size_t count;
+    size_t capacity;
+} RegionDynArray;
+
+typedef struct {
     memmi_PID pid;
 } memmi_ProcessImpl;
 
@@ -67,6 +73,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 {
     ProcessDynArray processes = {0};
 
+    // TODO: use get_process_directory_fd
     DIR *proc_dir = opendir("/proc");
     int proc_dir_fd = dirfd(proc_dir); // Automatically closed by closedir
 
@@ -117,6 +124,21 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
         .data = processes.data,
         .count = processes.count
     };
+
+    return result;
+}
+
+static int get_process_directory_fd(memmi_PID pid)
+{
+    DIR *proc_dir = opendir("/proc");
+    int proc_dir_fd = dirfd(proc_dir);
+
+    char buf[64];
+    snprintf(buf, ARRAY_COUNT(buf), "%ld", pid.value);
+
+    int result = openat(proc_dir_fd, buf, O_RDONLY);
+
+    closedir(proc_dir);
 
     return result;
 }
@@ -298,6 +320,98 @@ memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void 
             }
         }
     }
+
+    return result;
+}
+
+static memmi_MemoryRegion parse_memory_region(memmi_String line)
+{
+    Cut cut = str_cut(line, str("-"));
+    ASSERT(cut.ok);
+
+    memmi_String address_base_str = str_null_terminate_in_place(cut.head);
+    cut = str_cut(cut.tail, str(" "));
+    ASSERT(cut.ok);
+
+    memmi_String address_end_str = str_null_terminate_in_place(cut.head);
+    cut = str_cut(cut.tail, str(" "));
+    ASSERT(cut.ok);
+
+    memmi_String perms_str = str_null_terminate_in_place(cut.head);
+    cut = str_cut(cut.tail, str(" "));
+    ASSERT(cut.ok);
+
+    memmi_String offset_str = str_null_terminate_in_place(cut.head);
+    cut = str_cut(cut.tail, str(" "));
+    ASSERT(cut.ok);
+
+    cut = str_cut(cut.tail, str(" "));
+    ASSERT(cut.ok);
+
+    memmi_String pathname = str_trim_leading_whitespace(cut.tail);
+
+    uintptr_t base_address = 0;
+    uintptr_t end_address = 0;
+    memmi_MemoryRegionPermission permissions = 0;
+
+    ASSERT(end_address >= base_address);
+
+    sscanf(address_base_str.data, "%zx", &base_address);
+    sscanf(address_end_str.data, "%zx", &end_address);
+
+    if (perms_str.data[0] == 'r') {
+        permissions |= MEMMI_REGION_PERMISSION_READ;
+    }
+
+    if (perms_str.data[1] == 'w') {
+        permissions |= MEMMI_REGION_PERMISSION_WRITE;
+    }
+
+    if (perms_str.data[2] == 'x') {
+        permissions |= MEMMI_REGION_PERMISSION_EXECUTE;
+    }
+
+    size_t region_size = end_address - base_address;
+
+    memmi_MemoryRegion result = {
+        .base_address = base_address,
+        .size = region_size,
+        .permissions = permissions
+    };
+
+    return result;
+}
+
+memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator)
+{
+    RegionDynArray regions = {0};
+
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+
+    int proc_dir_fd = get_process_directory_fd(pid);
+    int maps_fd = openat(proc_dir_fd, "maps", O_RDONLY);
+
+    FILE *maps_file = fdopen(maps_fd, "r");
+
+    memmi_GetMemoryRegions result = {0};
+
+    if (!maps_file) {
+        result.status = MEMMI_GET_REGIONS_FAIL;
+    } else {
+        char buffer[256];
+
+        while (fgets(buffer, ARRAY_COUNT(buffer), maps_file)) {
+            memmi_MemoryRegion region = parse_memory_region(str_from_c_str(buffer));
+            dyn_arr_push(&regions, region, allocator);
+        }
+
+        result.data = regions.data;
+        result.count = regions.count;
+        result.status = MEMMI_GET_REGIONS_OK;
+    }
+
+    close(proc_dir_fd);
+    fclose(maps_file);
 
     return result;
 }

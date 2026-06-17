@@ -75,8 +75,34 @@ typedef struct {
     size_t bytes_written;
 } memmi_WriteMemory;
 
-memmi_ProcessList  memmi_get_running_processes(memmi_Allocator allocator);
-memmi_OpenProcess  memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
-void               memmi_close_process(memmi_Process process, memmi_Allocator allocator);
-memmi_ReadMemory   memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator);
-memmi_WriteMemory  memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size);
+typedef enum {
+    MEMMI_REGION_PERMISSION_READ    = 1 << 0,
+    MEMMI_REGION_PERMISSION_WRITE   = 1 << 1,
+    MEMMI_REGION_PERMISSION_EXECUTE = 1 << 2,
+} memmi_MemoryRegionPermission;
+
+typedef struct {
+    uintptr_t base_address;
+    size_t size;
+    memmi_MemoryRegionPermission permissions;
+} memmi_MemoryRegion;
+
+typedef enum {
+    MEMMI_GET_REGIONS_OK,
+    MEMMI_GET_REGIONS_FAIL,
+} memmi_GetMemoryRegionsStatus;
+
+// TODO: for functions like this, it's not necessary to return status,
+// since success/fail can be inferred from whether data/count is non-zero
+typedef struct {
+    memmi_GetMemoryRegionsStatus status;
+    memmi_MemoryRegion *data;
+    size_t count;
+} memmi_GetMemoryRegions;
+
+memmi_ProcessList      memmi_get_running_processes(memmi_Allocator allocator);
+memmi_OpenProcess      memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
+void                   memmi_close_process(memmi_Process process, memmi_Allocator allocator);
+memmi_ReadMemory       memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator);
+memmi_WriteMemory      memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size);
+memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator);

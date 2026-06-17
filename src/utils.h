@@ -34,6 +34,12 @@ do {                                                                    \
 #define ASSERT(e) assert(e)
 #define ARRAY_COUNT(arr) (sizeof((arr)) / sizeof(*(arr)))
 
+typedef struct {
+    memmi_String head;
+    memmi_String tail;
+    bool   ok;
+} Cut;
+
 static inline bool is_digit(char ch)
 {
     bool result = (ch >= '0') && (ch <= '9');
@@ -55,5 +61,19 @@ static inline bool is_number(memmi_String str)
     return result;
 }
 
-memmi_String str_from_c_str(char *str);
-int64_t      str_to_int64(memmi_String str);
+static inline bool is_whitespace(char ch)
+{
+    bool result = (ch == ' ') || (ch == '\n') || (ch == '\t') || (ch == '\r');
+
+    return result;
+}
+
+
+#define str(s) (memmi_String) { s, ARRAY_COUNT(s) - 1 }
+
+memmi_String   str_from_c_str(char *str);
+int64_t        str_to_int64(memmi_String str);
+bool           str_starts_with(memmi_String str, memmi_String substr);
+Cut            str_cut(memmi_String str, memmi_String pattern);
+memmi_String   str_trim_leading_whitespace(memmi_String str);
+memmi_String   str_null_terminate_in_place(memmi_String s);
