@@ -11,6 +11,12 @@ typedef struct {
 } memmi_PID;
 
 typedef struct {
+    memmi_String name;
+    memmi_PID pid;
+} memmi_ProcessInfo;
+
+// TODO: handle if pid has been reused by another program since opening, should fail
+typedef struct {
     void *data;
 } memmi_Process;
 
@@ -25,11 +31,6 @@ typedef struct {
     memmi_Process         process;
 } memmi_OpenProcess;
 
-typedef struct {
-    memmi_String name;
-    memmi_PID pid;
-} memmi_ProcessInfo;
-
 // TODO: more descriptive errors
 typedef enum {
     MEMMI_GET_PROCS_FAIL,
@@ -42,6 +43,23 @@ typedef struct {
     size_t                count;
 } memmi_ProcessList;
 
-memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator);
-memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
-void              memmi_close_process(memmi_Process process, memmi_Allocator allocator);
+typedef enum {
+    MEMMI_READ_MEM_ACCESS_ERROR,
+    MEMMI_READ_MEM_ALLOCATION_FAILURE,
+    MEMMI_READ_MEM_INSUFFICIENT_PERMISSIONS,
+    MEMMI_READ_MEM_NO_SUCH_PROCESS,
+    MEMMI_READ_MEM_PARTIAL_READ,
+    MEMMI_READ_MEM_READ_TOO_LARGE,
+    MEMMI_READ_MEM_OK,
+} memmi_ReadMemoryStatus;
+
+typedef struct {
+    memmi_ReadMemoryStatus status;
+    char *memory;
+    size_t bytes_read;
+} memmi_ReadMemory;
+
+memmi_ProcessList  memmi_get_running_processes(memmi_Allocator allocator);
+memmi_OpenProcess  memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
+void               memmi_close_process(memmi_Process process, memmi_Allocator allocator);
+memmi_ReadMemory   memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator);

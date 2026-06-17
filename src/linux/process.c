@@ -4,11 +4,14 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/uio.h>
 
 #include "process.h"
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <limits.h>
+#include <errno.h>
 
 #include "utils.h"
 
@@ -169,4 +172,76 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
 void memmi_close_process(memmi_Process process, memmi_Allocator allocator)
 {
     deallocate(allocator, process.data, sizeof(memmi_ProcessImpl));
+}
+
+static memmi_ProcessImpl *get_platform_process_handle(memmi_Process proc)
+{
+    memmi_ProcessImpl *result = proc.data;
+
+    return result;
+}
+
+memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator)
+{
+    memmi_ProcessImpl *proc = get_platform_process_handle(process);
+
+    memmi_ReadMemory result = {0};
+
+    if (size > (size_t)SSIZE_MAX) {
+        result.status = MEMMI_READ_MEM_READ_TOO_LARGE;
+    } else {
+        result.memory = allocate(allocator, char, size);
+
+        if (!result.memory) {
+            result.status = MEMMI_READ_MEM_ALLOCATION_FAILURE;
+        } else {
+            struct iovec local_iov = {
+                .iov_base = result.memory,
+                .iov_len = size
+            };
+
+            struct iovec remote_iov = {
+                .iov_base = (void *)address,
+                .iov_len = size
+            };
+
+            ssize_t bytes_read = process_vm_readv((int)proc->pid.value, &local_iov, 1, &remote_iov, 1, 0);
+
+            if (bytes_read == -1) {
+                switch (errno) {
+                    case EFAULT: {
+                        result.status = MEMMI_READ_MEM_ACCESS_ERROR;
+                    } break;
+
+                    case ENOMEM: {
+                        result.status = MEMMI_READ_MEM_ALLOCATION_FAILURE;
+                    } break;
+
+                    case EPERM: {
+                        // Requires root or capability CAP_SYS_PTRACE.
+                        result.status = MEMMI_READ_MEM_INSUFFICIENT_PERMISSIONS;
+                    } break;
+
+                    case ESRCH: {
+                        result.status = MEMMI_READ_MEM_NO_SUCH_PROCESS;
+                    } break;
+
+                    default: {
+                        ASSERT(false);
+                    } break;
+                }
+            } else {
+                result.bytes_read = (size_t)bytes_read;
+
+                if (result.bytes_read < size) {
+                    result.status = MEMMI_READ_MEM_PARTIAL_READ;
+                } else {
+                    result.status = MEMMI_READ_MEM_OK;
+                }
+            }
+        }
+    }
+
+
+    return result;
 }
