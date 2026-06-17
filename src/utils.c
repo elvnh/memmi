@@ -13,15 +13,6 @@ memmi_String str_from_c_str(char *str)
     return result;
 }
 
-int64_t str_to_int64(memmi_String str)
-{
-    ASSERT(is_number(str));
-    // TODO: don't use atol
-    int64_t result = atol(str.data);
-
-    return result;
-}
-
 bool str_eq(memmi_String a, memmi_String b)
 {
     bool result = false;
@@ -92,6 +83,62 @@ memmi_String str_null_terminate_in_place(memmi_String s)
 {
     memmi_String result = s;
     result.data[result.count] = '\0';
+
+    return result;
+}
+
+int64_t str_to_s64(memmi_String str)
+{
+    ASSERT(is_number(str));
+    // TODO: don't use atol
+    int64_t result = atol(str.data);
+
+    return result;
+}
+
+ParseU64 str_to_u64(memmi_String str)
+{
+    ParseU64 result = {0};
+    result.ok = str.count > 0;
+
+    for (size_t i = 0; i < str.count; ++i) {
+        char c = str.data[i];
+
+        if (!is_digit(c)) {
+            result.ok = false;
+            break;
+        } else {
+            if (!multiply_would_overflow_u64(result.value, 10)) {
+                result.value *= 10;
+
+                uint64_t digit = (uint64_t)(c - '0');
+
+                if (!add_would_overflow_u64(result.value, digit)) {
+                    result.value += digit;
+                } else {
+                    result.ok = false;
+                    break;
+                }
+            } else {
+                result.ok = false;
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
+bool add_would_overflow_u64(uint64_t a, uint64_t b)
+{
+    bool result = a > (UINT64_MAX - b);
+
+    return result;
+}
+
+bool multiply_would_overflow_u64(uint64_t a, uint64_t b)
+{
+    bool result = a > (UINT64_MAX / b);
 
     return result;
 }

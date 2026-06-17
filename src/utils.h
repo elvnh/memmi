@@ -71,10 +71,18 @@ static inline bool is_whitespace(char ch)
 
 #define str(s) (memmi_String) { s, ARRAY_COUNT(s) - 1 }
 
+typedef struct {
+    uint64_t value;
+    bool ok;
+} ParseU64;
+
 memmi_String   str_from_c_str(char *str);
-int64_t        str_to_int64(memmi_String str);
 bool           str_starts_with(memmi_String str, memmi_String substr);
 Cut            str_cut(memmi_String str, memmi_String pattern);
 memmi_String   str_trim_leading_whitespace(memmi_String str);
 // TODO: get rid of the need for this
 memmi_String   str_null_terminate_in_place(memmi_String s);
+int64_t        str_to_s64(memmi_String str);
+ParseU64       str_to_u64(memmi_String str);
+bool           add_would_overflow_u64(uint64_t a, uint64_t b);
+bool           multiply_would_overflow_u64(uint64_t a, uint64_t b);
