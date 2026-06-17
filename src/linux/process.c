@@ -89,12 +89,13 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 
                 if ((stat_result == 0) && S_ISDIR(subdir_info.st_mode)) {
                     memmi_String dir_name = str_from_c_str(subdir_entry->d_name);
+                    ParseS64 number_opt = str_to_s64(dir_name, NUM_BASE_DEC);
 
-                    if (is_number(dir_name)) {
+                    if (number_opt.ok) {
                         ProcessName proc_name = get_process_name(subdir_fd, allocator);
 
                         if (proc_name.ok) {
-                            int64_t pid_value = str_to_s64(dir_name);
+                            int64_t pid_value = number_opt.value;
 
                             memmi_ProcessInfo proc = {proc_name.value, {pid_value}};
                             dyn_arr_push(&processes, proc, allocator);

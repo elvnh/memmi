@@ -73,15 +73,6 @@ memmi_String str_trim_leading_whitespace(memmi_String str)
     return result;
 }
 
-int64_t str_to_s64(memmi_String str)
-{
-    ASSERT(is_number(str));
-    // TODO: don't use atol
-    int64_t result = atol(str.data);
-
-    return result;
-}
-
 static uint32_t parse_digit(char c, NumberBase base)
 {
     ASSERT(is_digit(c) || ((base == NUM_BASE_HEX) && is_hex(c)));
@@ -97,6 +88,54 @@ static uint32_t parse_digit(char c, NumberBase base)
     } else {
         result = (uint32_t)(c - '0');
     }
+
+    return result;
+}
+
+ParseS64 str_to_s64(memmi_String str, NumberBase base)
+{
+    // TODO: reduce code duplication between this and str_to_u64
+    ParseS64 result = {0};
+
+    // negativ hex?
+
+    if (str_starts_with(str, str_lit("0x")) || str_starts_with(str, str_lit("0X"))) {
+        str.data += 2;
+        str.count -= 2;
+    }
+
+    result.ok = str.count > 0;
+
+    for (size_t i = 0; i < str.count; ++i) {
+        char c = str.data[i];
+
+        if (!is_digit(c) && !((base == NUM_BASE_HEX) && is_hex(c))) {
+            result.ok = false;
+            break;
+        } else {
+            MultiplyS64 product = safe_mul_s64(result.value, base);
+
+            if (product.ok) {
+                result.value = product.value;
+
+                uint32_t digit = parse_digit(c, base);
+
+                AddS64 sum = safe_add_s64(result.value, (int32_t)digit);
+
+                if (sum.ok) {
+                    result.value = digit;
+                } else {
+                    result.ok = false;
+                    break;
+                }
+            } else {
+                result.ok = false;
+                break;
+            }
+        }
+    }
+
+    // TODO: negative numbers
 
     return result;
 }
@@ -119,12 +158,16 @@ ParseU64 str_to_u64(memmi_String str, NumberBase base)
             result.ok = false;
             break;
         } else {
-            if (!multiply_would_overflow_u64(result.value, base)) {
-                result.value *= base;
+            MultiplyU64 factor = safe_mul_u64(result.value, base);
+
+            if (factor.ok) {
+                result.value = factor.value;
 
                 uint32_t digit = parse_digit(c, base);
 
-                if (!add_would_overflow_u64(result.value, digit)) {
+                AddU64 sum = safe_add_u64(result.value, digit);
+
+                if (sum.ok) {
                     result.value += digit;
                 } else {
                     result.ok = false;
@@ -140,16 +183,36 @@ ParseU64 str_to_u64(memmi_String str, NumberBase base)
     return result;
 }
 
-bool add_would_overflow_u64(uint64_t a, uint64_t b)
+// TODO: define these for other compilers and for other sizes of long
+AddS64 safe_add_s64(int64_t a, int64_t b)
 {
-    bool result = a > (UINT64_MAX - b);
+    AddS64 result = {0};
+
+    result.ok = !__builtin_saddl_overflow (a, b, &result.value);
 
     return result;
 }
 
-bool multiply_would_overflow_u64(uint64_t a, uint64_t b)
+AddU64 safe_add_u64(uint64_t a, uint64_t b)
 {
-    bool result = a > (UINT64_MAX / b);
+    AddU64 result = {0};
+    result.ok = !__builtin_uaddl_overflow(a, b, &result.value);
+
+    return result;
+}
+
+MultiplyS64 safe_mul_s64(int64_t a, int64_t b)
+{
+    MultiplyS64 result = {0};
+    result.ok = !__builtin_smull_overflow(a, b, &result.value);
+
+    return result;
+}
+
+MultiplyU64 safe_mul_u64(uint64_t a, uint64_t b)
+{
+    MultiplyU64 result = {0};
+    result.ok = !__builtin_umull_overflow(a, b, &result.value);
 
     return result;
 }
