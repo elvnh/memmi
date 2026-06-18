@@ -124,5 +124,5 @@ memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, m
 memmi_ThreadList       memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
 
 // TODO: get rid of need for allocating
-memmi_AttachStatus     memmi_attach_to_process(memmi_Process process, memmi_Allocator allocator);
+memmi_AttachStatus     memmi_attach_to_process(memmi_Process process);
 memmi_AttachStatus     memmi_attach_to_thread(memmi_TID tid);

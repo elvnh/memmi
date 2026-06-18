@@ -513,55 +513,6 @@ memmi_AttachStatus memmi_attach_to_thread(memmi_TID tid)
     return result;
 }
 
-memmi_AttachStatus memmi_attach_to_process(memmi_Process process, memmi_Allocator allocator)
-{
-    memmi_AttachStatus result = 0;
-
-    pid_t native_pid = (pid_t)get_platform_process_handle(process)->pid.value;
-
-    memmi_AttachStatus main_thread_attach_result = memmi_attach_to_thread((memmi_TID){native_pid});
-
-    if (main_thread_attach_result != MEMMI_ATTACH_OK) {
-        result = main_thread_attach_result;
-    } else {
-        // Since we attached to the main thread, a group stop will have been entered,
-        // meaning all threads are now suspended. Therefore, we aren't racing against
-        // thread creation when attaching to all threads.
-        memmi_ThreadList threads = memmi_get_process_threads(process, allocator);
-
-        if (threads.count == 0) {
-            // Failed to get threads, we should always get at least one (ourselves)
-            // NOTE: This could be caused by the process dying when traced?
-            ASSERT(0);
-        } else {
-            for (size_t i = 0; i < threads.count; ++i) {
-                memmi_TID tid = threads.data[i];
-
-                // We have already suspended the main thread so no need to do so again.
-                if (tid.value != native_pid) {
-                    memmi_AttachStatus thread_attach_result = memmi_attach_to_thread(tid);
-
-                    if (thread_attach_result != MEMMI_ATTACH_OK) {
-                        result = thread_attach_result;
-                        break;
-                    }
-                }
-            }
-
-            // TODO: Now that we have suspended all threads, resume them again
-            /* for (size_t i = 0; i < threads.count; ++i) { */
-            /*     memmi_TID tid = threads.data[i]; */
-
-            /* } */
-
-        }
-
-        deallocate(allocator, threads.data, threads.count * sizeof(*threads.data));
-    }
-
-    return result;
-}
-
 typedef enum {
     FOR_EACH_THREAD_RES_CONTINUE,
     FOR_EACH_THREAD_RES_BREAK,
@@ -577,9 +528,11 @@ static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
 
     DIR *threads_dir = fdopendir(threads_dir_fd);
 
-    bool result = true;
+    bool result = false;
 
     if (threads_dir) {
+        result = true;
+
         struct dirent *subdir_entry = 0;
 
         while ((subdir_entry = readdir(threads_dir))) {
@@ -599,7 +552,6 @@ static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
                 }
             }
         }
-
     }
 
     close(proc_dir_fd);
@@ -607,6 +559,67 @@ static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
 
     return result;
 }
+
+typedef struct {
+    uint32_t attached_threads_count;
+    memmi_PID parent_pid;
+    memmi_AttachStatus last_status;
+} AttachThreadsContext;
+
+static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
+{
+    AttachThreadsContext *context = user_data;
+    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
+
+    context->last_status = MEMMI_ATTACH_OK;
+
+    if (context->parent_pid.value != tid.value) {
+        memmi_AttachStatus thread_attach_result = memmi_attach_to_thread(tid);
+
+        if (thread_attach_result != MEMMI_ATTACH_OK) {
+            context->last_status = thread_attach_result;
+            result = FOR_EACH_THREAD_RES_BREAK;
+        } else {
+            ++context->attached_threads_count;
+        }
+    }
+
+    return result;
+}
+
+memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
+{
+    memmi_AttachStatus result = 0;
+
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    pid_t native_pid = (pid_t)pid.value;
+
+    memmi_AttachStatus main_thread_attach_result = memmi_attach_to_thread((memmi_TID){native_pid});
+
+    if (main_thread_attach_result != MEMMI_ATTACH_OK) {
+        result = main_thread_attach_result;
+    } else {
+        // Since we attached to the main thread, a group stop will have been entered,
+        // meaning all threads are now suspended. Therefore, we aren't racing against
+        // thread creation when attaching to all threads.
+        AttachThreadsContext cb_context = {
+            .parent_pid = pid
+        };
+
+        for_each_thread(pid, &cb_context, attach_to_thread_cb);
+
+        result = cb_context.last_status;
+
+        // TODO: Now that we have suspended all threads, resume them again
+        /* for (size_t i = 0; i < threads.count; ++i) { */
+        /*     memmi_TID tid = threads.data[i]; */
+
+        /* } */
+    }
+
+    return result;
+}
+
 
 typedef struct {
     ThreadDynArray thread_list;
