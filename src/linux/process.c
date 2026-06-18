@@ -33,6 +33,12 @@ typedef struct {
 } RegionDynArray;
 
 typedef struct {
+    memmi_TID *data;
+    size_t count;
+    size_t capacity;
+} ThreadDynArray;
+
+typedef struct {
     memmi_PID pid;
 } memmi_ProcessImpl;
 
@@ -418,6 +424,44 @@ memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, m
 
     close(proc_dir_fd);
     fclose(maps_file);
+
+    return result;
+}
+
+memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
+{
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    int proc_dir_fd = get_process_directory_fd(pid);
+    int threads_dir_fd = openat(proc_dir_fd, "task", O_RDONLY);
+
+    DIR *threads_dir = fdopendir(threads_dir_fd);
+
+    ThreadDynArray threads = {0};
+
+    if (threads_dir) {
+        struct dirent *subdir_entry = 0;
+
+        while ((subdir_entry = readdir(threads_dir))) {
+            // TODO: properly check if is dir with fstat
+            ASSERT(subdir_entry->d_type == DT_DIR);
+
+            memmi_String name = str_from_c_str(subdir_entry->d_name);
+            MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
+
+            if (tid_opt.ok) {
+                memmi_TID thread = {tid_opt.value};
+                dyn_arr_push(&threads, thread, allocator);
+            }
+        }
+    }
+
+    close(proc_dir_fd);
+    closedir(threads_dir);
+
+    memmi_ThreadList result = {
+        .data = threads.data,
+        .count = threads.count
+    };
 
     return result;
 }
