@@ -109,6 +109,12 @@ typedef struct {
     size_t     count;
 } memmi_ThreadList;
 
+typedef enum {
+    MEMMI_ATTACH_OK,
+    MEMMI_ATTACH_NO_SUCH_PROCESS,
+    MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS,
+} memmi_AttachStatus;
+
 memmi_ProcessList      memmi_get_running_processes(memmi_Allocator allocator);
 memmi_OpenProcess      memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
 void                   memmi_close_process(memmi_Process process, memmi_Allocator allocator);
@@ -116,3 +122,4 @@ memmi_ReadMemory       memmi_read_memory(memmi_Process process, uintptr_t addres
 memmi_WriteMemory      memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size);
 memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator);
 memmi_ThreadList       memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
+memmi_AttachStatus     memmi_attach_to_process(memmi_Process process, memmi_Allocator allocator);

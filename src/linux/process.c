@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/uio.h>
+#include <sys/wait.h>
+#include <sys/ptrace.h>
 
 #include "process.h"
 
@@ -424,6 +426,139 @@ memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, m
 
     close(proc_dir_fd);
     fclose(maps_file);
+
+    return result;
+}
+
+static memmi_AttachStatus ptrace_attach_result_to_memmi_status(long ptrace_result, int errno_value)
+{
+    memmi_AttachStatus result = 0;
+
+    if (ptrace_result == -1) {
+        switch (errno_value) {
+            case EPERM: {
+                result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
+            } break;
+
+            case ESRCH: {
+                result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+            } break;
+
+            default: {
+                ASSERT(false);
+            } break;
+        }
+    } else {
+        result = MEMMI_ATTACH_OK;
+    }
+
+    return result;
+}
+
+static int get_signal_from_wait_status(int status)
+{
+    int result = 0;
+
+    if (WIFEXITED(status)) {
+        result = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        result = WTERMSIG(status);
+    } else if (WIFSTOPPED(status)) {
+        result = WSTOPSIG(status);
+    } else {
+        ASSERT(WIFCONTINUED(status));
+
+        result = SIGCONT;
+    }
+
+    return result;
+}
+
+memmi_AttachStatus attach_to_thread(memmi_TID tid)
+{
+    pid_t native_tid = (pid_t)tid.value;
+    memmi_AttachStatus result = 0;
+
+    long attach_result = ptrace(PTRACE_ATTACH, native_tid, 0, 0);
+
+    if (attach_result == -1) {
+        result = ptrace_attach_result_to_memmi_status(attach_result, errno);
+    } else {
+        while (true) {
+            int status = 0;
+            int wait_result = waitpid(native_tid, &status, __WALL);
+
+            if (wait_result != native_tid) {
+                // TODO: handle this
+                ASSERT(0);
+                break;
+            } else if (WIFSTOPPED(status)) {
+                // Thread successfully suspended.
+                // TODO: Allow immediately resuming
+                break;
+            } else {
+                /* TODO:
+                   If I understand correctly, in this state, the signal has already been delivered?
+                   We don't intercept signals until we're in signal-delivery-stop, which is detected by
+                   WIFSTOPPED(status) == true. Meaning, we shouldn't reinject the signal here?
+                 */
+
+                // Thread received some other signal, inject it and try again next iteration.
+                int signal = get_signal_from_wait_status(status);
+                long resume_result = ptrace(PTRACE_CONT, native_tid, 0, signal);
+
+                if (resume_result == -1) {
+                    // Failed to inject signal, stop trying.
+                    result = ptrace_attach_result_to_memmi_status(resume_result, errno);
+                    break;
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+memmi_AttachStatus memmi_attach_to_process(memmi_Process process, memmi_Allocator allocator)
+{
+    memmi_AttachStatus result = 0;
+
+    pid_t native_pid = (pid_t)get_platform_process_handle(process)->pid.value;
+
+    memmi_AttachStatus main_thread_attach_result = attach_to_thread((memmi_TID){native_pid});
+
+    if (main_thread_attach_result != MEMMI_ATTACH_OK) {
+        result = main_thread_attach_result;
+    } else {
+        // Since we attached to the main thread, a group stop will have been entered,
+        // meaning all threads are now suspended. Therefore, we aren't racing against
+        // thread creation when attaching to all threads.
+        memmi_ThreadList threads = memmi_get_process_threads(process, allocator);
+
+        if (threads.count == 0) {
+            // Failed to get threads, we should always get at least one (ourselves)
+            // NOTE: This could be caused by the process dying when traced?
+            ASSERT(0);
+        } else {
+            for (size_t i = 0; i < threads.count; ++i) {
+                memmi_TID tid = threads.data[i];
+
+                // We have already suspended the main thread so no need to do so again.
+                if (tid.value != native_pid) {
+                    memmi_AttachStatus thread_attach_result = attach_to_thread(tid);
+
+                    if (thread_attach_result != MEMMI_ATTACH_OK) {
+                        result = thread_attach_result;
+                        break;
+                    }
+                }
+
+            }
+
+        }
+
+        deallocate(allocator, threads.data, threads.count * sizeof(*threads.data));
+    }
 
     return result;
 }
