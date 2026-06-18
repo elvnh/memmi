@@ -474,7 +474,7 @@ static int get_signal_from_wait_status(int status)
     return result;
 }
 
-memmi_AttachStatus attach_to_thread(memmi_TID tid)
+memmi_AttachStatus memmi_attach_to_thread(memmi_TID tid)
 {
     pid_t native_tid = (pid_t)tid.value;
     memmi_AttachStatus result = 0;
@@ -497,12 +497,6 @@ memmi_AttachStatus attach_to_thread(memmi_TID tid)
                 // TODO: Allow immediately resuming
                 break;
             } else {
-                /* TODO:
-                   If I understand correctly, in this state, the signal has already been delivered?
-                   We don't intercept signals until we're in signal-delivery-stop, which is detected by
-                   WIFSTOPPED(status) == true. Meaning, we shouldn't reinject the signal here?
-                 */
-
                 // Thread received some other signal, inject it and try again next iteration.
                 int signal = get_signal_from_wait_status(status);
                 long resume_result = ptrace(PTRACE_CONT, native_tid, 0, signal);
@@ -525,7 +519,7 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process, memmi_Allocato
 
     pid_t native_pid = (pid_t)get_platform_process_handle(process)->pid.value;
 
-    memmi_AttachStatus main_thread_attach_result = attach_to_thread((memmi_TID){native_pid});
+    memmi_AttachStatus main_thread_attach_result = memmi_attach_to_thread((memmi_TID){native_pid});
 
     if (main_thread_attach_result != MEMMI_ATTACH_OK) {
         result = main_thread_attach_result;
@@ -545,15 +539,20 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process, memmi_Allocato
 
                 // We have already suspended the main thread so no need to do so again.
                 if (tid.value != native_pid) {
-                    memmi_AttachStatus thread_attach_result = attach_to_thread(tid);
+                    memmi_AttachStatus thread_attach_result = memmi_attach_to_thread(tid);
 
                     if (thread_attach_result != MEMMI_ATTACH_OK) {
                         result = thread_attach_result;
                         break;
                     }
                 }
-
             }
+
+            // TODO: Now that we have suspended all threads, resume them again
+            /* for (size_t i = 0; i < threads.count; ++i) { */
+            /*     memmi_TID tid = threads.data[i]; */
+
+            /* } */
 
         }
 
@@ -563,15 +562,22 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process, memmi_Allocato
     return result;
 }
 
-memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
+typedef enum {
+    FOR_EACH_THREAD_RES_CONTINUE,
+    FOR_EACH_THREAD_RES_BREAK,
+} ForEachThreadResult;
+
+typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, memmi_TID tid);
+
+// TODO: generalize this to iterating through all subdirs
+static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
 {
-    memmi_PID pid = get_platform_process_handle(process)->pid;
     int proc_dir_fd = get_process_directory_fd(pid);
     int threads_dir_fd = openat(proc_dir_fd, "task", O_RDONLY);
 
     DIR *threads_dir = fdopendir(threads_dir_fd);
 
-    ThreadDynArray threads = {0};
+    bool result = true;
 
     if (threads_dir) {
         struct dirent *subdir_entry = 0;
@@ -584,18 +590,50 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
             MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
 
             if (tid_opt.ok) {
-                memmi_TID thread = {tid_opt.value};
-                dyn_arr_push(&threads, thread, allocator);
+                memmi_TID tid = {tid_opt.value};
+
+                ForEachThreadResult cb_result = fn(user_data, tid);
+
+                if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
+                    break;
+                }
             }
         }
+
     }
 
     close(proc_dir_fd);
     closedir(threads_dir);
 
+    return result;
+}
+
+typedef struct {
+    ThreadDynArray thread_list;
+    memmi_Allocator allocator;
+} CollectThreadsContext;
+
+static ForEachThreadResult collect_threads(void *user_data, memmi_TID tid)
+{
+    CollectThreadsContext *context = user_data;
+    dyn_arr_push(&context->thread_list, tid, context->allocator);
+
+    return FOR_EACH_THREAD_RES_CONTINUE;
+}
+
+memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
+{
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+
+    CollectThreadsContext context = {
+        .allocator = allocator
+    };
+
+    for_each_thread(pid, &context, collect_threads);
+
     memmi_ThreadList result = {
-        .data = threads.data,
-        .count = threads.count
+        .data = context.thread_list.data,
+        .count = context.thread_list.count
     };
 
     return result;
