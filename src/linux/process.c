@@ -562,6 +562,7 @@ static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
 }
 
 // TODO: rename
+// TODO: store all errors in a bitset?
 typedef struct {
     memmi_PID parent_pid;
     memmi_AttachStatus last_status;
@@ -586,15 +587,21 @@ static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
     return result;
 }
 
+typedef struct {
+    memmi_PID parent_pid;
+    memmi_ResumeStatus last_status;
+} ResumeThreadsContext;
+
 static ForEachThreadResult resume_thread_cb(void *user_data, memmi_TID tid)
 {
-    AttachThreadsContext *context = user_data;
+    ResumeThreadsContext *context = user_data;
     ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
 
-    memmi_AttachStatus resume_result = memmi_resume_thread(tid);
+    memmi_ResumeStatus resume_result = memmi_resume_thread(tid);
+    memmi_resume_thread(tid);
 
     // Make sure we don't overwrite any errors
-    if (resume_result != MEMMI_ATTACH_OK) {
+    if (resume_result != MEMMI_RESUME_OK) {
         context->last_status = resume_result;
     }
 
@@ -616,25 +623,36 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
         // Since we attached to the main thread, a group stop will have been entered,
         // meaning all threads are now suspended. Therefore, we aren't racing against
         // thread creation when attaching to all threads.
-        AttachThreadsContext cb_context = {
+        AttachThreadsContext attach_cb_context = {
             .parent_pid = pid,
             .last_status = MEMMI_ATTACH_NO_SUCH_PROCESS,
         };
 
-        for_each_thread(pid, &cb_context, attach_to_thread_cb);
+        for_each_thread(pid, &attach_cb_context, attach_to_thread_cb);
 
-        if (cb_context.last_status == MEMMI_ATTACH_OK) {
+        result = attach_cb_context.last_status;
+
+        if (attach_cb_context.last_status == MEMMI_ATTACH_OK) {
             // Now that we've attached to all threads, resume them again.
-            for_each_thread(pid, &cb_context, resume_thread_cb);
-            // TODO: handle errors from for_each_thread
+            ResumeThreadsContext resume_cb_context = {
+                .parent_pid = pid,
+                .last_status = MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED,
+            };
+
+            for_each_thread(pid, &resume_cb_context, resume_thread_cb);
+
+            if (resume_cb_context.last_status == MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED) {
+                result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+            } else if (resume_cb_context.last_status == MEMMI_RESUME_INSUFFICIENT_PERMISSIONS) {
+                result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
+            }
         }
 
-        result = cb_context.last_status;
+
     }
 
     return result;
 }
-
 
 typedef struct {
     ThreadDynArray thread_list;
@@ -667,16 +685,35 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
     return result;
 }
 
-memmi_AttachStatus memmi_resume_thread(memmi_TID tid)
-{
-    long resume_result = ptrace(PTRACE_CONT, (pid_t)tid.value, 0, 0);
-    ASSERT(resume_result != -1);
-
-    return MEMMI_ATTACH_OK;
-}
-
 memmi_AttachStatus memmi_suspend_thread(memmi_TID tid)
 {
     ASSERT(0);
     return MEMMI_ATTACH_OK;
+}
+
+memmi_ResumeStatus memmi_resume_thread(memmi_TID tid)
+{
+    memmi_ResumeStatus result = MEMMI_RESUME_OK;
+
+    pid_t native_tid = (pid_t)tid.value;
+
+    // TODO: Do we need to waitpid for the signal to be received?
+    long resume_result = ptrace(PTRACE_CONT, (pid_t)tid.value, 0, 0);
+
+    if (resume_result == -1) {
+        switch (errno) {
+            case EPERM: {
+                result = MEMMI_RESUME_INSUFFICIENT_PERMISSIONS;
+            } break;
+
+            case ESRCH: {
+                result = MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED;
+            } break;
+            default: {
+                ASSERT(0);
+            } break;
+        }
+    }
+
+    return result;
 }
