@@ -122,7 +122,9 @@ memmi_ReadMemory       memmi_read_memory(memmi_Process process, uintptr_t addres
 memmi_WriteMemory      memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size);
 memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator);
 memmi_ThreadList       memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
-
-// TODO: get rid of need for allocating
 memmi_AttachStatus     memmi_attach_to_process(memmi_Process process);
 memmi_AttachStatus     memmi_attach_to_thread(memmi_TID tid);
+memmi_AttachStatus     memmi_suspend_process(memmi_Process process);
+memmi_AttachStatus     memmi_resume_process(memmi_Process process);
+memmi_AttachStatus     memmi_suspend_thread(memmi_TID tid);
+memmi_AttachStatus     memmi_resume_thread(memmi_TID tid);

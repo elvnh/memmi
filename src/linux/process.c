@@ -521,6 +521,7 @@ typedef enum {
 typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, memmi_TID tid);
 
 // TODO: generalize this to iterating through all subdirs
+// TODO: return error code from this function
 static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
 {
     int proc_dir_fd = get_process_directory_fd(pid);
@@ -560,8 +561,8 @@ static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
     return result;
 }
 
+// TODO: rename
 typedef struct {
-    uint32_t attached_threads_count;
     memmi_PID parent_pid;
     memmi_AttachStatus last_status;
 } AttachThreadsContext;
@@ -579,9 +580,22 @@ static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
         if (thread_attach_result != MEMMI_ATTACH_OK) {
             context->last_status = thread_attach_result;
             result = FOR_EACH_THREAD_RES_BREAK;
-        } else {
-            ++context->attached_threads_count;
         }
+    }
+
+    return result;
+}
+
+static ForEachThreadResult resume_thread_cb(void *user_data, memmi_TID tid)
+{
+    AttachThreadsContext *context = user_data;
+    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
+
+    memmi_AttachStatus resume_result = memmi_resume_thread(tid);
+
+    // Make sure we don't overwrite any errors
+    if (resume_result != MEMMI_ATTACH_OK) {
+        context->last_status = resume_result;
     }
 
     return result;
@@ -603,18 +617,19 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
         // meaning all threads are now suspended. Therefore, we aren't racing against
         // thread creation when attaching to all threads.
         AttachThreadsContext cb_context = {
-            .parent_pid = pid
+            .parent_pid = pid,
+            .last_status = MEMMI_ATTACH_NO_SUCH_PROCESS,
         };
 
         for_each_thread(pid, &cb_context, attach_to_thread_cb);
 
+        if (cb_context.last_status == MEMMI_ATTACH_OK) {
+            // Now that we've attached to all threads, resume them again.
+            for_each_thread(pid, &cb_context, resume_thread_cb);
+            // TODO: handle errors from for_each_thread
+        }
+
         result = cb_context.last_status;
-
-        // TODO: Now that we have suspended all threads, resume them again
-        /* for (size_t i = 0; i < threads.count; ++i) { */
-        /*     memmi_TID tid = threads.data[i]; */
-
-        /* } */
     }
 
     return result;
@@ -650,4 +665,18 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
     };
 
     return result;
+}
+
+memmi_AttachStatus memmi_resume_thread(memmi_TID tid)
+{
+    long resume_result = ptrace(PTRACE_CONT, (pid_t)tid.value, 0, 0);
+    ASSERT(resume_result != -1);
+
+    return MEMMI_ATTACH_OK;
+}
+
+memmi_AttachStatus memmi_suspend_thread(memmi_TID tid)
+{
+    ASSERT(0);
+    return MEMMI_ATTACH_OK;
 }
