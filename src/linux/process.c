@@ -474,7 +474,7 @@ static int get_signal_from_wait_status(int status)
     return result;
 }
 
-memmi_AttachStatus memmi_attach_to_thread(memmi_TID tid)
+static memmi_AttachStatus attach_to_thread(memmi_TID tid)
 {
     pid_t native_tid = (pid_t)tid.value;
     memmi_AttachStatus result = 0;
@@ -507,6 +507,31 @@ memmi_AttachStatus memmi_attach_to_thread(memmi_TID tid)
                     break;
                 }
             }
+        }
+    }
+
+    return result;
+}
+
+static memmi_ResumeStatus resume_thread(memmi_TID tid)
+{
+    memmi_ResumeStatus result = MEMMI_RESUME_OK;
+
+    // TODO: Do we need to waitpid for the signal to be received?
+    long resume_result = ptrace(PTRACE_CONT, (pid_t)tid.value, 0, 0);
+
+    if (resume_result == -1) {
+        switch (errno) {
+            case EPERM: {
+                result = MEMMI_RESUME_INSUFFICIENT_PERMISSIONS;
+            } break;
+
+            case ESRCH: {
+                result = MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED;
+            } break;
+            default: {
+                ASSERT(0);
+            } break;
         }
     }
 
@@ -576,7 +601,7 @@ static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
     context->last_status = MEMMI_ATTACH_OK;
 
     if (context->parent_pid.value != tid.value) {
-        memmi_AttachStatus thread_attach_result = memmi_attach_to_thread(tid);
+        memmi_AttachStatus thread_attach_result = attach_to_thread(tid);
 
         if (thread_attach_result != MEMMI_ATTACH_OK) {
             context->last_status = thread_attach_result;
@@ -597,8 +622,7 @@ static ForEachThreadResult resume_thread_cb(void *user_data, memmi_TID tid)
     ResumeThreadsContext *context = user_data;
     ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
 
-    memmi_ResumeStatus resume_result = memmi_resume_thread(tid);
-    memmi_resume_thread(tid);
+    memmi_ResumeStatus resume_result = resume_thread(tid);
 
     // Make sure we don't overwrite any errors
     if (resume_result != MEMMI_RESUME_OK) {
@@ -610,12 +634,14 @@ static ForEachThreadResult resume_thread_cb(void *user_data, memmi_TID tid)
 
 memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
 {
+    // TODO: make it so that new threads are automatically attached to
+
     memmi_AttachStatus result = 0;
 
     memmi_PID pid = get_platform_process_handle(process)->pid;
     pid_t native_pid = (pid_t)pid.value;
 
-    memmi_AttachStatus main_thread_attach_result = memmi_attach_to_thread((memmi_TID){native_pid});
+    memmi_AttachStatus main_thread_attach_result = attach_to_thread((memmi_TID){native_pid});
 
     if (main_thread_attach_result != MEMMI_ATTACH_OK) {
         result = main_thread_attach_result;
@@ -681,39 +707,6 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
         .data = context.thread_list.data,
         .count = context.thread_list.count
     };
-
-    return result;
-}
-
-memmi_AttachStatus memmi_suspend_thread(memmi_TID tid)
-{
-    ASSERT(0);
-    return MEMMI_ATTACH_OK;
-}
-
-memmi_ResumeStatus memmi_resume_thread(memmi_TID tid)
-{
-    memmi_ResumeStatus result = MEMMI_RESUME_OK;
-
-    pid_t native_tid = (pid_t)tid.value;
-
-    // TODO: Do we need to waitpid for the signal to be received?
-    long resume_result = ptrace(PTRACE_CONT, (pid_t)tid.value, 0, 0);
-
-    if (resume_result == -1) {
-        switch (errno) {
-            case EPERM: {
-                result = MEMMI_RESUME_INSUFFICIENT_PERMISSIONS;
-            } break;
-
-            case ESRCH: {
-                result = MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED;
-            } break;
-            default: {
-                ASSERT(0);
-            } break;
-        }
-    }
 
     return result;
 }
