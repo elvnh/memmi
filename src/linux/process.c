@@ -529,6 +529,7 @@ static memmi_ResumeStatus resume_thread(memmi_TID tid)
             case ESRCH: {
                 result = MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED;
             } break;
+
             default: {
                 ASSERT(0);
             } break;
@@ -546,7 +547,7 @@ typedef enum {
 typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, memmi_TID tid);
 
 // TODO: generalize this to iterating through all subdirs
-// TODO: return error code from this function
+// TODO: return error enum from this function, not a bool
 static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
 {
     int proc_dir_fd = get_process_directory_fd(pid);
@@ -557,11 +558,13 @@ static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
     bool result = false;
 
     if (threads_dir) {
-        result = true;
-
         struct dirent *subdir_entry = 0;
 
         while ((subdir_entry = readdir(threads_dir))) {
+            // Only count as a success if there was at least one thread,
+            // as otherwise the process has been killed.
+            result = true;
+
             // TODO: properly check if is dir with fstat
             ASSERT(subdir_entry->d_type == DT_DIR);
 
@@ -654,27 +657,35 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
             .last_status = MEMMI_ATTACH_NO_SUCH_PROCESS,
         };
 
-        for_each_thread(pid, &attach_cb_context, attach_to_thread_cb);
+        bool for_each_result = for_each_thread(pid, &attach_cb_context, attach_to_thread_cb);
 
-        result = attach_cb_context.last_status;
+        if (!for_each_result) {
+            // If the thread directory in procfs wasn't found, it probably means
+            // that the process died inbetween us suspending the threads and
+            // attaching to them.
+            result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+        } else {
+            result = attach_cb_context.last_status;
 
-        if (attach_cb_context.last_status == MEMMI_ATTACH_OK) {
-            // Now that we've attached to all threads, resume them again.
-            ResumeThreadsContext resume_cb_context = {
-                .parent_pid = pid,
-                .last_status = MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED,
-            };
+            if (attach_cb_context.last_status == MEMMI_ATTACH_OK) {
+                // Now that we've attached to all threads, resume them again.
+                ResumeThreadsContext resume_cb_context = {
+                    .parent_pid = pid,
+                };
 
-            for_each_thread(pid, &resume_cb_context, resume_thread_cb);
+                for_each_result = for_each_thread(pid, &resume_cb_context, resume_thread_cb);
 
-            if (resume_cb_context.last_status == MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED) {
-                result = MEMMI_ATTACH_NO_SUCH_PROCESS;
-            } else if (resume_cb_context.last_status == MEMMI_RESUME_INSUFFICIENT_PERMISSIONS) {
-                result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
+                if (!for_each_result) {
+                    result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+                } else {
+                    if (resume_cb_context.last_status == MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED) {
+                        result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+                    } else if (resume_cb_context.last_status == MEMMI_RESUME_INSUFFICIENT_PERMISSIONS) {
+                        result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
+                    }
+                }
             }
         }
-
-
     }
 
     return result;
