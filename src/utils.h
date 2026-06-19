@@ -13,6 +13,7 @@
 #define deallocate(a, ptr, size) (a).function((a).context, (ptr), (size) * sizeof(*(ptr)), 0, 0)
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define BIT(e) (1u << (e))
 
 #define dyn_arr_push(arr, item, alloc)                                  \
 do {                                                                    \
