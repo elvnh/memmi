@@ -117,6 +117,13 @@ typedef enum {
 } memmi_AttachStatus;
 
 typedef enum {
+    MEMMI_DETACH_OK,
+    MEMMI_DETACH_SOME_THREADS_DETACHED,
+    MEMMI_DETACH_NO_SUCH_PROCESS,
+    MEMMI_DETACH_INSUFFICIENT_PERMISSIONS,
+} memmi_DetachStatus;
+
+typedef enum {
     MEMMI_RESUME_OK,
     MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED,
     MEMMI_RESUME_INSUFFICIENT_PERMISSIONS,
@@ -130,3 +137,4 @@ memmi_WriteMemory      memmi_write_memory(memmi_Process process, uintptr_t dst, 
 memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator);
 memmi_ThreadList       memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
 memmi_AttachStatus     memmi_attach_to_process(memmi_Process process);
+memmi_DetachStatus     memmi_detach_from_process(memmi_Process process);

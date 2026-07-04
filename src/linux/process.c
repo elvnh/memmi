@@ -635,7 +635,6 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
     memmi_AttachStatus result = 0;
 
     memmi_PID pid = get_platform_process_handle(process)->pid;
-    memmi_TID main_thread_tid = {pid.value};
     pid_t native_pid = (pid_t)pid.value;
 
     memmi_AttachStatus main_thread_attach_result = attach_to_thread((memmi_TID){native_pid});
@@ -674,6 +673,68 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
                 // We did it!
                 result = MEMMI_ATTACH_OK;
             }
+        }
+    }
+
+    return result;
+}
+
+typedef struct {
+    memmi_DetachStatus statuses;
+} DetachContext;
+
+static ForEachThreadResult detach_from_thread_cb(void *user_data, memmi_TID tid)
+{
+    DetachContext *context = user_data;
+    pid_t native_tid = (pid_t)tid.value;
+
+    long detach_result = ptrace(PTRACE_DETACH, native_tid, 0, 0);
+
+    if (detach_result == -1) {
+        memmi_DetachStatus status = 0;
+
+        switch (errno) {
+            case EPERM: {
+                status = MEMMI_DETACH_INSUFFICIENT_PERMISSIONS;
+            } break;
+
+            case ESRCH: {
+                status = MEMMI_DETACH_NO_SUCH_PROCESS;
+            } break;
+            default: {
+                ASSERT(0);
+            } break;
+        }
+
+        context->statuses |= status;
+    }
+
+    return FOR_EACH_THREAD_RES_CONTINUE;
+}
+
+memmi_DetachStatus memmi_detach_from_process(memmi_Process process)
+{
+    // NOTE: we assume that the function is suspended
+    // TODO: clear breakpoints etc
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    DetachContext context = {0};
+
+    bool for_each_result = for_each_thread(pid, &context, detach_from_thread_cb);
+
+    memmi_DetachStatus result = 0;
+
+    if (!for_each_result) {
+        // If we failed to iterate the threads, we'll assume it was because the
+        // process died.
+        result = MEMMI_DETACH_NO_SUCH_PROCESS;
+    } else {
+        if (context.statuses == 0) {
+            // No errors occurred.
+            result = MEMMI_DETACH_OK;
+        } else {
+            // Some errors occurred, indicating that only some of the threads
+            // were detached from.
+            result = MEMMI_DETACH_SOME_THREADS_DETACHED;
         }
     }
 
