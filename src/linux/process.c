@@ -660,56 +660,19 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
             result = MEMMI_ATTACH_NO_SUCH_PROCESS;
         } else {
             // We succeeded in attaching to at least some of the child threads.
-            // Even if some failed, we will still want to attempt to resume those
-            // that we managed to attach to, as we don't want them to stay suspended.
-
             uint32_t attach_errors =
                 BIT(MEMMI_ATTACH_NO_SUCH_PROCESS) | BIT(MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS);
             bool partial_attach_success = attach_cb_context.statuses & attach_errors;
 
             ASSERT(!(attach_cb_context.statuses & BIT(MEMMI_ATTACH_SOME_THREADS_ATTACHED)));
 
-            memmi_ResumeStatus main_thread_resume_result = resume_thread(main_thread_tid);
-
-            if (main_thread_resume_result != MEMMI_RESUME_OK) {
-                // If we failed to resume the main thread, count this as a complete failure.
-
-                if (main_thread_resume_result == MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED) {
-                    // Since the process was definitely suspended by us before we
-                    // tried to resume it, this must mean the process is dead.
-                    result = MEMMI_ATTACH_NO_SUCH_PROCESS;
-                } else {
-                    ASSERT(main_thread_resume_result == MEMMI_RESUME_INSUFFICIENT_PERMISSIONS);
-                    result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
-                }
+            if (partial_attach_success) {
+                // We only succeeded in attaching to some of the child threads,
+                // so count this as a partial success.
+                result = MEMMI_ATTACH_SOME_THREADS_ATTACHED;
             } else {
-                // We successfully resumed the main thread, now try to resume the rest of them.
-                ResumeThreadsContext resume_cb_context = {
-                    .parent_pid = pid,
-                };
-
-                for_each_result = for_each_thread(pid, &resume_cb_context, resume_thread_cb);
-
-                if (!for_each_result) {
-                    // Process died inbetween us attaching and resuming.
-                    result = MEMMI_ATTACH_NO_SUCH_PROCESS;
-                } else {
-                    uint32_t resume_errors =
-                        BIT(MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED) | BIT(MEMMI_RESUME_INSUFFICIENT_PERMISSIONS);
-                    bool partial_resume_success = resume_cb_context.statuses & resume_errors;
-
-                    if (partial_attach_success || partial_resume_success) {
-                        // Either we partially failed earlier when attaching to all threads,
-                        // or we failed now when trying to resume them (or both). Either way,
-                        // we will have to count this as only a partial success.
-                        result = MEMMI_ATTACH_SOME_THREADS_ATTACHED;
-                    } else {
-                        // We did it!
-                        result = MEMMI_ATTACH_OK;
-                    }
-
-                }
-
+                // We did it!
+                result = MEMMI_ATTACH_OK;
             }
         }
     }

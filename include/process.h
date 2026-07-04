@@ -130,10 +130,3 @@ memmi_WriteMemory      memmi_write_memory(memmi_Process process, uintptr_t dst, 
 memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator);
 memmi_ThreadList       memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
 memmi_AttachStatus     memmi_attach_to_process(memmi_Process process);
-memmi_AttachStatus     memmi_suspend_process(memmi_Process process);
-memmi_AttachStatus     memmi_resume_process(memmi_Process process);
-
-// TODO: implement these
-/* memmi_AttachStatus     memmi_attach_to_thread(memmi_TID tid); */
-/* memmi_AttachStatus     memmi_suspend_thread(memmi_TID tid); */
-/* memmi_ResumeStatus     memmi_resume_thread(memmi_TID tid); */
