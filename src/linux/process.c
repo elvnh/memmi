@@ -493,8 +493,15 @@ static memmi_AttachStatus attach_to_thread(memmi_TID tid)
                 ASSERT(0);
                 break;
             } else if (WIFSTOPPED(status)) {
-                // Thread successfully suspended.
-                // TODO: Allow immediately resuming
+                // Thread successfully suspended. Now set options so that any
+                // new threads created while we are attached are automatically
+                // traced too.
+                long set_options_result = ptrace(PTRACE_SETOPTIONS, native_tid, 0, PTRACE_O_TRACECLONE);
+
+                if (set_options_result == -1) {
+                    result = ptrace_attach_result_to_memmi_status(set_options_result, errno);
+                }
+
                 break;
             } else {
                 // Thread received some other signal, inject it and try again next iteration.
