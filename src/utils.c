@@ -73,6 +73,26 @@ memmi_String str_trim_leading_whitespace(memmi_String str)
     return result;
 }
 
+memmi_String str_trim_trailing_whitespace(memmi_String str)
+{
+    memmi_String result = str;
+
+    while ((result.count > 0) && is_whitespace(result.data[result.count - 1])) {
+        --result.count;
+    }
+
+    return result;
+}
+
+memmi_String str_trim_whitespace(memmi_String str)
+{
+    memmi_String result = str;
+    result = str_trim_leading_whitespace(result);
+    result = str_trim_trailing_whitespace(result);
+
+    return result;
+}
+
 static uint32_t parse_digit(char c, NumberBase base)
 {
     ASSERT(is_digit(c) || ((base == NUM_BASE_HEX) && is_hex(c)));

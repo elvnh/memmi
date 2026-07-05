@@ -38,4 +38,5 @@ CFLAGS="
     -Wno-error=unused-but-set-variable
 "
 
-gcc ${CFLAGS} main.c -Iinclude -Isrc src/*.c src/**/*.c
+gcc ${CFLAGS} main.c -Iinclude -Isrc src/*.c src/**/*.c -o memmi;
+g++ -Wall -Wextra -ggdb test.cpp;

@@ -12,6 +12,12 @@
         (new) * sizeof(*(ptr)), ALIGNOF(*(ptr)))
 #define deallocate(a, ptr, size) (a).function((a).context, (ptr), (size) * sizeof(*(ptr)), 0, 0)
 
+#if defined(__x86_64__)
+#    define DEBUG_BREAK __asm volatile("int3")
+#else
+#    error Unsupported architecture
+#endif
+
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define BIT(e) (1u << (e))
 
@@ -107,6 +113,8 @@ memmi_String   str_from_c_str(char *str);
 bool           str_starts_with(memmi_String str, memmi_String substr);
 Cut            str_cut(memmi_String str, memmi_String pattern);
 memmi_String   str_trim_leading_whitespace(memmi_String str);
+memmi_String   str_trim_trailing_whitespace(memmi_String str);
+memmi_String   str_trim_whitespace(memmi_String str);
 MaybeS64       str_to_s64(memmi_String str, NumberBase base);
 MaybeU64       str_to_u64(memmi_String str, NumberBase base);
 
