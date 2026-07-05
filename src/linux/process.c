@@ -604,9 +604,82 @@ static memmi_PID tid_to_pid(memmi_TID tid)
     return result;
 }
 
+static memmi_AttachStatus attach_to_thread(memmi_TID tid)
+{
+    memmi_AttachStatus result = 0;
+
+    pid_t native_tid = (pid_t)tid.value;
+
+    // TODO: trace fork?
+    long seize_result = ptrace(PTRACE_SEIZE, native_tid, 0, PTRACE_O_TRACECLONE);
+
+    if (seize_result == -1) {
+        // We failed to seize the thread, which must either be because we lack
+        // the permissions to do so, or because the thread has died.
+        if (errno == ESRCH) {
+            result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+        } else {
+            ASSERT(errno == EPERM);
+            result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
+        }
+    } else {
+        long interrupt_result = ptrace(PTRACE_INTERRUPT, native_tid, 0, 0);
+
+        if (interrupt_result == -1) {
+            // We failed to interrupt the thread, most likely because the thread
+            // died.  If we had the permissions to seize the process, I believe
+            // we have the permissions to interrupt it. However, I suppose that
+            // this process could technically lose those permissions inbetween
+            // these two calls to ptrace.
+            ASSERT(errno != EPERM && "Process lost permissions inbetween calls to ptrace");
+
+            if (errno == ESRCH) {
+                result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+            } else {
+                ASSERT(errno == EPERM);
+                result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
+            }
+        } else {
+            // We successfully seized the thread and sent a stopping signal to
+            // it, now we have to wait for it to actually receive the signal.
+            while (true) {
+                int status = 0;
+                int waitpid_result = waitpid(native_tid, &status, __WALL);
+
+                if (waitpid_result == -1) {
+                    result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+                } else if (WIFSTOPPED(status)) {
+                    // The thread was successfully suspended, we're done here.
+                    result = MEMMI_ATTACH_OK;
+                    break;
+                } else {
+                    // The thread received another signal, reinject it and try again.
+                    int signal = get_signal_from_wait_status(signal);
+                    long reinject_result = ptrace(PTRACE_CONT, native_tid, 0, signal);
+
+                    if (reinject_result == -1) {
+                        // Reinjecting the signal failed, either because the
+                        // thread died or because we lost our permissions.
+                        if (errno == ESRCH) {
+                            result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+                        } else {
+                            ASSERT(errno == EPERM);
+                            result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
+                        }
+
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 typedef struct {
     /* memmi_PID parent_pid; */
-    /* memmi_AttachStatus statuses; */
+    memmi_AttachStatus statuses;
     int32_t suspended_thread_count;
 } AttachThreadsContext;
 
@@ -616,63 +689,16 @@ static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
 
     bool is_attached = false;
     pid_t tracer_pid = get_pid_of_tracing_process(tid_to_pid(tid));
-    pid_t native_tid = (pid_t)tid.value;
 
     if (tracer_pid == getpid()) {
         // We are already attached to this process, nothing to do here.
         is_attached = true;
     } else {
-        // TODO: trace fork?
-        long seize_result = ptrace(PTRACE_SEIZE, native_tid, 0, PTRACE_O_TRACECLONE);
+        memmi_AttachStatus attach_result = attach_to_thread(tid);
+        context->statuses |= BIT(attach_result);
 
-        if (seize_result == -1) {
-            // We failed to seize the process. This can't be because we are
-            // already attached, so something else must be the problem.  The
-            // thread may have died before we managed to seize it, which we
-            // won't count as a failure. However, if the failure was due to
-            // some other issue, we will count it as a failure.
-            if (errno != ESRCH) {
-                ASSERT(errno == EPERM);
-                /* context->statuses |= BIT(MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS); */
-            }
-        } else if (seize_result != -1) {
-            long interrupt_result = ptrace(PTRACE_INTERRUPT, native_tid, 0, 0);
-
-            if (interrupt_result == -1) {
-                // We failed to interrupt the process. As we are already
-                // attached, this must either be because the thread died
-                // inbetween us seizing and interrupting it, or because we
-                // somehow lack the permissions to interrupt it. The thread
-                // could legitimately have died, so we won't consider that as a
-                // failure, but any other error we will consider a failure.
-                if (errno != ESRCH) {
-                    ASSERT(errno == EPERM);
-                    /* context->statuses |= BIT(MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS); */
-                }
-            } else {
-                // We successfully seized the thread and sent a stopping signal
-                // to it, now we have to wait for it to actually receive the signal.
-                while (true) {
-                    int status = 0;
-                    int waitpid_result = waitpid(native_tid, &status, __WALL);
-
-                    if (waitpid_result == -1) {
-                        ASSERT(0);
-                    } else if (WIFSTOPPED(status)) {
-                        // The thread was successfully suspended, we're done here.
-                        is_attached = true;
-                        break;
-                    } else {
-                        // The thread received another signal, reinject it and try again.
-                        int signal = get_signal_from_wait_status(signal);
-                        long reinject_result = ptrace(PTRACE_CONT, native_tid, 0, signal);
-
-                        if (reinject_result == -1) {
-                            ASSERT(0);
-                        }
-                    }
-                }
-            }
+        if (attach_result == MEMMI_ATTACH_OK) {
+            is_attached = true;
         }
     }
 
@@ -688,33 +714,68 @@ static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
 memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
 {
     DEBUG_BREAK;
+    memmi_AttachStatus result = 0;
+
     memmi_PID pid = get_platform_process_handle(process)->pid;
+    memmi_TID main_thread_id = {pid.value};
 
-    int32_t prev_attached_thread_count = -1;
+    memmi_AttachStatus main_thread_attach_result = attach_to_thread(main_thread_id);
 
-    // Attach to each thread in process until the number of attached threads
-    // stabilizes. This is done in order to prevent races with thread creation.
-    while (true) {
+    if (main_thread_attach_result != MEMMI_ATTACH_OK) {
+        result = main_thread_attach_result;
+    } else {
+        // We succeeded in attaching to the main thread, now start attaching to
+        // the other threads in the process. From this point on, we won't care
+        // if a thread dies while we are in the process of attaching to it,
+        // since a thread dying can legitimately occur. We will however care if
+        // we lack the permissions to attach to a thread. However, as we managed
+        // to attach to the main thread, we will still count this as a partial success.
+        int32_t last_attached_thread_count = 0;
         AttachThreadsContext cb_context = {0};
-        bool for_each_result = for_each_thread(pid, &cb_context, attach_to_thread_cb);
+        bool suspended_thread_count_is_stable = false;
 
-        if (!for_each_result) {
-            // Process died or something
-            ASSERT(0);
-        } else if (cb_context.suspended_thread_count == 0) {
-            // Not a single thread was attached to, failure
-            ASSERT(0);
-        } else if (cb_context.suspended_thread_count <= prev_attached_thread_count) {
-            // The number of threads we attached to has not grown since last
-            // iteration, meaning no new threads can be spawned since all
-            // threads in process are suspended. We are therefore done.
-            break;
+        // Attach to each thread in process until the number of attached threads
+        // stabilizes. This is done in order to prevent races with thread creation.
+        while (!suspended_thread_count_is_stable) {
+            // Reset the context each iteration as outside the loop we only care
+            // about the results from the last iteration.
+            cb_context = (AttachThreadsContext){0};
+
+            for_each_thread(pid, &cb_context, attach_to_thread_cb);
+
+            if (cb_context.suspended_thread_count <= last_attached_thread_count) {
+                // The number of threads we attached to has not grown since last
+                // iteration, meaning no new threads can be spawned since all
+                // threads in process are suspended. We are therefore done.  It
+                // could also mean that we didn't attach to a single thread,
+                // which we'll notice later on when checking
+                // last_attached_thread_coutn.
+                suspended_thread_count_is_stable = true;
+            }
+
+            last_attached_thread_count = cb_context.suspended_thread_count;
         }
 
-        prev_attached_thread_count = cb_context.suspended_thread_count;
+        if (last_attached_thread_count == 0) {
+            // If we didn't manage to attach to a single thread, count this as a
+            // complete failure.
+            if (cb_context.statuses & BIT(MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS)) {
+                result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
+            } else  {
+                result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+            }
+        } else if (cb_context.statuses & BIT(MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS)) {
+            // If we failed to attach to some threads due to having insufficient
+            // permissions, count this as a partial success. If we failed to
+            // attach to some threads due to them dying, we'll count it as a
+            // complete success, as threads dying can legitimately happen.
+            result = MEMMI_ATTACH_SOME_THREADS_ATTACHED;
+        } else {
+            result = MEMMI_ATTACH_OK;
+        }
     }
 
-    return MEMMI_ATTACH_OK;
+    return result;
 }
 
 typedef struct {
