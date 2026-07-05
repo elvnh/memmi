@@ -430,31 +430,6 @@ memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, m
     return result;
 }
 
-static memmi_AttachStatus ptrace_attach_result_to_memmi_status(long ptrace_result, int errno_value)
-{
-    memmi_AttachStatus result = 0;
-
-    if (ptrace_result == -1) {
-        switch (errno_value) {
-            case EPERM: {
-                result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
-            } break;
-
-            case ESRCH: {
-                result = MEMMI_ATTACH_NO_SUCH_PROCESS;
-            } break;
-
-            default: {
-                ASSERT(false);
-            } break;
-        }
-    } else {
-        result = MEMMI_ATTACH_OK;
-    }
-
-    return result;
-}
-
 static int get_signal_from_wait_status(int status)
 {
     int result = 0;
@@ -469,52 +444,6 @@ static int get_signal_from_wait_status(int status)
         ASSERT(WIFCONTINUED(status));
 
         result = SIGCONT;
-    }
-
-    return result;
-}
-
-static memmi_AttachStatus attach_to_thread(memmi_TID tid)
-{
-    pid_t native_tid = (pid_t)tid.value;
-    memmi_AttachStatus result = 0;
-
-    long attach_result = ptrace(PTRACE_ATTACH, native_tid, 0, 0);
-
-    if (attach_result == -1) {
-        result = ptrace_attach_result_to_memmi_status(attach_result, errno);
-    } else {
-        while (true) {
-            int status = 0;
-            int wait_result = waitpid(native_tid, &status, __WALL);
-
-            if (wait_result != native_tid) {
-                // TODO: handle this
-                ASSERT(0);
-                break;
-            } else if (WIFSTOPPED(status)) {
-                // Thread successfully suspended. Now set options so that any
-                // new threads created while we are attached are automatically
-                // traced too.
-                long set_options_result = ptrace(PTRACE_SETOPTIONS, native_tid, 0, PTRACE_O_TRACECLONE);
-
-                if (set_options_result == -1) {
-                    result = ptrace_attach_result_to_memmi_status(set_options_result, errno);
-                }
-
-                break;
-            } else {
-                // Thread received some other signal, inject it and try again next iteration.
-                int signal = get_signal_from_wait_status(status);
-                long resume_result = ptrace(PTRACE_CONT, native_tid, 0, signal);
-
-                if (resume_result == -1) {
-                    // Failed to inject signal, stop trying.
-                    result = ptrace_attach_result_to_memmi_status(resume_result, errno);
-                    break;
-                }
-            }
-        }
     }
 
     return result;
