@@ -596,24 +596,6 @@ static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
     return result;
 }
 
-typedef struct {
-    memmi_PID parent_pid;
-    memmi_AttachStatus statuses;
-} AttachThreadsContext;
-
-static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
-{
-    AttachThreadsContext *context = user_data;
-
-    if (context->parent_pid.value != tid.value) {
-        memmi_AttachStatus thread_attach_result = attach_to_thread(tid);
-        context->statuses |= BIT(thread_attach_result);
-    }
-
-    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
-
-    return result;
-}
 
 typedef struct {
     memmi_PID parent_pid;
@@ -635,55 +617,175 @@ static ForEachThreadResult resume_thread_cb(void *user_data, memmi_TID tid)
     return result;
 }
 
-memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
+static pid_t get_pid_of_tracing_process(memmi_PID pid)
 {
-    // TODO: make it so that new threads are automatically attached to
+    int proc_dir_fd = get_process_directory_fd(pid);
+    int status_fd = openat(proc_dir_fd, "status", O_RDONLY);
+    pid_t result = -1;
 
-    memmi_AttachStatus result = 0;
-
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    pid_t native_pid = (pid_t)pid.value;
-
-    memmi_AttachStatus main_thread_attach_result = attach_to_thread((memmi_TID){native_pid});
-
-    if (main_thread_attach_result != MEMMI_ATTACH_OK) {
-        result = main_thread_attach_result;
+    // TODO: set result to -1 by default and skip all these explicit assignments
+    if ((proc_dir_fd == -1) || (status_fd == -1)) {
+        result = -1;
     } else {
-        // Since we attached to the main thread, a group stop will have been entered,
-        // meaning all threads are now suspended. Therefore, we aren't racing against
-        // thread creation when attaching to all threads.
-        AttachThreadsContext attach_cb_context = {
-            .parent_pid = pid,
-        };
+        FILE *status_file = fdopen(status_fd, "r");
 
-        bool for_each_result = for_each_thread(pid, &attach_cb_context, attach_to_thread_cb);
-
-        if (!for_each_result) {
-            // If the thread directory in procfs wasn't found, it probably means
-            // that the process died inbetween us suspending the threads and
-            // attaching to them.
-
-            result = MEMMI_ATTACH_NO_SUCH_PROCESS;
+        if (!status_file) {
+            result = -1;
         } else {
-            // We succeeded in attaching to at least some of the child threads.
-            uint32_t attach_errors =
-                BIT(MEMMI_ATTACH_NO_SUCH_PROCESS) | BIT(MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS);
-            bool partial_attach_success = attach_cb_context.statuses & attach_errors;
+            char buffer[256];
 
-            ASSERT(!(attach_cb_context.statuses & BIT(MEMMI_ATTACH_SOME_THREADS_ATTACHED)));
+            while (fgets(buffer, ARRAY_COUNT(buffer), status_file)) {
+                memmi_String line = str_from_c_str(buffer);
 
-            if (partial_attach_success) {
-                // We only succeeded in attaching to some of the child threads,
-                // so count this as a partial success.
-                result = MEMMI_ATTACH_SOME_THREADS_ATTACHED;
+                if (str_starts_with(line, str_lit("TracerPid"))) {
+                    Cut cut = str_cut(line, str_lit(":"));
+
+                    if (!cut.ok) {
+                        result = -1;
+                    } else {
+                        memmi_String pid_str = str_trim_whitespace(cut.tail);
+                        MaybeS64 pid_opt = str_to_s64(pid_str, NUM_BASE_DEC);
+
+                        if (!pid_opt.ok) {
+                            ASSERT(0);
+                        } else {
+                            result = (pid_t)pid_opt.value;
+                        }
+
+                        break;
+                    }
+                }
+            }
+        }
+
+        fclose(status_file);
+    }
+
+    close(proc_dir_fd);
+    close(status_fd);
+
+    return result;
+}
+
+// TODO: move elsewhere
+static memmi_PID tid_to_pid(memmi_TID tid)
+{
+    memmi_PID result = {tid.value};
+
+    return result;
+}
+
+typedef struct {
+    /* memmi_PID parent_pid; */
+    /* memmi_AttachStatus statuses; */
+    int32_t suspended_thread_count;
+} AttachThreadsContext;
+
+static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
+{
+    AttachThreadsContext *context = user_data;
+
+    bool is_attached = false;
+    pid_t tracer_pid = get_pid_of_tracing_process(tid_to_pid(tid));
+    pid_t native_tid = (pid_t)tid.value;
+
+    if (tracer_pid == getpid()) {
+        // We are already attached to this process, nothing to do here.
+        is_attached = true;
+    } else {
+        // TODO: trace fork?
+        long seize_result = ptrace(PTRACE_SEIZE, native_tid, 0, PTRACE_O_TRACECLONE);
+
+        if (seize_result == -1) {
+            // We failed to seize the process. This can't be because we are
+            // already attached, so something else must be the problem.  The
+            // thread may have died before we managed to seize it, which we
+            // won't count as a failure. However, if the failure was due to
+            // some other issue, we will count it as a failure.
+            if (errno != ESRCH) {
+                ASSERT(errno == EPERM);
+                /* context->statuses |= BIT(MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS); */
+            }
+        } else if (seize_result != -1) {
+            long interrupt_result = ptrace(PTRACE_INTERRUPT, native_tid, 0, 0);
+
+            if (interrupt_result == -1) {
+                // We failed to interrupt the process. As we are already
+                // attached, this must either be because the thread died
+                // inbetween us seizing and interrupting it, or because we
+                // somehow lack the permissions to interrupt it. The thread
+                // could legitimately have died, so we won't consider that as a
+                // failure, but any other error we will consider a failure.
+                if (errno != ESRCH) {
+                    ASSERT(errno == EPERM);
+                    /* context->statuses |= BIT(MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS); */
+                }
             } else {
-                // We did it!
-                result = MEMMI_ATTACH_OK;
+                // We successfully seized the thread and sent a stopping signal
+                // to it, now we have to wait for it to actually receive the signal.
+                while (true) {
+                    int status = 0;
+                    int waitpid_result = waitpid(native_tid, &status, __WALL);
+
+                    if (waitpid_result == -1) {
+                        ASSERT(0);
+                    } else if (WIFSTOPPED(status)) {
+                        // The thread was successfully suspended, we're done here.
+                        is_attached = true;
+                        break;
+                    } else {
+                        // The thread received another signal, reinject it and try again.
+                        int signal = get_signal_from_wait_status(signal);
+                        long reinject_result = ptrace(PTRACE_CONT, native_tid, 0, signal);
+
+                        if (reinject_result == -1) {
+                            ASSERT(0);
+                        }
+                    }
+                }
             }
         }
     }
 
+    if (is_attached) {
+        ++context->suspended_thread_count;
+    }
+
+    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
+
     return result;
+}
+
+memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
+{
+    DEBUG_BREAK;
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+
+    int32_t prev_attached_thread_count = -1;
+
+    // Attach to each thread in process until the number of attached threads
+    // stabilizes. This is done in order to prevent races with thread creation.
+    while (true) {
+        AttachThreadsContext cb_context = {0};
+        bool for_each_result = for_each_thread(pid, &cb_context, attach_to_thread_cb);
+
+        if (!for_each_result) {
+            // Process died or something
+            ASSERT(0);
+        } else if (cb_context.suspended_thread_count == 0) {
+            // Not a single thread was attached to, failure
+            ASSERT(0);
+        } else if (cb_context.suspended_thread_count <= prev_attached_thread_count) {
+            // The number of threads we attached to has not grown since last
+            // iteration, meaning no new threads can be spawned since all
+            // threads in process are suspended. We are therefore done.
+            break;
+        }
+
+        prev_attached_thread_count = cb_context.suspended_thread_count;
+    }
+
+    return MEMMI_ATTACH_OK;
 }
 
 typedef struct {
