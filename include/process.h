@@ -127,7 +127,18 @@ typedef enum {
     MEMMI_RESUME_OK,
     MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED,
     MEMMI_RESUME_INSUFFICIENT_PERMISSIONS,
+    MEMMI_RESUME_PARTIAL_SUCCESS,
 } memmi_ResumeStatus;
+
+typedef struct {
+    enum {
+        MEMMI_DEBUG_EVENT_NONE,
+        MEMMI_DEBUG_EVENT_NO_SUCH_PROCESS,
+        MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED,
+        MEMMI_DEBUG_EVENT_PROCESS_EXITED,
+        MEMMI_DEBUG_EVENT_PROCESS_KILLED,
+    } kind;
+} memmi_DebugEvent;
 
 memmi_ProcessList      memmi_get_running_processes(memmi_Allocator allocator);
 memmi_OpenProcess      memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
@@ -138,3 +149,4 @@ memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, m
 memmi_ThreadList       memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
 memmi_AttachStatus     memmi_attach_to_process(memmi_Process process);
 memmi_DetachStatus     memmi_detach_from_process(memmi_Process process);
+memmi_ResumeStatus    memmi_resume_process(memmi_Process process);

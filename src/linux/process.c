@@ -607,7 +607,7 @@ static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
 
     if (context->parent_pid.value != tid.value) {
         memmi_AttachStatus thread_attach_result = attach_to_thread(tid);
-        context->statuses |= thread_attach_result;
+        context->statuses |= BIT(thread_attach_result);
     }
 
     ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
@@ -626,7 +626,7 @@ static ForEachThreadResult resume_thread_cb(void *user_data, memmi_TID tid)
 
     if (tid.value != context->parent_pid.value) {
         memmi_ResumeStatus resume_result = resume_thread(tid);
-        context->statuses |= resume_result;
+        context->statuses |= BIT(resume_result);
     }
 
     // TODO: maybe this return code isn't really needed
@@ -742,6 +742,46 @@ memmi_DetachStatus memmi_detach_from_process(memmi_Process process)
             // Some errors occurred, indicating that only some of the threads
             // were detached from.
             result = MEMMI_DETACH_SOME_THREADS_DETACHED;
+        }
+    }
+
+    return result;
+}
+
+memmi_ResumeStatus memmi_resume_process(memmi_Process process)
+{
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    memmi_TID main_thread_tid = {pid.value};
+
+    memmi_ResumeStatus result = 0;
+
+    memmi_ResumeStatus main_thread_resume_result = resume_thread(main_thread_tid);
+
+    if (main_thread_resume_result != MEMMI_RESUME_OK) {
+        // If we failed to resume the main thread, count this as a complete failure.
+        result = main_thread_resume_result;
+    } else {
+        // Resuming the main thread succeeded, now try to resume the rest of the threads.
+        ResumeThreadsContext resume_cb_context = {
+            .parent_pid = pid,
+        };
+
+        bool for_each_result = for_each_thread(pid, &resume_cb_context, resume_thread_cb);
+
+        if (!for_each_result) {
+            // Process died before we had a chance to resume child threads.
+            result = MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED;
+        } else {
+            // Check if errors occured when resuming certain threads or if all succeeded.
+            uint32_t resume_errors =
+                BIT(MEMMI_RESUME_DEAD_OR_NOT_SUSPENDED) | BIT(MEMMI_RESUME_INSUFFICIENT_PERMISSIONS);
+            bool partial_resume_success = resume_cb_context.statuses & resume_errors;
+
+            if (partial_resume_success) {
+                result = MEMMI_RESUME_PARTIAL_SUCCESS;
+            } else {
+                result = MEMMI_RESUME_OK;
+            }
         }
     }
 
