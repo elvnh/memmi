@@ -6,6 +6,9 @@
 #include "allocator.h"
 #include "string8.h"
 
+// TODO: always use zero initialization for statuses
+// TODO: use common status enum
+
 typedef struct {
     int64_t value;
 } memmi_PID;
@@ -109,6 +112,8 @@ typedef struct {
     size_t     count;
 } memmi_ThreadList;
 
+
+
 typedef enum {
     MEMMI_ATTACH_OK,
     MEMMI_ATTACH_SOME_THREADS_ATTACHED,
@@ -130,15 +135,35 @@ typedef enum {
     MEMMI_RESUME_PARTIAL_SUCCESS,
 } memmi_ResumeStatus;
 
-typedef struct {
+// TODO: Report failure to get event
+typedef struct memmi_DebugEvent {
     enum {
-        MEMMI_DEBUG_EVENT_NONE,
-        MEMMI_DEBUG_EVENT_NO_SUCH_PROCESS,
         MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED,
-        MEMMI_DEBUG_EVENT_PROCESS_EXITED,
-        MEMMI_DEBUG_EVENT_PROCESS_KILLED,
+        MEMMI_DEBUG_EVENT_THREAD_STOPPED,
+        MEMMI_DEBUG_EVENT_THREAD_SUSPENDED,
+        MEMMI_DEBUG_EVENT_THREAD_EXITED,
+        MEMMI_DEBUG_EVENT_THREAD_KILLED,
     } kind;
+
+    memmi_TID id_of_affected_thread;
+
+    union {
+        struct {
+            memmi_TID id;
+        } new_thread;
+
+        struct {
+            int exit_code;
+        } thread_exited;
+    } as;
+
+    struct memmi_DebugEvent *next;
 } memmi_DebugEvent;
+
+typedef struct {
+    memmi_DebugEvent *first;
+    memmi_DebugEvent *last;
+} memmi_EventList;
 
 memmi_ProcessList      memmi_get_running_processes(memmi_Allocator allocator);
 memmi_OpenProcess      memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
@@ -149,4 +174,5 @@ memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, m
 memmi_ThreadList       memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
 memmi_AttachStatus     memmi_attach_to_process(memmi_Process process);
 memmi_DetachStatus     memmi_detach_from_process(memmi_Process process);
-memmi_ResumeStatus    memmi_resume_process(memmi_Process process);
+memmi_ResumeStatus     memmi_resume_process(memmi_Process process);
+memmi_EventList        memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);

@@ -688,6 +688,8 @@ static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
     AttachThreadsContext *context = user_data;
 
     bool is_attached = false;
+
+    // TODO: use process_is_traced_by_us
     pid_t tracer_pid = get_pid_of_tracing_process(tid_to_pid(tid));
 
     if (tracer_pid == getpid()) {
@@ -713,7 +715,6 @@ static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
 
 memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
 {
-    DEBUG_BREAK;
     memmi_AttachStatus result = 0;
 
     memmi_PID pid = get_platform_process_handle(process)->pid;
@@ -907,6 +908,153 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
         .data = context.thread_list.data,
         .count = context.thread_list.count
     };
+
+    return result;
+}
+
+static bool process_is_traced_by_us(memmi_PID pid)
+{
+    pid_t tracer_pid = get_pid_of_tracing_process(pid);
+
+    bool result = tracer_pid == getpid();
+
+    return result;
+}
+
+static bool status_is_ptrace_event(int status, int event)
+{
+    bool result = ((unsigned int)status >> 8) == (SIGTRAP | ((unsigned int)event << 8));
+
+    return result;
+}
+
+typedef enum {
+    WAITPID_HANG,
+    WAITPID_NO_HANG,
+} WaitpidHang;
+
+static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang hang, memmi_Allocator allocator)
+{
+    memmi_DebugEvent *result = 0;
+
+    memmi_PID pid = get_platform_process_handle(proc)->pid;
+
+    unsigned int waitpid_flags = __WALL;
+
+    if (hang == WAITPID_NO_HANG) {
+        waitpid_flags |= WNOHANG;
+    }
+
+    int status = 0;
+    int id_of_affected_thread = waitpid(-1, &status, (int)waitpid_flags);
+
+    DEBUG_BREAK;
+
+    if (id_of_affected_thread == -1) {
+        // TODO: report error
+        ASSERT(0);
+    } else if (id_of_affected_thread != 0) {
+        // waitpid(-1, ...) will wait on any children, not just tracees,
+        // including threads of the client process. We'll check that this is actually
+        // a tracee before reporting any events.
+
+        // TODO: make process_is_traced_by_us take native pid as arg
+        // TODO: check that parent of this thread is 'proc'
+
+        if (process_is_traced_by_us((memmi_PID){id_of_affected_thread})) {
+            result = allocate(allocator, memmi_DebugEvent, 1);
+            *result = (memmi_DebugEvent){0};
+
+            result->id_of_affected_thread = (memmi_TID){id_of_affected_thread};
+
+            if (status_is_ptrace_event(status, PTRACE_EVENT_CLONE)) {
+                // Thread created.
+                unsigned long msg = 0;
+                long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &msg);
+
+                if (get_msg_result == -1) {
+                    ASSERT(0 && "Report error");
+                } else {
+                    result->kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
+                    result->as.new_thread.id = (memmi_TID){(int64_t)msg};
+                }
+            } else if (status_is_ptrace_event(status, PTRACE_EVENT_STOP)) {
+                // Thread suspended.
+                result->kind = MEMMI_DEBUG_EVENT_THREAD_SUSPENDED;
+            } else if (WIFSTOPPED(status)) {
+                // Thread stopped, either by a stopping signal being received, a
+                // breakpoint being triggered or a single step being performed.
+
+                if (WSTOPSIG(status) == SIGTRAP) {
+                    // Either a breakpoint that was triggered or a single step,
+                    // investigate the signal code to disambiguate.
+                    ASSERT(0);
+
+                    siginfo_t sig_info = {0};
+
+                    long get_sig_result = ptrace(PTRACE_GETSIGINFO, id_of_affected_thread, 0, &sig_info);
+
+                    if (get_sig_result == -1){
+                        ASSERT(0 && "Report error");
+                    } else {
+                        ASSERT(sig_info.si_signo == SIGTRAP);
+
+                        switch (sig_info.si_code) {
+                            case SI_KERNEL:
+                            case TRAP_BRKPT: {
+                                // Breakpoint.
+                                ASSERT(0 && "Unimplemented");
+                            } break;
+
+                            case TRAP_TRACE: {
+                                ASSERT(0 && "Unimplemented");
+                                // Single step.
+                            } break;
+
+                            default: {
+                                ASSERT(0 && "Invalid?");
+                            } break;
+                        }
+                    }
+                } else {
+                    // Normal stop.
+                    result->kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
+                }
+            } else if (WIFEXITED(status)) {
+                // Child exited normally, return exit code.
+                ASSERT(0 && "Unimplemented");
+                result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+            } else if (WIFSIGNALED(status)) {
+                // Child was terminated.
+                result->kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
+                ASSERT(0);
+            } else {
+                // Not interested.
+                // TODO: allocate in each branch so we don't make an unnecessary allocation in this case
+                result = 0;
+            }
+        }
+    }
+
+    return result;
+}
+
+// TODO: allow waiting for events in specific thread
+// TODO: allowing users to pass on events to tracee
+memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator)
+{
+    memmi_EventList result = {0};
+
+    memmi_resume_process(process);
+
+    memmi_DebugEvent *event = wait_for_debug_event(process, WAITPID_HANG, allocator);
+
+    while (event) {
+        sl_push_back(&result, event);
+
+        // Keep checking for debug events without hanging in case any more were queued.
+        event = wait_for_debug_event(process, WAITPID_NO_HANG, allocator);
+    }
 
     return result;
 }

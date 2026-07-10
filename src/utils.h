@@ -32,6 +32,19 @@ do {                                                                    \
     (arr)->data[((arr)->count)++] = (item);                             \
 } while (0)
 
+#define sl_push_back(list, node)                \
+    do {                                        \
+        if ((list)->last) {                     \
+            (list)->last->next = (node);        \
+        }                                       \
+        (list)->last = (node);                  \
+                                                \
+        if (!(list)->first) {                   \
+            (list)->first = (node);             \
+        }                                       \
+                                                \
+    } while (0)
+
 #if defined(__GNUC__)
 #    define ALIGNOF(t) __alignof__(t)
 #else
