@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <assert.h>
+#include <stdio.h>
 
 #include "allocator.h"
 #include "string8.h"
@@ -53,7 +53,15 @@ do {                                                                    \
 #    error Unsupported compiler
 #endif
 
-#define ASSERT(e) assert(e)
+#define ASSERT(e) do {                                      \
+        if (!(e)) {                                         \
+            fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
+                "Expression: '%s'\nFunction: %s\n%s:%d:\n",    \
+                #e, __func__, __FILE_NAME__, __LINE__);     \
+            DEBUG_BREAK;                                    \
+        }                                                   \
+    } while (0)
+
 #define ARRAY_COUNT(arr) (sizeof((arr)) / sizeof(*(arr)))
 
 typedef struct {
