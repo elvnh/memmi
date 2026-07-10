@@ -591,6 +591,7 @@ static StatusEntry get_proc_status_entry(memmi_PID pid, memmi_String row_name)
     return result;
 }
 
+// TODO: make this take pid_t as arg
 static pid_t get_pid_of_tracing_process(memmi_PID pid)
 {
     StatusEntry entry = get_proc_status_entry(pid, str_lit("TracerPid"));
@@ -601,6 +602,21 @@ static pid_t get_pid_of_tracing_process(memmi_PID pid)
     MaybeS64 pid_opt = str_to_s64(str, NUM_BASE_DEC);
     ASSERT(pid_opt.ok);
     pid_t result = (pid_t)pid_opt.value;
+
+    return result;
+}
+
+static pid_t get_thread_group_id(pid_t tid)
+{
+    StatusEntry entry = get_proc_status_entry((memmi_PID){tid}, str_lit("Tgid"));
+    ASSERT(entry.data);
+    ASSERT(entry.count);
+
+    memmi_String tgid_str = str_from_span(entry);
+    MaybeS64 tgid_opt = str_to_s64(tgid_str, NUM_BASE_DEC);
+    ASSERT(tgid_opt.ok);
+
+    pid_t result = (pid_t)tgid_opt.value;
 
     return result;
 }
@@ -957,20 +973,17 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
     int status = 0;
     int id_of_affected_thread = waitpid(-1, &status, (int)waitpid_flags);
 
-    DEBUG_BREAK;
-
     if (id_of_affected_thread == -1) {
         // TODO: report error
         ASSERT(0);
     } else if (id_of_affected_thread != 0) {
         // waitpid(-1, ...) will wait on any children, not just tracees,
-        // including threads of the client process. We'll check that this is actually
-        // a tracee before reporting any events.
+        // including threads of the client process. We'll check that this thread
+        // actually belongs to our tracee before reporting any events.
+        pid_t thread_group_id = get_thread_group_id(id_of_affected_thread);
+        bool thread_belongs_to_traced_process = thread_group_id == pid.value;
 
-        // TODO: make process_is_traced_by_us take native pid as arg
-        // TODO: check that parent of this thread is 'proc'
-
-        if (process_is_traced_by_us((memmi_PID){id_of_affected_thread})) {
+        if (thread_belongs_to_traced_process) {
             result = allocate(allocator, memmi_DebugEvent, 1);
             *result = (memmi_DebugEvent){0};
 
@@ -1054,15 +1067,21 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
 {
     memmi_EventList result = {0};
 
-    memmi_resume_process(process);
+    memmi_PID pid = get_platform_process_handle(process)->pid;
 
-    memmi_DebugEvent *event = wait_for_debug_event(process, WAITPID_HANG, allocator);
+    if (!process_is_traced_by_us(pid)) {
+        ASSERT(0 && "Cannot wait for events in a non-traced process");
+    } else {
+        memmi_resume_process(process);
 
-    while (event) {
-        sl_push_back(&result, event);
+        memmi_DebugEvent *event = wait_for_debug_event(process, WAITPID_HANG, allocator);
 
-        // Keep checking for debug events without hanging in case any more were queued.
-        event = wait_for_debug_event(process, WAITPID_NO_HANG, allocator);
+        while (event) {
+            sl_push_back(&result, event);
+
+            // Keep checking for debug events without hanging in case any more were queued.
+            event = wait_for_debug_event(process, WAITPID_NO_HANG, allocator);
+        }
     }
 
     return result;
