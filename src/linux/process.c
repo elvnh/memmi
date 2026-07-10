@@ -636,7 +636,8 @@ static memmi_AttachStatus attach_to_thread(memmi_TID tid)
     pid_t native_tid = (pid_t)tid.value;
 
     // TODO: trace fork?
-    long seize_result = ptrace(PTRACE_SEIZE, native_tid, 0, PTRACE_O_TRACECLONE);
+    unsigned int ptrace_options = PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT;
+    long seize_result = ptrace(PTRACE_SEIZE, native_tid, 0, (int)ptrace_options);
 
     if (seize_result == -1) {
         // We failed to seize the thread, which must either be because we lack
@@ -991,18 +992,33 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
 
             if (status_is_ptrace_event(status, PTRACE_EVENT_CLONE)) {
                 // Thread created.
-                unsigned long msg = 0;
-                long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &msg);
+                result->kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
+
+                unsigned long new_thread_id = 0;
+                long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &new_thread_id);
 
                 if (get_msg_result == -1) {
                     ASSERT(0 && "Report error");
                 } else {
-                    result->kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
-                    result->as.new_thread.id = (memmi_TID){(int64_t)msg};
+
+                    result->as.new_thread.id = (memmi_TID){(int64_t)new_thread_id};
                 }
             } else if (status_is_ptrace_event(status, PTRACE_EVENT_STOP)) {
                 // Thread suspended.
                 result->kind = MEMMI_DEBUG_EVENT_THREAD_SUSPENDED;
+            } else if (status_is_ptrace_event(status, PTRACE_EVENT_EXIT)) {
+                // Thread exited.
+                result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+
+                long exit_code = 0;
+                long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &exit_code);
+
+                if (get_msg_result == -1) {
+                    ASSERT(0 && "Report error");
+                } else {
+                    // Apparently exit code is returned shifted left 8 bits...
+                    result->as.thread_exited.exit_code = (int)((unsigned int)exit_code >> 8u);
+                }
             } else if (WIFSTOPPED(status)) {
                 // Thread stopped, either by a stopping signal being received, a
                 // breakpoint being triggered or a single step being performed.
@@ -1042,10 +1058,6 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
                     // Normal stop.
                     result->kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
                 }
-            } else if (WIFEXITED(status)) {
-                // Child exited normally, return exit code.
-                ASSERT(0 && "Unimplemented");
-                result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
             } else if (WIFSIGNALED(status)) {
                 // Child was terminated.
                 result->kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
