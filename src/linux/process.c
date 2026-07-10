@@ -12,6 +12,7 @@
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 #include <limits.h>
 #include <errno.h>
 
@@ -546,41 +547,34 @@ static ForEachThreadResult resume_thread_cb(void *user_data, memmi_TID tid)
     return result;
 }
 
-static pid_t get_pid_of_tracing_process(memmi_PID pid)
+typedef struct {
+    char data[256];
+    size_t count;
+} StatusEntry;
+
+static StatusEntry get_proc_status_entry(memmi_PID pid, memmi_String row_name)
 {
+    StatusEntry result = {0};
+
     int proc_dir_fd = get_process_directory_fd(pid);
     int status_fd = openat(proc_dir_fd, "status", O_RDONLY);
-    pid_t result = -1;
 
-    // TODO: set result to -1 by default and skip all these explicit assignments
-    if ((proc_dir_fd == -1) || (status_fd == -1)) {
-        result = -1;
-    } else {
+    if ((proc_dir_fd != -1) && (status_fd != -1)) {
         FILE *status_file = fdopen(status_fd, "r");
 
-        if (!status_file) {
-            result = -1;
-        } else {
-            char buffer[256];
+        if (status_file) {
+            while (fgets(result.data, ARRAY_COUNT(result.data), status_file)) {
+                memmi_String line = str_from_c_str(result.data);
 
-            while (fgets(buffer, ARRAY_COUNT(buffer), status_file)) {
-                memmi_String line = str_from_c_str(buffer);
-
-                if (str_starts_with(line, str_lit("TracerPid"))) {
+                if (str_starts_with(line, row_name)) {
                     Cut cut = str_cut(line, str_lit(":"));
 
-                    if (!cut.ok) {
-                        result = -1;
-                    } else {
-                        memmi_String pid_str = str_trim_whitespace(cut.tail);
-                        MaybeS64 pid_opt = str_to_s64(pid_str, NUM_BASE_DEC);
+                    if (cut.ok) {
+                        memmi_String trimmed = str_trim_whitespace(cut.tail);
+                        ASSERT(trimmed.count <= ARRAY_COUNT(result.data));
 
-                        if (!pid_opt.ok) {
-                            ASSERT(0);
-                        } else {
-                            result = (pid_t)pid_opt.value;
-                        }
-
+                        memmove(result.data, trimmed.data, trimmed.count);
+                        result.count = trimmed.count;
                         break;
                     }
                 }
@@ -590,8 +584,23 @@ static pid_t get_pid_of_tracing_process(memmi_PID pid)
         fclose(status_file);
     }
 
+
     close(proc_dir_fd);
     close(status_fd);
+
+    return result;
+}
+
+static pid_t get_pid_of_tracing_process(memmi_PID pid)
+{
+    StatusEntry entry = get_proc_status_entry(pid, str_lit("TracerPid"));
+    ASSERT(entry.data);
+    ASSERT(entry.count);
+
+    memmi_String str = str_from_span(entry);
+    MaybeS64 pid_opt = str_to_s64(str, NUM_BASE_DEC);
+    ASSERT(pid_opt.ok);
+    pid_t result = (pid_t)pid_opt.value;
 
     return result;
 }

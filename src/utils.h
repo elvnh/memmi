@@ -12,6 +12,8 @@
         (new) * sizeof(*(ptr)), ALIGNOF(*(ptr)))
 #define deallocate(a, ptr, size) (a).function((a).context, (ptr), (size) * sizeof(*(ptr)), 0, 0)
 
+#define str_from_span(span) (memmi_String) {(span).data, (span).count}
+
 #if defined(__x86_64__)
 #    define DEBUG_BREAK __asm volatile("int3")
 #else
