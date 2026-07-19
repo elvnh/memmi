@@ -7,7 +7,7 @@
 #include "string8.h"
 
 // TODO: always use zero initialization for statuses
-// TODO: use common status enum
+// TODO: use common status enum so that each function doesn't define its own
 
 typedef struct {
     int64_t value;
@@ -140,6 +140,7 @@ typedef enum {
 typedef struct memmi_DebugEvent {
     enum {
         MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED,
+        MEMMI_DEBUG_EVENT_BREAKPOINT,
         MEMMI_DEBUG_EVENT_THREAD_STOPPED,
         MEMMI_DEBUG_EVENT_THREAD_SUSPENDED,
         MEMMI_DEBUG_EVENT_THREAD_EXITED,
@@ -167,8 +168,55 @@ typedef struct {
     memmi_DebugEvent *last;
 } memmi_EventList;
 
-// TODO: allow checking if process exists
+typedef enum {
+    MEMMI_REG_RAX,
+    MEMMI_REG_RCX,
+    MEMMI_REG_RDX,
+    MEMMI_REG_RSI,
+    MEMMI_REG_RDI,
+    MEMMI_REG_RSP,
+    MEMMI_REG_RBP,
+    MEMMI_REG_RBX,
 
+    MEMMI_REG_R8,
+    MEMMI_REG_R9,
+    MEMMI_REG_R10,
+    MEMMI_REG_R11,
+    MEMMI_REG_R12,
+    MEMMI_REG_R13,
+    MEMMI_REG_R14,
+    MEMMI_REG_R15,
+
+    /* MEMMI_REG_ORIG_RAX, */
+
+    MEMMI_REG_RIP,
+
+    MEMMI_REG_CS,
+    MEMMI_REG_EFLAGS,
+
+    MEMMI_REG_SS,
+    MEMMI_REG_FS_BASE,
+    MEMMI_REG_GS_BASE,
+    MEMMI_REG_DS,
+    MEMMI_REG_ES,
+    MEMMI_REG_FS,
+    MEMMI_REG_GS,
+
+    MEMMI_REG_COUNT
+} memmi_Register;
+
+typedef enum {
+    MEMMI_GET_REGS_OK,
+    MEMMI_GET_REGS_NO_SUCH_PROCESS,
+    MEMMI_GET_REGS_INSUFFICIENT_PERMISSIONS,
+} memmi_GetRegistersStatus;
+
+typedef struct {
+    memmi_GetRegistersStatus status;
+    uint64_t values[MEMMI_REG_COUNT];
+} memmi_Registers;
+
+// TODO: allow checking if process exists
 memmi_ProcessList      memmi_get_running_processes(memmi_Allocator allocator);
 memmi_OpenProcess      memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
 void                   memmi_close_process(memmi_Process process, memmi_Allocator allocator);
@@ -180,3 +228,4 @@ memmi_AttachStatus     memmi_attach_to_process(memmi_Process process);
 memmi_DetachStatus     memmi_detach_from_process(memmi_Process process);
 memmi_ResumeStatus     memmi_resume_process(memmi_Process process);
 memmi_EventList        memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
+memmi_Registers        memmi_get_registers(memmi_Process process);

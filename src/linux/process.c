@@ -7,6 +7,7 @@
 #include <sys/uio.h>
 #include <sys/wait.h>
 #include <sys/ptrace.h>
+#include <sys/user.h>
 
 #include "process.h"
 
@@ -1094,6 +1095,64 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
             // Keep checking for debug events without hanging in case any more were queued.
             event = wait_for_debug_event(process, WAITPID_NO_HANG, allocator);
         }
+    }
+
+    return result;
+}
+
+memmi_Registers memmi_get_registers(memmi_Process process)
+{
+    memmi_Registers result = {0};
+
+    struct user_regs_struct regs = {0};
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+
+    long get_regs_result = ptrace(PTRACE_GETREGS, (pid_t)pid.value, 0, &regs);
+
+    if (get_regs_result == -1) {
+        switch (errno) {
+            case EPERM: {
+                result.status = MEMMI_GET_REGS_INSUFFICIENT_PERMISSIONS;
+            } break;
+
+            case ESRCH: {
+                result.status = MEMMI_GET_REGS_NO_SUCH_PROCESS;
+            } break;
+
+            default: {
+                ASSERT(0);
+                result.status = MEMMI_GET_REGS_NO_SUCH_PROCESS;
+            } break;
+        }
+    } else {
+        result.status = MEMMI_GET_REGS_OK;
+
+        result.values[MEMMI_REG_RAX]     = regs.rax;
+        result.values[MEMMI_REG_RCX]     = regs.rcx;
+        result.values[MEMMI_REG_RDX]     = regs.rdx;
+        result.values[MEMMI_REG_RSI]     = regs.rsi;
+        result.values[MEMMI_REG_RDI]     = regs.rdi;
+        result.values[MEMMI_REG_RSP]     = regs.rsp;
+        result.values[MEMMI_REG_RBP]     = regs.rbp;
+        result.values[MEMMI_REG_RBX]     = regs.rbx;
+        result.values[MEMMI_REG_R8]      = regs.r8;
+        result.values[MEMMI_REG_R9]      = regs.r9;
+        result.values[MEMMI_REG_R10]     = regs.r10;
+        result.values[MEMMI_REG_R11]     = regs.r11;
+        result.values[MEMMI_REG_R12]     = regs.r12;
+        result.values[MEMMI_REG_R13]     = regs.r13;
+        result.values[MEMMI_REG_R14]     = regs.r14;
+        result.values[MEMMI_REG_R15]     = regs.r15;
+        result.values[MEMMI_REG_RIP]     = regs.rip;
+        result.values[MEMMI_REG_CS]      = regs.cs;
+        result.values[MEMMI_REG_EFLAGS]  = regs.eflags;
+        result.values[MEMMI_REG_SS]      = regs.ss;
+        result.values[MEMMI_REG_FS_BASE] = regs.fs_base;
+        result.values[MEMMI_REG_GS_BASE] = regs.gs_base;
+        result.values[MEMMI_REG_DS]      = regs.ds;
+        result.values[MEMMI_REG_ES]      = regs.es;
+        result.values[MEMMI_REG_FS]      = regs.fs;
+        result.values[MEMMI_REG_GS]      = regs.gs;
     }
 
     return result;
