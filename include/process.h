@@ -136,6 +136,7 @@ typedef enum {
 } memmi_ResumeStatus;
 
 // TODO: Report failure to get event
+// TODO: is both THREAD_SUSPENDED and THREAD_STOPPED needed?
 typedef struct memmi_DebugEvent {
     enum {
         MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED,
@@ -143,6 +144,7 @@ typedef struct memmi_DebugEvent {
         MEMMI_DEBUG_EVENT_THREAD_SUSPENDED,
         MEMMI_DEBUG_EVENT_THREAD_EXITED,
         MEMMI_DEBUG_EVENT_THREAD_KILLED,
+        MEMMI_DEBUG_EVENT_THREAD_RESUMED,
     } kind;
 
     memmi_TID id_of_affected_thread;
@@ -164,6 +166,8 @@ typedef struct {
     memmi_DebugEvent *first;
     memmi_DebugEvent *last;
 } memmi_EventList;
+
+// TODO: allow checking if process exists
 
 memmi_ProcessList      memmi_get_running_processes(memmi_Allocator allocator);
 memmi_OpenProcess      memmi_open_process(memmi_PID pid, memmi_Allocator allocator);

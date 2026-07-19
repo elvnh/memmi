@@ -40,12 +40,12 @@ int main(int argc, char **argv)
                     printf("thread suspended\n");
                 } break;
 
-                case MEMMI_DEBUG_EVENT_THREAD_STOPPED: {
-                    printf("thread stopped\n");
-                } break;
+                /* case MEMMI_DEBUG_EVENT_THREAD_STOPPED: { */
+                /*     printf("thread stopped\n"); */
+                /* } break; */
 
                 case MEMMI_DEBUG_EVENT_THREAD_EXITED: {
-                    printf("thread exited with code: x\n");
+                    printf("thread exited with code: %d\n", event->as.thread_exited.exit_code);
                 } break;
                 default: {
 
