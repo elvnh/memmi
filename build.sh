@@ -39,4 +39,4 @@ CFLAGS="
 "
 
 gcc ${CFLAGS} main.c -Iinclude -Isrc src/*.c src/**/*.c -o memmi;
-g++ -Wall -Wextra -ggdb test.cpp;
+g++ -Wall -Wextra -ggdb test.cpp -o test;

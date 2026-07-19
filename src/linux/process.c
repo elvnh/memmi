@@ -1000,7 +1000,7 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
 
             DEBUG_BREAK;
 
-            if (get_sig_result == -1){
+            if (get_sig_result == -1) {
                 ASSERT(0 && "TODO: Report error");
             } else {
                 switch (sig_info.si_code) {
@@ -1047,9 +1047,17 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
                         } else if (WIFSIGNALED(status)) {
                             result->kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
                         } else if (WIFSTOPPED(status)) {
-                            result->kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
+                            int signal = WSTOPSIG(status);
+
+                            if (signal == SIGTRAP) {
+                                // TODO: report pc register
+                                // TODO: ensure that this works for hardware breakpoints too
+                                result->kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
+                            } else {
+                                result->kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
+                            }
                         } else if (WIFCONTINUED(status)) {
-                            ASSERT(0 && "Unimplemented");
+                            ASSERT(0 && "Unimplemented, how should this be handled?");
                         } else {
                             ASSERT(0 && "Unreachable");
                         }
