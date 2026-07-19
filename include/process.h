@@ -168,6 +168,7 @@ typedef struct {
     memmi_DebugEvent *last;
 } memmi_EventList;
 
+// TODO: floating point registers
 typedef enum {
     MEMMI_REG_RAX,
     MEMMI_REG_RCX,
@@ -211,21 +212,28 @@ typedef enum {
     MEMMI_GET_REGS_INSUFFICIENT_PERMISSIONS,
 } memmi_GetRegistersStatus;
 
+typedef enum {
+    MEMMI_SET_REGS_OK,
+    MEMMI_SET_REGS_NO_SUCH_PROCESS,
+    MEMMI_SET_REGS_INSUFFICIENT_PERMISSIONS,
+} memmi_SetRegistersStatus;
+
 typedef struct {
     memmi_GetRegistersStatus status;
     uint64_t values[MEMMI_REG_COUNT];
 } memmi_Registers;
 
 // TODO: allow checking if process exists
-memmi_ProcessList      memmi_get_running_processes(memmi_Allocator allocator);
-memmi_OpenProcess      memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
-void                   memmi_close_process(memmi_Process process, memmi_Allocator allocator);
-memmi_ReadMemory       memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator);
-memmi_WriteMemory      memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size);
-memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator);
-memmi_ThreadList       memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
-memmi_AttachStatus     memmi_attach_to_process(memmi_Process process);
-memmi_DetachStatus     memmi_detach_from_process(memmi_Process process);
-memmi_ResumeStatus     memmi_resume_process(memmi_Process process);
-memmi_EventList        memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
-memmi_Registers        memmi_get_registers(memmi_Process process);
+memmi_ProcessList        memmi_get_running_processes(memmi_Allocator allocator);
+memmi_OpenProcess        memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
+void                     memmi_close_process(memmi_Process process, memmi_Allocator allocator);
+memmi_ReadMemory         memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator);
+memmi_WriteMemory        memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size);
+memmi_GetMemoryRegions   memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator);
+memmi_ThreadList         memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
+memmi_AttachStatus       memmi_attach_to_process(memmi_Process process);
+memmi_DetachStatus       memmi_detach_from_process(memmi_Process process);
+memmi_ResumeStatus       memmi_resume_process(memmi_Process process);
+memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
+memmi_Registers          memmi_get_registers(memmi_Process process);
+memmi_SetRegistersStatus memmi_set_register(memmi_Process process, memmi_Register reg, uint64_t value);

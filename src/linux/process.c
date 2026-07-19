@@ -1100,6 +1100,123 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
     return result;
 }
 
+static unsigned long long *get_user_regs_member_pointer(struct user_regs_struct *regs, memmi_Register reg)
+{
+    unsigned long long *result = 0;
+
+    switch (reg) {
+        case MEMMI_REG_RAX: {
+            result = &regs->rax;
+        } break;
+
+        case MEMMI_REG_RCX: {
+            result = &regs->rcx;
+        } break;
+
+        case MEMMI_REG_RDX: {
+            result = &regs->rdx;
+        } break;
+
+        case MEMMI_REG_RSI: {
+            result = &regs->rsi;
+        } break;
+
+        case MEMMI_REG_RDI: {
+            result = &regs->rdi;
+        } break;
+
+        case MEMMI_REG_RSP: {
+            result = &regs->rsp;
+        } break;
+
+        case MEMMI_REG_RBP: {
+            result = &regs->rbp;
+        } break;
+
+        case MEMMI_REG_RBX: {
+            result = &regs->rbx;
+        } break;
+
+        case MEMMI_REG_R8: {
+            result = &regs->r8;
+        } break;
+
+        case MEMMI_REG_R9: {
+            result = &regs->r9;
+        } break;
+
+        case MEMMI_REG_R10: {
+            result = &regs->r10;
+        } break;
+
+        case MEMMI_REG_R11: {
+            result = &regs->r11;
+        } break;
+
+        case MEMMI_REG_R12: {
+            result = &regs->r12;
+        } break;
+
+        case MEMMI_REG_R13: {
+            result = &regs->r13;
+        } break;
+
+        case MEMMI_REG_R14: {
+            result = &regs->r14;
+        } break;
+
+        case MEMMI_REG_R15: {
+            result = &regs->r15;
+        } break;
+
+        case MEMMI_REG_RIP: {
+            result = &regs->rip;
+        } break;
+
+        case MEMMI_REG_CS: {
+            result = &regs->cs;
+        } break;
+
+        case MEMMI_REG_EFLAGS: {
+            result = &regs->eflags;
+        } break;
+
+        case MEMMI_REG_SS: {
+            result = &regs->ss;
+        } break;
+
+        case MEMMI_REG_FS_BASE: {
+            result = &regs->fs_base;
+        } break;
+
+        case MEMMI_REG_GS_BASE: {
+            result = &regs->gs_base;
+        } break;
+
+        case MEMMI_REG_DS: {
+            result = &regs->ds;
+        } break;
+
+        case MEMMI_REG_ES: {
+            result = &regs->es;
+        } break;
+
+        case MEMMI_REG_FS: {
+            result = &regs->fs;
+        } break;
+
+        case MEMMI_REG_GS: {
+            result = &regs->gs;
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+}
+
 memmi_Registers memmi_get_registers(memmi_Process process)
 {
     memmi_Registers result = {0};
@@ -1127,32 +1244,63 @@ memmi_Registers memmi_get_registers(memmi_Process process)
     } else {
         result.status = MEMMI_GET_REGS_OK;
 
-        result.values[MEMMI_REG_RAX]     = regs.rax;
-        result.values[MEMMI_REG_RCX]     = regs.rcx;
-        result.values[MEMMI_REG_RDX]     = regs.rdx;
-        result.values[MEMMI_REG_RSI]     = regs.rsi;
-        result.values[MEMMI_REG_RDI]     = regs.rdi;
-        result.values[MEMMI_REG_RSP]     = regs.rsp;
-        result.values[MEMMI_REG_RBP]     = regs.rbp;
-        result.values[MEMMI_REG_RBX]     = regs.rbx;
-        result.values[MEMMI_REG_R8]      = regs.r8;
-        result.values[MEMMI_REG_R9]      = regs.r9;
-        result.values[MEMMI_REG_R10]     = regs.r10;
-        result.values[MEMMI_REG_R11]     = regs.r11;
-        result.values[MEMMI_REG_R12]     = regs.r12;
-        result.values[MEMMI_REG_R13]     = regs.r13;
-        result.values[MEMMI_REG_R14]     = regs.r14;
-        result.values[MEMMI_REG_R15]     = regs.r15;
-        result.values[MEMMI_REG_RIP]     = regs.rip;
-        result.values[MEMMI_REG_CS]      = regs.cs;
-        result.values[MEMMI_REG_EFLAGS]  = regs.eflags;
-        result.values[MEMMI_REG_SS]      = regs.ss;
-        result.values[MEMMI_REG_FS_BASE] = regs.fs_base;
-        result.values[MEMMI_REG_GS_BASE] = regs.gs_base;
-        result.values[MEMMI_REG_DS]      = regs.ds;
-        result.values[MEMMI_REG_ES]      = regs.es;
-        result.values[MEMMI_REG_FS]      = regs.fs;
-        result.values[MEMMI_REG_GS]      = regs.gs;
+        for (memmi_Register r = 0; r < MEMMI_REG_COUNT; ++r) {
+            result.values[r] = *get_user_regs_member_pointer(&regs, r);
+        }
+    }
+
+    return result;
+}
+
+// TODO: allow setting all registers at once
+memmi_SetRegistersStatus memmi_set_register(memmi_Process process, memmi_Register reg, uint64_t value)
+{
+    memmi_SetRegistersStatus result = MEMMI_SET_REGS_NO_SUCH_PROCESS;
+
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+
+    struct user_regs_struct regs = {0};
+    long get_regs_result = ptrace(PTRACE_GETREGS, (pid_t)pid.value, 0, &regs);
+
+    if (get_regs_result == -1) {
+        // TODO: Code duplication
+        switch (errno) {
+            case EPERM: {
+                result = MEMMI_SET_REGS_INSUFFICIENT_PERMISSIONS;
+            } break;
+
+            case ESRCH: {
+                result = MEMMI_SET_REGS_NO_SUCH_PROCESS;
+            } break;
+
+            default: {
+                ASSERT(0);
+                result = MEMMI_SET_REGS_NO_SUCH_PROCESS;
+            } break;
+        }
+    } else {
+        *get_user_regs_member_pointer(&regs, reg) = value;
+
+        long set_regs_result = ptrace(PTRACE_SETREGS, (pid_t)pid.value, 0, &regs);
+
+        if (set_regs_result == -1) {
+            switch (errno) {
+                case EPERM: {
+                    result = MEMMI_SET_REGS_INSUFFICIENT_PERMISSIONS;
+                } break;
+
+                case ESRCH: {
+                    result = MEMMI_SET_REGS_NO_SUCH_PROCESS;
+                } break;
+
+                default: {
+                    ASSERT(0);
+                    result = MEMMI_SET_REGS_NO_SUCH_PROCESS;
+                } break;
+            }
+        } else {
+            result = MEMMI_SET_REGS_OK;
+        }
     }
 
     return result;
