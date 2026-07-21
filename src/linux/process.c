@@ -139,13 +139,13 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     return result;
 }
 
-static int get_process_directory_fd(memmi_PID pid)
+static int get_process_directory_fd(pid_t pid)
 {
     DIR *proc_dir = opendir("/proc");
     int proc_dir_fd = dirfd(proc_dir);
 
     char buf[64];
-    snprintf(buf, ARRAY_COUNT(buf), "%ld", pid.value);
+    snprintf(buf, ARRAY_COUNT(buf), "%d", pid);
 
     int result = openat(proc_dir_fd, buf, O_RDONLY);
 
@@ -403,8 +403,9 @@ memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, m
     RegionDynArray regions = {0};
 
     memmi_PID pid = get_platform_process_handle(process)->pid;
+    pid_t native_pid = (pid_t)pid.value;
 
-    int proc_dir_fd = get_process_directory_fd(pid);
+    int proc_dir_fd = get_process_directory_fd(native_pid);
     int maps_fd = openat(proc_dir_fd, "maps", O_RDONLY);
 
     FILE *maps_file = fdopen(maps_fd, "r");
@@ -451,12 +452,12 @@ static int get_signal_from_wait_status(int status)
     return result;
 }
 
-static memmi_ResumeStatus resume_thread(memmi_TID tid)
+static memmi_ResumeStatus resume_thread(pid_t tid)
 {
     memmi_ResumeStatus result = MEMMI_RESUME_OK;
 
     // TODO: Do we need to waitpid for the signal to be received?
-    long resume_result = ptrace(PTRACE_CONT, (pid_t)tid.value, 0, 0);
+    long resume_result = ptrace(PTRACE_CONT, tid, 0, 0);
 
     if (resume_result == -1) {
         switch (errno) {
@@ -483,11 +484,11 @@ typedef enum {
     FOR_EACH_THREAD_RES_BREAK,
 } ForEachThreadResult;
 
-typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, memmi_TID tid);
+typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, pid_t tid);
 
 // TODO: generalize this to iterating through all subdirs
 // TODO: return error enum from this function, not a bool
-static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
+static bool for_each_thread(pid_t pid, void *user_data, ForEachThreadFn fn)
 {
     int proc_dir_fd = get_process_directory_fd(pid);
     int threads_dir_fd = openat(proc_dir_fd, "task", O_RDONLY);
@@ -511,7 +512,7 @@ static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
             MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
 
             if (tid_opt.ok) {
-                memmi_TID tid = {tid_opt.value};
+                pid_t tid = (pid_t)tid_opt.value;
 
                 ForEachThreadResult cb_result = fn(user_data, tid);
 
@@ -528,17 +529,16 @@ static bool for_each_thread(memmi_PID pid, void *user_data, ForEachThreadFn fn)
     return result;
 }
 
-
 typedef struct {
-    memmi_PID parent_pid;
+    pid_t parent_pid;
     memmi_ResumeStatus statuses;
 } ResumeThreadsContext;
 
-static ForEachThreadResult resume_thread_cb(void *user_data, memmi_TID tid)
+static ForEachThreadResult resume_thread_cb(void *user_data, pid_t tid)
 {
     ResumeThreadsContext *context = user_data;
 
-    if (tid.value != context->parent_pid.value) {
+    if (tid != context->parent_pid) {
         memmi_ResumeStatus resume_result = resume_thread(tid);
         context->statuses |= BIT(resume_result);
     }
@@ -554,11 +554,11 @@ typedef struct {
     size_t count;
 } StatusEntry;
 
-static StatusEntry get_proc_status_entry(memmi_PID pid, memmi_String row_name)
+static StatusEntry get_proc_status_entry(pid_t tid, memmi_String row_name)
 {
     StatusEntry result = {0};
 
-    int proc_dir_fd = get_process_directory_fd(pid);
+    int proc_dir_fd = get_process_directory_fd(tid);
     int status_fd = openat(proc_dir_fd, "status", O_RDONLY);
 
     if ((proc_dir_fd != -1) && (status_fd != -1)) {
@@ -592,10 +592,10 @@ static StatusEntry get_proc_status_entry(memmi_PID pid, memmi_String row_name)
     return result;
 }
 
-// TODO: make this take pid_t as arg
-static pid_t get_pid_of_tracing_process(memmi_PID pid)
+// TODO: take pid_t as arg
+static pid_t get_pid_of_tracing_process(pid_t tid)
 {
-    StatusEntry entry = get_proc_status_entry(pid, str_lit("TracerPid"));
+    StatusEntry entry = get_proc_status_entry(tid, str_lit("TracerPid"));
     ASSERT(entry.data);
     ASSERT(entry.count);
 
@@ -609,7 +609,7 @@ static pid_t get_pid_of_tracing_process(memmi_PID pid)
 
 static pid_t get_thread_group_id(pid_t tid)
 {
-    StatusEntry entry = get_proc_status_entry((memmi_PID){tid}, str_lit("Tgid"));
+    StatusEntry entry = get_proc_status_entry(tid, str_lit("Tgid"));
     ASSERT(entry.data);
     ASSERT(entry.count);
 
@@ -622,23 +622,13 @@ static pid_t get_thread_group_id(pid_t tid)
     return result;
 }
 
-// TODO: move elsewhere
-static memmi_PID tid_to_pid(memmi_TID tid)
-{
-    memmi_PID result = {tid.value};
-
-    return result;
-}
-
-static memmi_AttachStatus attach_to_thread(memmi_TID tid)
+static memmi_AttachStatus attach_to_thread(pid_t tid)
 {
     memmi_AttachStatus result = 0;
 
-    pid_t native_tid = (pid_t)tid.value;
-
     // TODO: trace fork?
     unsigned int ptrace_options = PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT;
-    long seize_result = ptrace(PTRACE_SEIZE, native_tid, 0, (int)ptrace_options);
+    long seize_result = ptrace(PTRACE_SEIZE, tid, 0, (int)ptrace_options);
 
     if (seize_result == -1) {
         // We failed to seize the thread, which must either be because we lack
@@ -650,7 +640,7 @@ static memmi_AttachStatus attach_to_thread(memmi_TID tid)
             result = MEMMI_ATTACH_INSUFFICIENT_PERMISSIONS;
         }
     } else {
-        long interrupt_result = ptrace(PTRACE_INTERRUPT, native_tid, 0, 0);
+        long interrupt_result = ptrace(PTRACE_INTERRUPT, tid, 0, 0);
 
         if (interrupt_result == -1) {
             // We failed to interrupt the thread, most likely because the thread
@@ -671,7 +661,7 @@ static memmi_AttachStatus attach_to_thread(memmi_TID tid)
             // it, now we have to wait for it to actually receive the signal.
             while (true) {
                 int status = 0;
-                int waitpid_result = waitpid(native_tid, &status, __WALL);
+                int waitpid_result = waitpid(tid, &status, __WALL);
 
                 if (waitpid_result == -1) {
                     result = MEMMI_ATTACH_NO_SUCH_PROCESS;
@@ -682,7 +672,7 @@ static memmi_AttachStatus attach_to_thread(memmi_TID tid)
                 } else {
                     // The thread received another signal, reinject it and try again.
                     int signal = get_signal_from_wait_status(signal);
-                    long reinject_result = ptrace(PTRACE_CONT, native_tid, 0, signal);
+                    long reinject_result = ptrace(PTRACE_CONT, tid, 0, signal);
 
                     if (reinject_result == -1) {
                         // Reinjecting the signal failed, either because the
@@ -709,14 +699,15 @@ typedef struct {
     int32_t suspended_thread_count;
 } AttachThreadsContext;
 
-static ForEachThreadResult attach_to_thread_cb(void *user_data, memmi_TID tid)
+// TODO: take pid_t as arg
+static ForEachThreadResult attach_to_thread_cb(void *user_data, pid_t tid)
 {
     AttachThreadsContext *context = user_data;
 
     bool is_attached = false;
 
     // TODO: use process_is_traced_by_us
-    pid_t tracer_pid = get_pid_of_tracing_process(tid_to_pid(tid));
+    pid_t tracer_pid = get_pid_of_tracing_process(tid);
 
     if (tracer_pid == getpid()) {
         // We are already attached to this process, nothing to do here.
@@ -743,10 +734,11 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
 {
     memmi_AttachStatus result = 0;
 
+    // TODO: only native_pid is needed now
     memmi_PID pid = get_platform_process_handle(process)->pid;
-    memmi_TID main_thread_id = {pid.value};
+    pid_t native_pid = (pid_t)pid.value;
 
-    memmi_AttachStatus main_thread_attach_result = attach_to_thread(main_thread_id);
+    memmi_AttachStatus main_thread_attach_result = attach_to_thread(native_pid);
 
     if (main_thread_attach_result != MEMMI_ATTACH_OK) {
         result = main_thread_attach_result;
@@ -768,7 +760,7 @@ memmi_AttachStatus memmi_attach_to_process(memmi_Process process)
             // about the results from the last iteration.
             cb_context = (AttachThreadsContext){0};
 
-            for_each_thread(pid, &cb_context, attach_to_thread_cb);
+            for_each_thread(native_pid, &cb_context, attach_to_thread_cb);
 
             if (cb_context.suspended_thread_count <= last_attached_thread_count) {
                 // The number of threads we attached to has not grown since last
@@ -809,12 +801,11 @@ typedef struct {
     memmi_DetachStatus statuses;
 } DetachContext;
 
-static ForEachThreadResult detach_from_thread_cb(void *user_data, memmi_TID tid)
+static ForEachThreadResult detach_from_thread_cb(void *user_data, pid_t tid)
 {
     DetachContext *context = user_data;
-    pid_t native_tid = (pid_t)tid.value;
 
-    long detach_result = ptrace(PTRACE_DETACH, native_tid, 0, 0);
+    long detach_result = ptrace(PTRACE_DETACH, tid, 0, 0);
 
     if (detach_result == -1) {
         memmi_DetachStatus status = 0;
@@ -843,9 +834,11 @@ memmi_DetachStatus memmi_detach_from_process(memmi_Process process)
     // NOTE: we assume that the function is suspended
     // TODO: clear breakpoints etc
     memmi_PID pid = get_platform_process_handle(process)->pid;
+    pid_t native_pid = (pid_t)pid.value;
+
     DetachContext context = {0};
 
-    bool for_each_result = for_each_thread(pid, &context, detach_from_thread_cb);
+    bool for_each_result = for_each_thread(native_pid, &context, detach_from_thread_cb);
 
     memmi_DetachStatus result = 0;
 
@@ -870,11 +863,11 @@ memmi_DetachStatus memmi_detach_from_process(memmi_Process process)
 memmi_ResumeStatus memmi_resume_process(memmi_Process process)
 {
     memmi_PID pid = get_platform_process_handle(process)->pid;
-    memmi_TID main_thread_tid = {pid.value};
+    pid_t native_pid = (pid_t)pid.value;
 
     memmi_ResumeStatus result = 0;
 
-    memmi_ResumeStatus main_thread_resume_result = resume_thread(main_thread_tid);
+    memmi_ResumeStatus main_thread_resume_result = resume_thread(native_pid);
 
     if (main_thread_resume_result != MEMMI_RESUME_OK) {
         // If we failed to resume the main thread, count this as a complete failure.
@@ -882,10 +875,10 @@ memmi_ResumeStatus memmi_resume_process(memmi_Process process)
     } else {
         // Resuming the main thread succeeded, now try to resume the rest of the threads.
         ResumeThreadsContext resume_cb_context = {
-            .parent_pid = pid,
+            .parent_pid = native_pid,
         };
 
-        bool for_each_result = for_each_thread(pid, &resume_cb_context, resume_thread_cb);
+        bool for_each_result = for_each_thread(native_pid, &resume_cb_context, resume_thread_cb);
 
         if (!for_each_result) {
             // Process died before we had a chance to resume child threads.
@@ -907,12 +900,11 @@ memmi_ResumeStatus memmi_resume_process(memmi_Process process)
     return result;
 }
 
-static memmi_SuspendStatus suspend_thread(memmi_TID tid)
+static memmi_SuspendStatus suspend_thread(pid_t tid)
 {
     memmi_SuspendStatus result = 0;
 
-    pid_t native_tid = (pid_t)tid.value;
-    long interrupt_result = ptrace(PTRACE_INTERRUPT, native_tid, 0, 0);
+    long interrupt_result = ptrace(PTRACE_INTERRUPT, tid, 0, 0);
 
     if (interrupt_result == -1) {
         if (errno == EPERM) {
@@ -923,7 +915,7 @@ static memmi_SuspendStatus suspend_thread(memmi_TID tid)
     } else {
         int status = 0;
         // TODO: prevent hanging if process is already suspended
-        int waitpid_result = waitpid(native_tid, &status, __WALL);
+        int waitpid_result = waitpid(tid, &status, __WALL);
 
         if (waitpid_result == -1) {
             result = MEMMI_SUSPEND_NO_SUCH_PROCESS;
@@ -946,7 +938,7 @@ typedef struct {
     int32_t suspended_thread_count;
 } SuspendThreadsContext;
 
-static ForEachThreadResult suspend_thread_cb(void *user_data, memmi_TID tid)
+static ForEachThreadResult suspend_thread_cb(void *user_data, pid_t tid)
 {
     DEBUG_BREAK;
 
@@ -954,7 +946,7 @@ static ForEachThreadResult suspend_thread_cb(void *user_data, memmi_TID tid)
 
     bool is_suspended = false;
     // TODO: make get_proc_status_entry take tid as arg
-    StatusEntry state_entry = get_proc_status_entry((memmi_PID){tid.value}, str_lit("State"));
+    StatusEntry state_entry = get_proc_status_entry(tid, str_lit("State"));
 
     if (state_entry.count <= 0) {
         // Failed to get state for thread, probably because the thread died.
@@ -993,9 +985,9 @@ memmi_SuspendStatus memmi_suspend_process(memmi_Process process)
     memmi_SuspendStatus result = 0;
 
     memmi_PID pid = get_platform_process_handle(process)->pid;
-    memmi_TID main_thread_id = {pid.value};
+    pid_t native_pid = (pid_t)pid.value;
 
-    memmi_SuspendStatus main_thread_suspend_result = suspend_thread(main_thread_id);
+    memmi_SuspendStatus main_thread_suspend_result = suspend_thread(native_pid);
 
     // TODO: code duplication between this and memmi_attach_to_process
     if (main_thread_suspend_result != MEMMI_SUSPEND_OK) {
@@ -1011,7 +1003,7 @@ memmi_SuspendStatus memmi_suspend_process(memmi_Process process)
             // has stabilized.
             cb_context = (SuspendThreadsContext){0};
 
-            for_each_thread(pid, &cb_context, suspend_thread_cb);
+            for_each_thread(native_pid, &cb_context, suspend_thread_cb);
 
             if (cb_context.suspended_thread_count <= last_suspended_thread_count) {
                 suspended_thread_count_is_stable = true;
@@ -1045,10 +1037,10 @@ typedef struct {
     memmi_Allocator allocator;
 } CollectThreadsContext;
 
-static ForEachThreadResult collect_threads(void *user_data, memmi_TID tid)
+static ForEachThreadResult collect_threads(void *user_data, pid_t tid)
 {
     CollectThreadsContext *context = user_data;
-    dyn_arr_push(&context->thread_list, tid, context->allocator);
+    dyn_arr_push(&context->thread_list, (memmi_TID){tid}, context->allocator);
 
     return FOR_EACH_THREAD_RES_CONTINUE;
 }
@@ -1056,12 +1048,13 @@ static ForEachThreadResult collect_threads(void *user_data, memmi_TID tid)
 memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
 {
     memmi_PID pid = get_platform_process_handle(process)->pid;
+    pid_t native_pid = (pid_t)pid.value;
 
     CollectThreadsContext context = {
         .allocator = allocator
     };
 
-    for_each_thread(pid, &context, collect_threads);
+    for_each_thread(native_pid, &context, collect_threads);
 
     memmi_ThreadList result = {
         .data = context.thread_list.data,
@@ -1071,18 +1064,11 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
     return result;
 }
 
-static bool process_is_traced_by_us(memmi_PID pid)
+static bool thread_is_traced_by_us(pid_t pid)
 {
     pid_t tracer_pid = get_pid_of_tracing_process(pid);
 
     bool result = tracer_pid == getpid();
-
-    return result;
-}
-
-static bool status_is_ptrace_event(int status, int event)
-{
-    bool result = ((unsigned int)status >> 8) == (SIGTRAP | ((unsigned int)event << 8));
 
     return result;
 }
@@ -1211,10 +1197,12 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
     memmi_EventList result = {0};
 
     memmi_PID pid = get_platform_process_handle(process)->pid;
+    pid_t native_pid = (pid_t)pid.value;
 
     // TODO: check that process exists
 
-    if (!process_is_traced_by_us(pid)) {
+    // TODO: do we need to check that all threads are traced by us too?
+    if (!thread_is_traced_by_us(native_pid)) {
         ASSERT(0 && "Cannot wait for events in a non-traced process");
     } else {
         memmi_resume_process(process);
@@ -1470,7 +1458,7 @@ static size_t get_user_struct_debug_register_offset(DebugRegister reg)
     return result;
 }
 
-static DebugRegisters get_thread_debug_registers(memmi_TID tid)
+static DebugRegisters get_thread_debug_registers(pid_t tid)
 {
     DebugRegisters result = {0};
 
@@ -1479,7 +1467,7 @@ static DebugRegisters get_thread_debug_registers(memmi_TID tid)
     for (DebugRegister reg = 0; reg < DEBUG_REG_COUNT; ++reg) {
         size_t reg_offset = get_user_struct_debug_register_offset(reg);
 
-        long value = ptrace(PTRACE_PEEKUSER, (pid_t)tid.value, reg_offset, 0);
+        long value = ptrace(PTRACE_PEEKUSER, tid, reg_offset, 0);
 
         if (errno != 0) {
             ASSERT(0);
@@ -1492,12 +1480,12 @@ static DebugRegisters get_thread_debug_registers(memmi_TID tid)
     return result;
 }
 
-static memmi_SetRegistersStatus set_thread_debug_register(memmi_TID tid, DebugRegister reg, uint64_t value)
+static memmi_SetRegistersStatus set_thread_debug_register(pid_t tid, DebugRegister reg, uint64_t value)
 {
     memmi_SetRegistersStatus result = 0;
 
     size_t debug_reg_offset = get_user_struct_debug_register_offset(reg);
-    long poke_result = ptrace(PTRACE_POKEUSER, (pid_t)tid.value, debug_reg_offset, value);
+    long poke_result = ptrace(PTRACE_POKEUSER, tid, debug_reg_offset, value);
 
     if (poke_result == -1) {
         if (errno == EPERM) {
@@ -1635,7 +1623,7 @@ typedef struct {
 } HardwareBreakpointContext;
 
 // TODO: report errors
-ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data, memmi_TID tid)
+ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data, pid_t tid)
 {
     HardwareBreakpointContext *context = user_data;
 
@@ -1669,6 +1657,7 @@ memmi_SetBreakpointResult memmi_set_hardware_breakpoint(memmi_Process process, u
         result = MEMMI_SET_BREAKPOINT_INVALID_INDEX;
     } else {
         memmi_PID pid = get_platform_process_handle(process)->pid;
+        pid_t native_pid = (pid_t)pid.value;
 
         HardwareBreakpointContext context = {0};
         context.index = index;
@@ -1676,7 +1665,7 @@ memmi_SetBreakpointResult memmi_set_hardware_breakpoint(memmi_Process process, u
         context.condition = condition;
         context.length = length;
 
-        bool for_each_result = for_each_thread(pid, &context, set_hardware_breakpoint_on_thread_cb);
+        bool for_each_result = for_each_thread(native_pid, &context, set_hardware_breakpoint_on_thread_cb);
 
         if (!for_each_result) {
             result = MEMMI_SET_BREAKPOINT_NO_SUCH_PROCESS;

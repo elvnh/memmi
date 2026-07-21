@@ -8,7 +8,7 @@
 
 /*
   TODO:
-  - Opaque thread handle
+  - Opaque thread handle?
   - Store pid in opaque process handle
   - always use zero initialization for statuses
   - use common status enum so that each function doesn't define its own
