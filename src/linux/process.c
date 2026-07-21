@@ -1217,14 +1217,13 @@ static unsigned long long *get_user_regs_member_pointer(struct user_regs_struct 
     return result;
 }
 
-memmi_Registers memmi_get_registers(memmi_Process process)
+memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 {
     memmi_Registers result = {0};
 
     struct user_regs_struct regs = {0};
-    memmi_PID pid = get_platform_process_handle(process)->pid;
 
-    long get_regs_result = ptrace(PTRACE_GETREGS, (pid_t)pid.value, 0, &regs);
+    long get_regs_result = ptrace(PTRACE_GETREGS, (pid_t)tid.value, 0, &regs);
 
     if (get_regs_result == -1) {
         switch (errno) {
@@ -1253,14 +1252,12 @@ memmi_Registers memmi_get_registers(memmi_Process process)
 }
 
 // TODO: allow setting all registers at once
-memmi_SetRegistersStatus memmi_set_register(memmi_Process process, memmi_Register reg, uint64_t value)
+memmi_SetRegistersStatus memmi_set_register(memmi_TID tid, memmi_Register reg, uint64_t value)
 {
     memmi_SetRegistersStatus result = MEMMI_SET_REGS_NO_SUCH_PROCESS;
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-
     struct user_regs_struct regs = {0};
-    long get_regs_result = ptrace(PTRACE_GETREGS, (pid_t)pid.value, 0, &regs);
+    long get_regs_result = ptrace(PTRACE_GETREGS, (pid_t)tid.value, 0, &regs);
 
     if (get_regs_result == -1) {
         // TODO: Code duplication
@@ -1281,7 +1278,7 @@ memmi_SetRegistersStatus memmi_set_register(memmi_Process process, memmi_Registe
     } else {
         *get_user_regs_member_pointer(&regs, reg) = value;
 
-        long set_regs_result = ptrace(PTRACE_SETREGS, (pid_t)pid.value, 0, &regs);
+        long set_regs_result = ptrace(PTRACE_SETREGS, (pid_t)tid.value, 0, &regs);
 
         if (set_regs_result == -1) {
             switch (errno) {

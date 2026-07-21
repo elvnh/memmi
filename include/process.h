@@ -230,7 +230,7 @@ typedef enum {
 
 typedef struct {
     memmi_GetRegistersStatus status;
-    uint64_t values[MEMMI_REG_COUNT];
+    uint64_t values[MEMMI_REG_COUNT]; // TODO: typedef register values to make porting to other arch easier
 } memmi_Registers;
 
 // TODO: allow checking if process exists
@@ -245,8 +245,8 @@ memmi_AttachStatus       memmi_attach_to_process(memmi_Process process);
 memmi_DetachStatus       memmi_detach_from_process(memmi_Process process);
 memmi_ResumeStatus       memmi_resume_process(memmi_Process process);
 memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
-memmi_Registers          memmi_get_registers(memmi_Process process);
-memmi_SetRegistersStatus memmi_set_register(memmi_Process process, memmi_Register reg, uint64_t value);
+memmi_Registers          memmi_get_thread_registers(memmi_TID tid);
+memmi_SetRegistersStatus memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value);
 
 /* Breakpoint */
 typedef enum {
