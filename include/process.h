@@ -196,8 +196,6 @@ typedef enum {
     MEMMI_REG_R14,
     MEMMI_REG_R15,
 
-    /* MEMMI_REG_ORIG_RAX, */
-
     MEMMI_REG_RIP,
 
     MEMMI_REG_CS,

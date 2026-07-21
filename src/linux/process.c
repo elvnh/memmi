@@ -1086,14 +1086,14 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
 
     memmi_PID pid = get_platform_process_handle(proc)->pid;
 
-    unsigned int waitpid_flags = __WALL;
+    int waitpid_flags = __WALL;
 
     if (hang == WAITPID_NO_HANG) {
         waitpid_flags |= WNOHANG;
     }
 
     int status = 0;
-    int id_of_affected_thread = waitpid(-1, &status, (int)waitpid_flags);
+    int id_of_affected_thread = waitpid(-1, &status, waitpid_flags);
 
     // TODO: if process is immediately killed, it may not exist anymore. Which we'll need to
     // handle. Check errno to see which error occurred.
