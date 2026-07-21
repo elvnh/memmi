@@ -8,10 +8,8 @@
 
 /*
   TODO:
-  - Suspend process
   - Opaque thread handle
   - Store pid in opaque process handle
-  - Get registers should be per thread
   - always use zero initialization for statuses
   - use common status enum so that each function doesn't define its own
   - Software breakpoints
@@ -233,6 +231,13 @@ typedef struct {
     uint64_t values[MEMMI_REG_COUNT]; // TODO: typedef register values to make porting to other arch easier
 } memmi_Registers;
 
+typedef enum {
+    MEMMI_SUSPEND_OK,
+    MEMMI_SUSPEND_PARTIAL_SUCCESS,
+    MEMMI_SUSPEND_NO_SUCH_PROCESS,
+    MEMMI_SUSPEND_INSUFFICIENT_PERMISSIONS,
+} memmi_SuspendStatus;
+
 // TODO: allow checking if process exists
 memmi_ProcessList        memmi_get_running_processes(memmi_Allocator allocator);
 memmi_OpenProcess        memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
@@ -244,6 +249,7 @@ memmi_ThreadList         memmi_get_process_threads(memmi_Process process, memmi_
 memmi_AttachStatus       memmi_attach_to_process(memmi_Process process);
 memmi_DetachStatus       memmi_detach_from_process(memmi_Process process);
 memmi_ResumeStatus       memmi_resume_process(memmi_Process process);
+memmi_SuspendStatus      memmi_suspend_process(memmi_Process process);
 memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
 memmi_Registers          memmi_get_thread_registers(memmi_TID tid);
 memmi_SetRegistersStatus memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value);

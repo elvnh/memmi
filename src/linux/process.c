@@ -477,6 +477,7 @@ static memmi_ResumeStatus resume_thread(memmi_TID tid)
     return result;
 }
 
+// TODO: this isn't needed
 typedef enum {
     FOR_EACH_THREAD_RES_CONTINUE,
     FOR_EACH_THREAD_RES_BREAK,
@@ -584,7 +585,6 @@ static StatusEntry get_proc_status_entry(memmi_PID pid, memmi_String row_name)
 
         fclose(status_file);
     }
-
 
     close(proc_dir_fd);
     close(status_fd);
@@ -705,7 +705,6 @@ static memmi_AttachStatus attach_to_thread(memmi_TID tid)
 }
 
 typedef struct {
-    /* memmi_PID parent_pid; */
     memmi_AttachStatus statuses;
     int32_t suspended_thread_count;
 } AttachThreadsContext;
@@ -902,6 +901,139 @@ memmi_ResumeStatus memmi_resume_process(memmi_Process process)
             } else {
                 result = MEMMI_RESUME_OK;
             }
+        }
+    }
+
+    return result;
+}
+
+static memmi_SuspendStatus suspend_thread(memmi_TID tid)
+{
+    memmi_SuspendStatus result = 0;
+
+    pid_t native_tid = (pid_t)tid.value;
+    long interrupt_result = ptrace(PTRACE_INTERRUPT, native_tid, 0, 0);
+
+    if (interrupt_result == -1) {
+        if (errno == EPERM) {
+            result = MEMMI_SUSPEND_INSUFFICIENT_PERMISSIONS;
+        } else {
+            result = MEMMI_SUSPEND_NO_SUCH_PROCESS;
+        }
+    } else {
+        int status = 0;
+        // TODO: prevent hanging if process is already suspended
+        int waitpid_result = waitpid(native_tid, &status, __WALL);
+
+        if (waitpid_result == -1) {
+            result = MEMMI_SUSPEND_NO_SUCH_PROCESS;
+        } else {
+            if (WIFSTOPPED(status)) {
+                result = MEMMI_SUSPEND_OK;
+            } else {
+                // TODO: Can this occur? Do we need to resend stopping signal until it's seen or is
+                // that only for PTRACE_ATTACH?
+                ASSERT(0);
+            }
+        }
+    }
+
+    return result;
+}
+
+typedef struct {
+    memmi_SuspendStatus statuses;
+    int32_t suspended_thread_count;
+} SuspendThreadsContext;
+
+static ForEachThreadResult suspend_thread_cb(void *user_data, memmi_TID tid)
+{
+    DEBUG_BREAK;
+
+    SuspendThreadsContext *context = user_data;
+
+    bool is_suspended = false;
+    // TODO: make get_proc_status_entry take tid as arg
+    StatusEntry state_entry = get_proc_status_entry((memmi_PID){tid.value}, str_lit("State"));
+
+    if (state_entry.count <= 0) {
+        // Failed to get state for thread, probably because the thread died.
+        // TODO: make sure that this is the case by checking errno
+        ASSERT(state_entry.count == 0);
+        context->statuses |= BIT(MEMMI_SUSPEND_NO_SUCH_PROCESS);
+    } else {
+        memmi_String state_entry_str = str_from_span(state_entry);
+
+        is_suspended = str_starts_with(state_entry_str, str_lit("T"))
+            || str_starts_with(state_entry_str, str_lit("t"));
+
+        if (!is_suspended) {
+            memmi_SuspendStatus suspend_result = suspend_thread(tid);
+            context->statuses |= BIT(suspend_result);
+
+            if (suspend_result == MEMMI_SUSPEND_OK) {
+                is_suspended = true;
+            }
+        }
+    }
+
+    if (is_suspended) {
+        ++context->suspended_thread_count;
+    }
+
+    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
+
+    return result;
+}
+
+memmi_SuspendStatus memmi_suspend_process(memmi_Process process)
+{
+    DEBUG_BREAK;
+
+    memmi_SuspendStatus result = 0;
+
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    memmi_TID main_thread_id = {pid.value};
+
+    memmi_SuspendStatus main_thread_suspend_result = suspend_thread(main_thread_id);
+
+    // TODO: code duplication between this and memmi_attach_to_process
+    if (main_thread_suspend_result != MEMMI_SUSPEND_OK) {
+        // We failed to suspend the main thread, count this as a complete failure.
+        result = main_thread_suspend_result;
+    } else {
+        int32_t last_suspended_thread_count = 0;
+        SuspendThreadsContext cb_context = {0};
+        bool suspended_thread_count_is_stable = false;
+
+        while (!suspended_thread_count_is_stable) {
+            // Keep trying to suspend threads until the number of suspended threads in the process
+            // has stabilized.
+            cb_context = (SuspendThreadsContext){0};
+
+            for_each_thread(pid, &cb_context, suspend_thread_cb);
+
+            if (cb_context.suspended_thread_count <= last_suspended_thread_count) {
+                suspended_thread_count_is_stable = true;
+            }
+
+            last_suspended_thread_count = cb_context.suspended_thread_count;
+        }
+
+        if (last_suspended_thread_count == 0) {
+            // If we didn't manage to suspend a single thread, count this as a complete failure.
+            if (cb_context.statuses & BIT(MEMMI_SUSPEND_INSUFFICIENT_PERMISSIONS)) {
+                result = MEMMI_SUSPEND_INSUFFICIENT_PERMISSIONS;
+            } else  {
+                result = MEMMI_SUSPEND_NO_SUCH_PROCESS;
+            }
+        } else if (cb_context.statuses & BIT(MEMMI_SUSPEND_INSUFFICIENT_PERMISSIONS)) {
+            // If we failed to suspend some threads due to having insufficient permissions, count
+            // this as a partial success. If we failed to suspend some threads due to them dying,
+            // we'll count it as a complete success, as threads dying can legitimately happen.
+            result = MEMMI_SUSPEND_PARTIAL_SUCCESS;
+        } else {
+            result = MEMMI_SUSPEND_OK;
         }
     }
 
@@ -1252,7 +1384,7 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 }
 
 // TODO: allow setting all registers at once
-memmi_SetRegistersStatus memmi_set_register(memmi_TID tid, memmi_Register reg, uint64_t value)
+memmi_SetRegistersStatus memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value)
 {
     memmi_SetRegistersStatus result = MEMMI_SET_REGS_NO_SUCH_PROCESS;
 
