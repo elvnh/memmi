@@ -6,8 +6,18 @@
 #include "allocator.h"
 #include "string8.h"
 
-// TODO: always use zero initialization for statuses
-// TODO: use common status enum so that each function doesn't define its own
+/*
+  TODO:
+  - Suspend process
+  - Opaque thread handle
+  - Store pid in opaque process handle
+  - Get registers should be per thread
+  - always use zero initialization for statuses
+  - use common status enum so that each function doesn't define its own
+  - Software breakpoints
+  - Separate architecture-specific things into separate file
+  - Unit test debug breakpoints
+ */
 
 typedef struct {
     int64_t value;
@@ -237,3 +247,28 @@ memmi_ResumeStatus       memmi_resume_process(memmi_Process process);
 memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
 memmi_Registers          memmi_get_registers(memmi_Process process);
 memmi_SetRegistersStatus memmi_set_register(memmi_Process process, memmi_Register reg, uint64_t value);
+
+/* Breakpoint */
+typedef enum {
+    MEMMI_SET_BREAKPOINT_OK,
+    MEMMI_SET_BREAKPOINT_NO_SUCH_PROCESS,
+    MEMMI_SET_BREAKPOINT_INSUFFICIENT_PERMISSIONS,
+    MEMMI_SET_BREAKPOINT_INVALID_INDEX,
+} memmi_SetBreakpointResult;
+
+typedef enum {
+    MEMMI_BREAKPOINT_READ_WRITE,
+    MEMMI_BREAKPOINT_WRITE,
+    /* MEMMI_BREAKPOINT_EXECUTE, */
+} memmi_BreakpointCondition;
+
+typedef enum {
+    MEMMI_BREAKPOINT_1_BYTES = 1,
+    MEMMI_BREAKPOINT_2_BYTES = 2,
+    MEMMI_BREAKPOINT_4_BYTES = 4,
+    MEMMI_BREAKPOINT_8_BYTES = 8,
+} memmi_BreakpointLength;
+
+// TODO: communicate partial successes
+memmi_SetBreakpointResult memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
+    memmi_BreakpointCondition condition, uint32_t index, memmi_BreakpointLength length);

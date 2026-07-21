@@ -1041,7 +1041,7 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
                     default: {
                         // Normal signals
                         if (WIFEXITED(status)) {
-                            ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_STOP.");
+                            ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_EXIT.");
 
                             result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
                             result->as.thread_exited.exit_code = WEXITSTATUS(status);
@@ -1300,6 +1300,267 @@ memmi_SetRegistersStatus memmi_set_register(memmi_Process process, memmi_Registe
             }
         } else {
             result = MEMMI_SET_REGS_OK;
+        }
+    }
+
+    return result;
+}
+
+typedef enum {
+    DEBUG_REG_DR0,
+    DEBUG_REG_DR1,
+    DEBUG_REG_DR2,
+    DEBUG_REG_DR3,
+    DEBUG_REG_DR6,
+    DEBUG_REG_DR7,
+    DEBUG_REG_COUNT,
+} DebugRegister;
+
+typedef struct {
+    uint64_t values[DEBUG_REG_COUNT];
+} DebugRegisters;
+
+static size_t debug_register_user_struct_indices[DEBUG_REG_COUNT] = {
+    [DEBUG_REG_DR0] = 0,
+    [DEBUG_REG_DR1] = 1,
+    [DEBUG_REG_DR2] = 2,
+    [DEBUG_REG_DR3] = 3,
+    [DEBUG_REG_DR6] = 6,
+    [DEBUG_REG_DR7] = 7,
+};
+
+static size_t get_user_struct_debug_register_offset(DebugRegister reg)
+{
+    struct user u = {0};
+    size_t reg_index = debug_register_user_struct_indices[reg];
+    size_t regs_base = offsetof(struct user, u_debugreg);
+    size_t reg_offset = reg_index * sizeof(*u.u_debugreg);
+
+    size_t result = regs_base + reg_offset;
+
+    return result;
+}
+
+static DebugRegisters get_thread_debug_registers(memmi_TID tid)
+{
+    DebugRegisters result = {0};
+
+    errno = 0;
+
+    for (DebugRegister reg = 0; reg < DEBUG_REG_COUNT; ++reg) {
+        size_t reg_offset = get_user_struct_debug_register_offset(reg);
+
+        long value = ptrace(PTRACE_PEEKUSER, (pid_t)tid.value, reg_offset, 0);
+
+        if (errno != 0) {
+            ASSERT(0);
+            break;
+        } else {
+            result.values[reg] = (uint64_t)value;
+        }
+    }
+
+    return result;
+}
+
+static memmi_SetRegistersStatus set_thread_debug_register(memmi_TID tid, DebugRegister reg, uint64_t value)
+{
+    memmi_SetRegistersStatus result = 0;
+
+    size_t debug_reg_offset = get_user_struct_debug_register_offset(reg);
+    long poke_result = ptrace(PTRACE_POKEUSER, (pid_t)tid.value, debug_reg_offset, value);
+
+    if (poke_result == -1) {
+        if (errno == EPERM) {
+            result = MEMMI_SET_REGS_INSUFFICIENT_PERMISSIONS;
+        } else {
+            // TODO: more checking
+            result = MEMMI_SET_REGS_NO_SUCH_PROCESS;
+        }
+    } else {
+        result = MEMMI_SET_REGS_OK;
+    }
+
+    return result;
+}
+
+static DebugRegister debug_register_from_index(uint32_t index)
+{
+    DebugRegister result = 0;
+
+    switch (index) {
+        case 0: {
+            result = DEBUG_REG_DR0;
+        } break;
+
+        case 1: {
+            result = DEBUG_REG_DR1;
+        } break;
+
+        case 2: {
+            result = DEBUG_REG_DR2;
+        } break;
+
+        case 3: {
+            result = DEBUG_REG_DR3;
+        } break;
+
+        default: {
+            ASSERT(0);
+            result = DEBUG_REG_DR0;
+        } break;
+    }
+
+    return result;
+}
+
+#define DR7_ENABLE_BIT_BASE_INDEX   16u
+#define DR7_ENABLE_BIT_STRIDE       2u
+#define DR7_COND_BITS_BASE_INDEX    16u
+#define DR7_COND_BITS_STRIDE        4u
+#define DR7_LENGTH_BITS_BASE_INDEX  18u
+#define DR7_LENGTH_BITS_STRIDE      4u
+
+#define DR7_READ_WRITE_COND         0b11u
+#define DR7_WRITE_COND              0b01u
+#define DR7_SIZE_1_BYTES            0b00
+#define DR7_SIZE_2_BYTES            0b01
+#define DR7_SIZE_4_BYTES            0b11
+#define DR7_SIZE_8_BYTES            0b10
+
+static uint64_t dr7_breakpoint_mask(uint32_t breakpoint_index)
+{
+    uint32_t result =
+          (0b01u << (DR7_ENABLE_BIT_BASE_INDEX  + breakpoint_index * DR7_ENABLE_BIT_STRIDE))
+        | (0b11u << (DR7_COND_BITS_BASE_INDEX   + breakpoint_index * DR7_COND_BITS_STRIDE))
+        | (0b11u << (DR7_LENGTH_BITS_BASE_INDEX + breakpoint_index * DR7_LENGTH_BITS_STRIDE));
+
+    return result;
+}
+
+static uint64_t dr7_local_enable_bit(uint32_t reg_index)
+{
+    uint64_t result = 0x1 << (reg_index * DR7_ENABLE_BIT_STRIDE);
+
+    return result;
+}
+
+static uint64_t dr7_condition_bits(uint32_t reg_index, memmi_BreakpointCondition condition)
+{
+    uint64_t bits = 0;
+
+    switch (condition) {
+        case MEMMI_BREAKPOINT_READ_WRITE: {
+            bits = DR7_READ_WRITE_COND;
+        } break;
+
+        case MEMMI_BREAKPOINT_WRITE: {
+            bits = DR7_WRITE_COND;
+        } break;
+
+        default: {
+            ASSERT(0);
+            bits = DR7_READ_WRITE_COND;
+        } break;
+    }
+
+    uint64_t result = bits << (DR7_COND_BITS_BASE_INDEX + reg_index * DR7_COND_BITS_STRIDE);
+
+    return result;
+}
+
+static uint64_t dr7_length_bits(uint32_t reg_index, memmi_BreakpointLength length)
+{
+    uint64_t bits = 0;
+
+    switch (length) {
+        case MEMMI_BREAKPOINT_1_BYTES: {
+            bits = DR7_SIZE_1_BYTES;
+        } break;
+
+        case MEMMI_BREAKPOINT_2_BYTES: {
+            bits = DR7_SIZE_2_BYTES;
+        } break;
+
+        case MEMMI_BREAKPOINT_4_BYTES: {
+            bits = DR7_SIZE_4_BYTES;
+        } break;
+
+        case MEMMI_BREAKPOINT_8_BYTES: {
+            bits = DR7_SIZE_8_BYTES;
+        } break;
+    }
+
+    uint64_t result = bits << (DR7_LENGTH_BITS_BASE_INDEX + reg_index * DR7_LENGTH_BITS_STRIDE);
+
+    return result;
+}
+
+typedef struct {
+    uint32_t index;
+    uintptr_t address;
+    memmi_BreakpointCondition condition;
+    memmi_BreakpointLength length;
+
+    memmi_SetRegistersStatus statuses;
+} HardwareBreakpointContext;
+
+// TODO: report errors
+ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data, memmi_TID tid)
+{
+    HardwareBreakpointContext *context = user_data;
+
+    DebugRegister reg = debug_register_from_index(context->index);
+    DebugRegisters debug_regs = get_thread_debug_registers(tid);
+
+    uint64_t old_dr7_value = debug_regs.values[DEBUG_REG_DR7];
+
+    uint64_t new_dr_value = context->address;
+    uint64_t new_dr7_value =
+        (old_dr7_value & ~dr7_breakpoint_mask(context->index))
+        | dr7_local_enable_bit(context->index)
+        | dr7_condition_bits(context->index, context->condition)
+        | dr7_length_bits(context->index, context->length);
+
+    memmi_SetRegistersStatus set_addr_result = set_thread_debug_register(tid, reg, new_dr_value);
+    memmi_SetRegistersStatus set_dr7_result = set_thread_debug_register(tid, DEBUG_REG_DR7, new_dr7_value);
+
+    context->statuses |= BIT(set_addr_result);
+    context->statuses |= BIT(set_dr7_result);
+
+    return FOR_EACH_THREAD_RES_CONTINUE;
+}
+
+memmi_SetBreakpointResult memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
+    memmi_BreakpointCondition condition, uint32_t index, memmi_BreakpointLength length)
+{
+    memmi_SetBreakpointResult result = 0;
+
+    if (index > 3) {
+        result = MEMMI_SET_BREAKPOINT_INVALID_INDEX;
+    } else {
+        memmi_PID pid = get_platform_process_handle(process)->pid;
+
+        HardwareBreakpointContext context = {0};
+        context.index = index;
+        context.address = address;
+        context.condition = condition;
+        context.length = length;
+
+        bool for_each_result = for_each_thread(pid, &context, set_hardware_breakpoint_on_thread_cb);
+
+        if (!for_each_result) {
+            result = MEMMI_SET_BREAKPOINT_NO_SUCH_PROCESS;
+        } else {
+            if (context.statuses & BIT(MEMMI_SET_REGS_NO_SUCH_PROCESS)) {
+                result = MEMMI_SET_BREAKPOINT_NO_SUCH_PROCESS;
+            } else if (context.statuses & BIT(MEMMI_SET_REGS_INSUFFICIENT_PERMISSIONS)) {
+                result = MEMMI_SET_BREAKPOINT_INSUFFICIENT_PERMISSIONS;
+            } else {
+                ASSERT(context.statuses & BIT(MEMMI_SET_REGS_OK));
+
+                result = MEMMI_SET_BREAKPOINT_OK;
+            }
         }
     }
 
