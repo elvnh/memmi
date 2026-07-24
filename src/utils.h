@@ -6,6 +6,7 @@
 
 #include "allocator.h"
 #include "string8.h"
+#include "status.h"
 
 #define allocate(a, t, count) (t *)((a).function((a).context, 0, 0, (count) * sizeof(t), ALIGNOF(t)))
 #define reallocate(a, ptr, old, new) (a).function((a).context, (ptr), (old) * sizeof(*(ptr)), \
@@ -113,7 +114,6 @@ static inline bool is_whitespace(char ch)
 
     return result;
 }
-
 
 #define str_lit(s) (memmi_String) { s, ARRAY_COUNT(s) - 1 }
 
