@@ -218,6 +218,7 @@ static memmi_Status errno_to_memmi_status(int errno_value)
 
     switch (errno_value) {
         case 0: {
+            ASSERT(0 && "Shouldn't call this unless there was an actual error");
         } break;
 
         case EPERM: {
@@ -440,9 +441,12 @@ static int get_signal_from_wait_status(int status)
 static memmi_Status resume_thread(pid_t tid)
 {
     // TODO: Do we need to waitpid for the signal to be received?
-    ptrace(PTRACE_CONT, tid, 0, 0);
 
-    memmi_Status result = errno_to_memmi_status(errno);
+    memmi_Status result = 0;
+
+    if (ptrace(PTRACE_CONT, tid, 0, 0) == -1)  {
+        result = errno_to_memmi_status(errno);
+    }
 
     return result;
 }
@@ -753,8 +757,9 @@ static ForEachThreadResult detach_from_thread_cb(void *user_data, pid_t tid)
 {
     DetachContext *context = user_data;
 
-    ptrace(PTRACE_DETACH, tid, 0, 0);
-    context->statuses |= errno_to_memmi_status(errno);
+    if (ptrace(PTRACE_DETACH, tid, 0, 0) == -1) {
+        context->statuses |= errno_to_memmi_status(errno);
+    }
 
     return FOR_EACH_THREAD_RES_CONTINUE;
 }
@@ -840,10 +845,11 @@ static memmi_Status suspend_thread(pid_t tid)
         int status = 0;
         // TODO: prevent hanging if process is already suspended
         int waitpid_result = waitpid(tid, &status, __WALL);
-        result = errno_to_memmi_status(errno);
 
         // TODO: this branch is unnecessary
-        if (waitpid_result != -1) {
+        if (waitpid_result == -1) {
+            result = errno_to_memmi_status(errno);
+        } else {
             if (WIFSTOPPED(status)) {
                 // Success!
             } else {
@@ -1347,11 +1353,12 @@ static DebugRegisters get_thread_debug_registers(pid_t tid)
     // TODO: check status when using this function
     DebugRegisters result = {0};
 
-    errno = 0;
-
     for (DebugRegister reg = 0; reg < DEBUG_REG_COUNT; ++reg) {
         size_t reg_offset = get_user_struct_debug_register_offset(reg);
 
+        // PTRACE_PEEKUSER does not return -1 on error, so errno must be checked, and therefore also
+        // cleared before each call.
+        errno = 0;
         long value = ptrace(PTRACE_PEEKUSER, tid, reg_offset, 0);
 
         if (errno != 0) {
@@ -1367,10 +1374,12 @@ static DebugRegisters get_thread_debug_registers(pid_t tid)
 
 static memmi_Status set_thread_debug_register(pid_t tid, DebugRegister reg, uint64_t value)
 {
+    memmi_Status result = 0;
     size_t debug_reg_offset = get_user_struct_debug_register_offset(reg);
-    ptrace(PTRACE_POKEUSER, tid, debug_reg_offset, value);
 
-    memmi_Status result = errno_to_memmi_status(errno);
+    if (ptrace(PTRACE_POKEUSER, tid, debug_reg_offset, value) == -1) {
+        result = errno_to_memmi_status(errno);
+    }
 
     return result;
 }
