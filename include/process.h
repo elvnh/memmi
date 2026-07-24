@@ -9,14 +9,11 @@
 
 /*
   TODO:
-  - Clean up error handling
   - Opaque thread handle?
   - Store pid in opaque process handle
-  - always use zero initialization for statuses
-  - use common status enum so that each function doesn't define its own
   - Software breakpoints
   - Separate architecture-specific things into separate file
-  - Unit test debug breakpoints
+  - Unit test breakpoints
  */
 
 typedef struct {
@@ -32,7 +29,8 @@ typedef struct {
     memmi_PID pid;
 } memmi_ProcessInfo;
 
-// TODO: handle if pid has been reused by another program since opening, should fail
+// TODO: store PID directly here. Linux won't need to use data member, windows will use it for handle.
+// Doing it this way will skip an unnecessary allocation.
 typedef struct {
     void *data;
 } memmi_Process;
@@ -60,9 +58,9 @@ typedef struct {
 } memmi_WriteMemory;
 
 typedef enum {
-    MEMMI_REGION_PERMISSION_READ    = 1 << 0,
-    MEMMI_REGION_PERMISSION_WRITE   = 1 << 1,
-    MEMMI_REGION_PERMISSION_EXECUTE = 1 << 2,
+    MEMMI_REGION_PERMISSION_READ    = (1u << 0u),
+    MEMMI_REGION_PERMISSION_WRITE   = (1u << 1u),
+    MEMMI_REGION_PERMISSION_EXECUTE = (1u << 2u),
 } memmi_MemoryRegionPermission;
 
 typedef struct {
@@ -71,17 +69,12 @@ typedef struct {
     memmi_MemoryRegionPermission permissions;
 } memmi_MemoryRegion;
 
-typedef enum {
-    MEMMI_GET_REGIONS_OK,
-    MEMMI_GET_REGIONS_FAIL,
-} memmi_GetMemoryRegionsStatus;
-
 // TODO: rename to memmi_MemoryRegions
 typedef struct {
     memmi_Status         status;
     memmi_MemoryRegion  *data;
     size_t               count;
-} memmi_GetMemoryRegions;
+} memmi_MemoryRegions;
 
 // TODO: communicate errors
 typedef struct {
@@ -89,7 +82,6 @@ typedef struct {
     size_t     count;
 } memmi_ThreadList;
 
-// TODO: Report failure to get event
 // TODO: is both THREAD_SUSPENDED and THREAD_STOPPED needed?
 typedef struct memmi_DebugEvent {
     enum {
@@ -117,6 +109,7 @@ typedef struct memmi_DebugEvent {
     struct memmi_DebugEvent *next;
 } memmi_DebugEvent;
 
+// TODO: Report failure to get event
 typedef struct {
     memmi_DebugEvent *first;
     memmi_DebugEvent *last;
@@ -169,7 +162,7 @@ memmi_OpenProcess        memmi_open_process(memmi_PID pid, memmi_Allocator alloc
 void                     memmi_close_process(memmi_Process process, memmi_Allocator allocator);
 memmi_ReadMemory         memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator);
 memmi_WriteMemory        memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size);
-memmi_GetMemoryRegions   memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator);
+memmi_MemoryRegions      memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator);
 memmi_ThreadList         memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
 memmi_Status             memmi_attach_to_process(memmi_Process process);
 memmi_Status             memmi_detach_from_process(memmi_Process process);

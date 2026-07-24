@@ -46,8 +46,9 @@ typedef struct {
     memmi_PID pid;
 } memmi_ProcessImpl;
 
+/***************************/
 /* Common helper functions */
-
+/***************************/
 static memmi_ProcessImpl *get_platform_process_handle(memmi_Process proc)
 {
     memmi_ProcessImpl *result = proc.data;
@@ -313,7 +314,9 @@ static memmi_Status errno_to_memmi_status(int errno_value)
     return result;
 }
 
+/**********************/
 /* API implementation */
+/**********************/
 memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
 {
     memmi_OpenProcess result = {0};
@@ -536,7 +539,7 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
     return result;
 }
 
-memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator)
+memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator)
 {
     RegionDynArray regions = {0};
 
@@ -548,7 +551,7 @@ memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, m
 
     FILE *maps_file = fdopen(maps_fd, "r");
 
-    memmi_GetMemoryRegions result = {0};
+    memmi_MemoryRegions result = {0};
 
     if (!maps_file) {
         // TODO: check whether this is due to process not existing or something else
