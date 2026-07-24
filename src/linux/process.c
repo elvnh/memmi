@@ -440,7 +440,7 @@ static int get_signal_from_wait_status(int status)
 static memmi_Status resume_thread(pid_t tid)
 {
     // TODO: Do we need to waitpid for the signal to be received?
-    long resume_result = ptrace(PTRACE_CONT, tid, 0, 0);
+    ptrace(PTRACE_CONT, tid, 0, 0);
 
     memmi_Status result = errno_to_memmi_status(errno);
 
@@ -750,7 +750,7 @@ static ForEachThreadResult detach_from_thread_cb(void *user_data, pid_t tid)
 {
     DetachContext *context = user_data;
 
-    long detach_result = ptrace(PTRACE_DETACH, tid, 0, 0);
+    ptrace(PTRACE_DETACH, tid, 0, 0);
     context->statuses |= errno_to_memmi_status(errno);
 
     return FOR_EACH_THREAD_RES_CONTINUE;
@@ -1359,7 +1359,7 @@ static DebugRegisters get_thread_debug_registers(pid_t tid)
 static memmi_Status set_thread_debug_register(pid_t tid, DebugRegister reg, uint64_t value)
 {
     size_t debug_reg_offset = get_user_struct_debug_register_offset(reg);
-    long poke_result = ptrace(PTRACE_POKEUSER, tid, debug_reg_offset, value);
+    ptrace(PTRACE_POKEUSER, tid, debug_reg_offset, value);
 
     memmi_Status result = errno_to_memmi_status(errno);
 
@@ -1544,25 +1544,31 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
         memmi_PID pid = get_platform_process_handle(process)->pid;
         pid_t native_pid = (pid_t)pid.value;
 
-        HardwareBreakpointContext context = {0};
-        context.index = index;
-        context.address = address;
-        context.condition = condition;
-        context.length = length;
+        memmi_Status main_thread_bp_result = set_hardware_breakpoint_on_thread(
+            native_pid, index, address, condition, length);
 
-        bool for_each_result = for_each_thread(native_pid, &context, set_hardware_breakpoint_on_thread_cb);
-
-        if (!for_each_result) {
-            // TODO: check to make sure which error actually occurred
-            result = MEMMI_NO_SUCH_PROCESS;
+        if (main_thread_bp_result != MEMMI_OK) {
+            result = main_thread_bp_result;
         } else {
-            // TODO: simplify
-            // TODO: don't fail if child thread died while we were setting breakpoints, as long as setting
-            // breakpoint on main thread succeeded
-            if (context.statuses & MEMMI_NO_SUCH_PROCESS) {
+            HardwareBreakpointContext context = {0};
+            context.index = index;
+            context.address = address;
+            context.condition = condition;
+            context.length = length;
+
+            bool for_each_result = for_each_thread(native_pid, &context, set_hardware_breakpoint_on_thread_cb);
+
+            if (!for_each_result) {
+                // TODO: check to make sure which error actually occurred
                 result = MEMMI_NO_SUCH_PROCESS;
-            } else if (context.statuses & MEMMI_INSUFFICIENT_PERMISSIONS) {
-                result = MEMMI_INSUFFICIENT_PERMISSIONS;
+            } else {
+                // TODO: simplify
+                // TODO: don't fail if child thread died while we were setting breakpoints, as long as setting
+                // breakpoint on main thread succeeded
+                // TODO: store masked out value in a variable
+                if (context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS) {
+                    result = context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+                }
             }
         }
     }
