@@ -46,6 +46,15 @@ typedef struct {
     memmi_PID pid;
 } memmi_ProcessImpl;
 
+/* Common helper functions */
+
+static memmi_ProcessImpl *get_platform_process_handle(memmi_Process proc)
+{
+    memmi_ProcessImpl *result = proc.data;
+
+    return result;
+}
+
 static ProcessName get_process_name(int proc_dir_fd, memmi_Allocator allocator)
 {
     ProcessName result = {0};
@@ -79,6 +88,251 @@ static ProcessName get_process_name(int proc_dir_fd, memmi_Allocator allocator)
     return result;
 }
 
+static int get_process_directory_fd(pid_t pid)
+{
+    DIR *proc_dir = opendir("/proc");
+    int proc_dir_fd = dirfd(proc_dir);
+
+    char buf[64];
+    snprintf(buf, ARRAY_COUNT(buf), "%d", pid);
+
+    int result = openat(proc_dir_fd, buf, O_RDONLY);
+
+    closedir(proc_dir);
+
+    return result;
+}
+
+// TODO: this isn't needed?
+typedef enum {
+    FOR_EACH_THREAD_RES_CONTINUE,
+    FOR_EACH_THREAD_RES_BREAK,
+} ForEachThreadResult;
+
+typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, pid_t tid);
+
+// TODO: return error enum from this function, not a bool
+static bool for_each_thread(pid_t pid, void *user_data, ForEachThreadFn fn)
+{
+    int proc_dir_fd = get_process_directory_fd(pid);
+    int threads_dir_fd = openat(proc_dir_fd, "task", O_RDONLY);
+
+    DIR *threads_dir = fdopendir(threads_dir_fd);
+
+    bool result = false;
+
+    if (threads_dir) {
+        struct dirent *subdir_entry = 0;
+
+        while ((subdir_entry = readdir(threads_dir))) {
+            // Only count as a success if there was at least one thread,
+            // as otherwise the process has been killed.
+            result = true;
+
+            // TODO: properly check if is dir with fstat
+            ASSERT(subdir_entry->d_type == DT_DIR);
+
+            memmi_String name = str_from_c_str(subdir_entry->d_name);
+            MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
+
+            if (tid_opt.ok) {
+                pid_t tid = (pid_t)tid_opt.value;
+
+                ForEachThreadResult cb_result = fn(user_data, tid);
+
+                if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
+                    break;
+                }
+            }
+        }
+    }
+
+    close(proc_dir_fd);
+    closedir(threads_dir);
+
+    return result;
+}
+
+typedef struct {
+    char data[256];
+    size_t count;
+} StatusEntry;
+
+static StatusEntry get_proc_status_entry(pid_t tid, memmi_String row_name)
+{
+    StatusEntry result = {0};
+
+    int proc_dir_fd = get_process_directory_fd(tid);
+    int status_fd = openat(proc_dir_fd, "status", O_RDONLY);
+
+    if ((proc_dir_fd != -1) && (status_fd != -1)) {
+        FILE *status_file = fdopen(status_fd, "r");
+
+        if (status_file) {
+            while (fgets(result.data, ARRAY_COUNT(result.data), status_file)) {
+                memmi_String line = str_from_c_str(result.data);
+
+                if (str_starts_with(line, row_name)) {
+                    Cut cut = str_cut(line, str_lit(":"));
+
+                    if (cut.ok) {
+                        memmi_String trimmed = str_trim_whitespace(cut.tail);
+                        ASSERT(trimmed.count <= ARRAY_COUNT(result.data));
+
+                        memmove(result.data, trimmed.data, trimmed.count);
+                        result.count = trimmed.count;
+                        break;
+                    }
+                }
+            }
+        }
+
+        fclose(status_file);
+    }
+
+    close(proc_dir_fd);
+    close(status_fd);
+
+    return result;
+}
+
+static bool pid_exists(memmi_PID pid)
+{
+    bool result = false;
+
+    DIR *proc_dir = opendir("/proc");
+    int proc_dir_fd = dirfd(proc_dir);
+
+    if (proc_dir_fd != -1) {
+        char pid_str[64];
+        int chars_written = snprintf(pid_str, ARRAY_COUNT(pid_str), "%ld", pid.value);
+        ASSERT(chars_written < (int)ARRAY_COUNT(pid_str));
+
+        struct stat stat_buf = {0};
+        int stat_result = fstatat(proc_dir_fd, pid_str, &stat_buf, 0);
+
+        if (stat_result != -1) {
+            result = true;
+        }
+
+    }
+
+    closedir(proc_dir);
+
+    return result;
+}
+
+static pid_t get_pid_of_tracing_process(pid_t tid)
+{
+    StatusEntry entry = get_proc_status_entry(tid, str_lit("TracerPid"));
+    ASSERT(entry.data);
+    ASSERT(entry.count);
+
+    memmi_String str = str_from_span(entry);
+    MaybeS64 pid_opt = str_to_s64(str, NUM_BASE_DEC);
+    ASSERT(pid_opt.ok);
+    pid_t result = (pid_t)pid_opt.value;
+
+    return result;
+}
+
+static pid_t get_thread_group_id(pid_t tid)
+{
+    StatusEntry entry = get_proc_status_entry(tid, str_lit("Tgid"));
+    ASSERT(entry.data);
+    ASSERT(entry.count);
+
+    memmi_String tgid_str = str_from_span(entry);
+    MaybeS64 tgid_opt = str_to_s64(tgid_str, NUM_BASE_DEC);
+    ASSERT(tgid_opt.ok);
+
+    pid_t result = (pid_t)tgid_opt.value;
+
+    return result;
+}
+
+static bool thread_is_traced_by_us(pid_t pid)
+{
+    pid_t tracer_pid = get_pid_of_tracing_process(pid);
+
+    bool result = tracer_pid == getpid();
+
+    return result;
+}
+
+static int get_signal_from_wait_status(int status)
+{
+    int result = 0;
+
+    if (WIFEXITED(status)) {
+        result = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        result = WTERMSIG(status);
+    } else if (WIFSTOPPED(status)) {
+        result = WSTOPSIG(status);
+    } else {
+        ASSERT(WIFCONTINUED(status));
+
+        result = SIGCONT;
+    }
+
+    return result;
+}
+
+static memmi_Status errno_to_memmi_status(int errno_value)
+{
+    memmi_Status result = 0;
+
+    switch (errno_value) {
+        case 0: {
+            ASSERT(0 && "Shouldn't call this unless there was an actual error");
+        } break;
+
+        case EPERM: {
+            result = MEMMI_INSUFFICIENT_PERMISSIONS;
+        } break;
+
+        case ESRCH: {
+            result = MEMMI_NO_SUCH_PROCESS;
+        } break;
+
+        case ENOMEM: {
+            result = MEMMI_ALLOCATION_FAILED;
+        } break;
+
+        case EFAULT:
+        case EINVAL: {
+            result = MEMMI_INVALID_ARGUMENTS;
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+}
+
+/* API implementation */
+memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
+{
+    memmi_OpenProcess result = {0};
+
+    if (!pid_exists(pid)) {
+        result.status = MEMMI_NO_SUCH_PROCESS;
+    } else {
+        memmi_ProcessImpl *data = allocate(allocator, memmi_ProcessImpl, 1);
+
+        if (!data) {
+            result.status = MEMMI_ALLOCATION_FAILED;
+        } else {
+            data->pid = pid;
+            result.process.data = data;
+        }
+    }
+
+    return result;
+}
 memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 {
     ProcessDynArray processes = {0};
@@ -139,111 +393,9 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     return result;
 }
 
-static int get_process_directory_fd(pid_t pid)
-{
-    DIR *proc_dir = opendir("/proc");
-    int proc_dir_fd = dirfd(proc_dir);
-
-    char buf[64];
-    snprintf(buf, ARRAY_COUNT(buf), "%d", pid);
-
-    int result = openat(proc_dir_fd, buf, O_RDONLY);
-
-    closedir(proc_dir);
-
-    return result;
-}
-
-static bool pid_exists(memmi_PID pid)
-{
-    bool result = false;
-
-    DIR *proc_dir = opendir("/proc");
-    int proc_dir_fd = dirfd(proc_dir);
-
-    if (proc_dir_fd != -1) {
-        char pid_str[64];
-        int chars_written = snprintf(pid_str, ARRAY_COUNT(pid_str), "%ld", pid.value);
-        ASSERT(chars_written < (int)ARRAY_COUNT(pid_str));
-
-        struct stat stat_buf = {0};
-        int stat_result = fstatat(proc_dir_fd, pid_str, &stat_buf, 0);
-
-        if (stat_result != -1) {
-            result = true;
-        }
-
-    }
-
-    closedir(proc_dir);
-
-    return result;
-}
-
-memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
-{
-    memmi_OpenProcess result = {0};
-
-    if (!pid_exists(pid)) {
-        result.status = MEMMI_NO_SUCH_PROCESS;
-    } else {
-        memmi_ProcessImpl *data = allocate(allocator, memmi_ProcessImpl, 1);
-
-        if (!data) {
-            result.status = MEMMI_ALLOCATION_FAILED;
-        } else {
-            data->pid = pid;
-            result.process.data = data;
-        }
-    }
-
-    return result;
-}
-
 void memmi_close_process(memmi_Process process, memmi_Allocator allocator)
 {
     deallocate(allocator, process.data, sizeof(memmi_ProcessImpl));
-}
-
-static memmi_ProcessImpl *get_platform_process_handle(memmi_Process proc)
-{
-    memmi_ProcessImpl *result = proc.data;
-
-    return result;
-}
-
-static memmi_Status errno_to_memmi_status(int errno_value)
-{
-    memmi_Status result = 0;
-
-    switch (errno_value) {
-        case 0: {
-            ASSERT(0 && "Shouldn't call this unless there was an actual error");
-        } break;
-
-        case EPERM: {
-            result = MEMMI_INSUFFICIENT_PERMISSIONS;
-        } break;
-
-        case ESRCH: {
-            result = MEMMI_NO_SUCH_PROCESS;
-        } break;
-
-        case ENOMEM: {
-            result = MEMMI_ALLOCATION_FAILED;
-        } break;
-
-        case EFAULT:
-        case EINVAL: {
-            result = MEMMI_INVALID_ARGUMENTS;
-        } break;
-
-        default: {
-            ASSERT(0);
-        } break;
-    }
-
-    return result;
 }
 
 memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator)
@@ -419,25 +571,6 @@ memmi_GetMemoryRegions memmi_get_process_memory_regions(memmi_Process process, m
     return result;
 }
 
-static int get_signal_from_wait_status(int status)
-{
-    int result = 0;
-
-    if (WIFEXITED(status)) {
-        result = WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-        result = WTERMSIG(status);
-    } else if (WIFSTOPPED(status)) {
-        result = WSTOPSIG(status);
-    } else {
-        ASSERT(WIFCONTINUED(status));
-
-        result = SIGCONT;
-    }
-
-    return result;
-}
-
 static memmi_Status resume_thread(pid_t tid)
 {
     // TODO: Do we need to waitpid for the signal to be received?
@@ -447,57 +580,6 @@ static memmi_Status resume_thread(pid_t tid)
     if (ptrace(PTRACE_CONT, tid, 0, 0) == -1)  {
         result = errno_to_memmi_status(errno);
     }
-
-    return result;
-}
-
-// TODO: this isn't needed
-typedef enum {
-    FOR_EACH_THREAD_RES_CONTINUE,
-    FOR_EACH_THREAD_RES_BREAK,
-} ForEachThreadResult;
-
-typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, pid_t tid);
-
-// TODO: generalize this to iterating through all subdirs
-// TODO: return error enum from this function, not a bool
-static bool for_each_thread(pid_t pid, void *user_data, ForEachThreadFn fn)
-{
-    int proc_dir_fd = get_process_directory_fd(pid);
-    int threads_dir_fd = openat(proc_dir_fd, "task", O_RDONLY);
-
-    DIR *threads_dir = fdopendir(threads_dir_fd);
-
-    bool result = false;
-
-    if (threads_dir) {
-        struct dirent *subdir_entry = 0;
-
-        while ((subdir_entry = readdir(threads_dir))) {
-            // Only count as a success if there was at least one thread,
-            // as otherwise the process has been killed.
-            result = true;
-
-            // TODO: properly check if is dir with fstat
-            ASSERT(subdir_entry->d_type == DT_DIR);
-
-            memmi_String name = str_from_c_str(subdir_entry->d_name);
-            MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
-
-            if (tid_opt.ok) {
-                pid_t tid = (pid_t)tid_opt.value;
-
-                ForEachThreadResult cb_result = fn(user_data, tid);
-
-                if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
-                    break;
-                }
-            }
-        }
-    }
-
-    close(proc_dir_fd);
-    closedir(threads_dir);
 
     return result;
 }
@@ -518,79 +600,6 @@ static ForEachThreadResult resume_thread_cb(void *user_data, pid_t tid)
 
     // TODO: maybe this return code isn't really needed
     ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
-
-    return result;
-}
-
-typedef struct {
-    char data[256];
-    size_t count;
-} StatusEntry;
-
-// TODO: move to top of file
-static StatusEntry get_proc_status_entry(pid_t tid, memmi_String row_name)
-{
-    StatusEntry result = {0};
-
-    int proc_dir_fd = get_process_directory_fd(tid);
-    int status_fd = openat(proc_dir_fd, "status", O_RDONLY);
-
-    if ((proc_dir_fd != -1) && (status_fd != -1)) {
-        FILE *status_file = fdopen(status_fd, "r");
-
-        if (status_file) {
-            while (fgets(result.data, ARRAY_COUNT(result.data), status_file)) {
-                memmi_String line = str_from_c_str(result.data);
-
-                if (str_starts_with(line, row_name)) {
-                    Cut cut = str_cut(line, str_lit(":"));
-
-                    if (cut.ok) {
-                        memmi_String trimmed = str_trim_whitespace(cut.tail);
-                        ASSERT(trimmed.count <= ARRAY_COUNT(result.data));
-
-                        memmove(result.data, trimmed.data, trimmed.count);
-                        result.count = trimmed.count;
-                        break;
-                    }
-                }
-            }
-        }
-
-        fclose(status_file);
-    }
-
-    close(proc_dir_fd);
-    close(status_fd);
-
-    return result;
-}
-
-static pid_t get_pid_of_tracing_process(pid_t tid)
-{
-    StatusEntry entry = get_proc_status_entry(tid, str_lit("TracerPid"));
-    ASSERT(entry.data);
-    ASSERT(entry.count);
-
-    memmi_String str = str_from_span(entry);
-    MaybeS64 pid_opt = str_to_s64(str, NUM_BASE_DEC);
-    ASSERT(pid_opt.ok);
-    pid_t result = (pid_t)pid_opt.value;
-
-    return result;
-}
-
-static pid_t get_thread_group_id(pid_t tid)
-{
-    StatusEntry entry = get_proc_status_entry(tid, str_lit("Tgid"));
-    ASSERT(entry.data);
-    ASSERT(entry.count);
-
-    memmi_String tgid_str = str_from_span(entry);
-    MaybeS64 tgid_opt = str_to_s64(tgid_str, NUM_BASE_DEC);
-    ASSERT(tgid_opt.ok);
-
-    pid_t result = (pid_t)tgid_opt.value;
 
     return result;
 }
@@ -657,18 +666,13 @@ typedef struct {
     int32_t suspended_thread_count;
 } AttachThreadsContext;
 
-// TODO: take pid_t as arg
 static ForEachThreadResult attach_to_thread_cb(void *user_data, pid_t tid)
 {
     AttachThreadsContext *context = user_data;
 
     bool is_attached = false;
 
-    // TODO: use process_is_traced_by_us
-    pid_t tracer_pid = get_pid_of_tracing_process(tid);
-
-    if (tracer_pid == getpid()) {
-        // We are already attached to this process, nothing to do here.
+    if (thread_is_traced_by_us(tid)) {
         is_attached = true;
     } else {
         memmi_Status attach_result = attach_to_thread(tid);
@@ -993,15 +997,6 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
         .data = context.thread_list.data,
         .count = context.thread_list.count
     };
-
-    return result;
-}
-
-static bool thread_is_traced_by_us(pid_t pid)
-{
-    pid_t tracer_pid = get_pid_of_tracing_process(pid);
-
-    bool result = tracer_pid == getpid();
 
     return result;
 }
@@ -1350,7 +1345,6 @@ static size_t get_user_struct_debug_register_offset(DebugRegister reg)
 
 static DebugRegisters get_thread_debug_registers(pid_t tid)
 {
-    // TODO: check status when using this function
     DebugRegisters result = {0};
 
     for (DebugRegister reg = 0; reg < DEBUG_REG_COUNT; ++reg) {

@@ -22,7 +22,7 @@
 #endif
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define BIT(e) (1u << (e))
+#define ARRAY_COUNT(arr) (sizeof((arr)) / sizeof(*(arr)))
 
 #define dyn_arr_push(arr, item, alloc)                                  \
 do {                                                                    \
@@ -57,13 +57,12 @@ do {                                                                    \
 #define ASSERT(e) do {                                      \
         if (!(e)) {                                         \
             fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
-                "Expression: '%s'\nFunction: %s\n%s:%d:\n",    \
+                "Expression: '%s'\nFunction: %s\n%s:%d:\n", \
                 #e, __func__, __FILE_NAME__, __LINE__);     \
             DEBUG_BREAK;                                    \
         }                                                   \
     } while (0)
 
-#define ARRAY_COUNT(arr) (sizeof((arr)) / sizeof(*(arr)))
 
 typedef struct {
     memmi_String head;
