@@ -1478,6 +1478,34 @@ static uint64_t dr7_length_bits(uint32_t reg_index, memmi_BreakpointLength lengt
     return result;
 }
 
+memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintptr_t address,
+    memmi_BreakpointCondition cond, memmi_BreakpointLength length)
+{
+    memmi_Status result = 0;
+
+    DebugRegister reg = debug_register_from_index(index);
+    DebugRegisters debug_regs = get_thread_debug_registers(tid);
+    result = debug_regs.status;
+
+    if (result == MEMMI_OK) {
+        uint64_t old_dr7_value = debug_regs.values[DEBUG_REG_DR7];
+
+        uint64_t new_dr_value = address;
+        uint64_t new_dr7_value =
+            (old_dr7_value & ~dr7_breakpoint_mask(index))
+            | dr7_local_enable_bit(index)
+            | dr7_condition_bits(index, cond)
+            | dr7_length_bits(index, length);
+
+        memmi_Status set_addr_result = set_thread_debug_register(tid, reg, new_dr_value);
+        memmi_Status set_dr7_result = set_thread_debug_register(tid, DEBUG_REG_DR7, new_dr7_value);
+
+        result |= set_addr_result | set_dr7_result;
+    }
+
+    return result;
+}
+
 typedef struct {
     uint32_t index;
     uintptr_t address;
@@ -1487,32 +1515,22 @@ typedef struct {
     memmi_Status statuses;
 } HardwareBreakpointContext;
 
-// TODO: report errors
 ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data, pid_t tid)
 {
     HardwareBreakpointContext *context = user_data;
 
-    DebugRegister reg = debug_register_from_index(context->index);
-    DebugRegisters debug_regs = get_thread_debug_registers(tid);
+    memmi_Status set_bp_result = set_hardware_breakpoint_on_thread(
+        tid, context->index, context->address, context->condition, context->length);
+    context->statuses |= set_bp_result;
 
-    ASSERT(0 && "TODO: check get_thread_debug_registers status code");
+    ForEachThreadResult result = 0;
+    if (context->statuses == MEMMI_OK) {
+        result = FOR_EACH_THREAD_RES_CONTINUE;
+    } else {
+        result = FOR_EACH_THREAD_RES_BREAK;
+    }
 
-    uint64_t old_dr7_value = debug_regs.values[DEBUG_REG_DR7];
-
-    uint64_t new_dr_value = context->address;
-    uint64_t new_dr7_value =
-        (old_dr7_value & ~dr7_breakpoint_mask(context->index))
-        | dr7_local_enable_bit(context->index)
-        | dr7_condition_bits(context->index, context->condition)
-        | dr7_length_bits(context->index, context->length);
-
-    memmi_Status set_addr_result = set_thread_debug_register(tid, reg, new_dr_value);
-    memmi_Status set_dr7_result = set_thread_debug_register(tid, DEBUG_REG_DR7, new_dr7_value);
-
-    context->statuses |= set_addr_result;
-    context->statuses |= set_dr7_result;
-
-    return FOR_EACH_THREAD_RES_CONTINUE;
+    return result;
 }
 
 memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
@@ -1535,6 +1553,7 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
         bool for_each_result = for_each_thread(native_pid, &context, set_hardware_breakpoint_on_thread_cb);
 
         if (!for_each_result) {
+            // TODO: check to make sure which error actually occurred
             result = MEMMI_NO_SUCH_PROCESS;
         } else {
             // TODO: simplify

@@ -193,6 +193,5 @@ typedef enum {
     MEMMI_BREAKPOINT_8_BYTES = 8,
 } memmi_BreakpointLength;
 
-// TODO: communicate partial successes
 memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
     memmi_BreakpointCondition condition, uint32_t index, memmi_BreakpointLength length);
