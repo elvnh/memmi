@@ -523,6 +523,7 @@ typedef struct {
     size_t count;
 } StatusEntry;
 
+// TODO: move to top of file
 static StatusEntry get_proc_status_entry(pid_t tid, memmi_String row_name)
 {
     StatusEntry result = {0};
@@ -561,7 +562,6 @@ static StatusEntry get_proc_status_entry(pid_t tid, memmi_String row_name)
     return result;
 }
 
-// TODO: take pid_t as arg
 static pid_t get_pid_of_tracing_process(pid_t tid)
 {
     StatusEntry entry = get_proc_status_entry(tid, str_lit("TracerPid"));
@@ -729,13 +729,16 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
         if (last_attached_thread_count == 0) {
             // If we didn't manage to attach to a single thread, the process probably died.
             // TODO: check errno to make sure?
-            result = cb_context.statuses;
-        } else if (cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS) {
+            result = MEMMI_NO_SUCH_PROCESS;
+        } else {
             // If we failed to attach to some threads due to them dying, we'll count it as a
             // success, as threads dying can legitimately happen. If we failed for any other reason,
             // we'll count it as a failure.
+            uint32_t statuses_excluding_no_such_process =
+                cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+
             // TODO: these casts are pretty ugly
-            result = cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+            result = statuses_excluding_no_such_process;
         }
     }
 
@@ -775,12 +778,13 @@ memmi_Status memmi_detach_from_process(memmi_Process process)
         // TODO: check to make sure
         result = MEMMI_NO_SUCH_PROCESS;
     } else {
-        if (context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS) {
-            // If we failed to detach from any thread for any reason except for the thread dying,
-            // count this as a failure. If we failed due to threads dying, we'll ignore that and
-            // count it as a success.
-            result = context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
-        }
+        // If we failed to detach from any thread for any reason except for the thread dying,
+        // count this as a failure. If we failed due to threads dying, we'll ignore that and
+        // count it as a success.
+        uint32_t statuses_excluding_no_such_process =
+            context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+
+        result = statuses_excluding_no_such_process;
     }
 
     return result;
@@ -812,10 +816,12 @@ memmi_Status memmi_resume_process(memmi_Process process)
             result = MEMMI_NO_SUCH_PROCESS;
         } else {
             // Check if errors occured when resuming certain threads or if all succeeded. If any
-            // threads failed due to them dying, we'll count that as a success.
-            if (resume_cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS) {
-                result = resume_cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
-            }
+            // threads failed due to them dying, we'll ignore that as threads can die without an
+            // error having occurred.
+            uint32_t statuses_excluding_no_such_process =
+                resume_cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+
+            result = statuses_excluding_no_such_process;
         }
     }
 
@@ -939,11 +945,14 @@ memmi_Status memmi_suspend_process(memmi_Process process)
                 // TODO: check errno to see why this failed
                 result = MEMMI_NO_SUCH_PROCESS;
             }
-        } else if (cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS) {
+        } else {
             // If we failed to suspend some threads for any reason except threads dying, count this
             // as a failure. If we failed to suspend some threads due to them dying, we'll count it
             // as a success, as threads dying can legitimately happen.
-            result = cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+            uint32_t statuses_excluding_no_such_process =
+                cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+
+            result = statuses_excluding_no_such_process;
         }
     }
 
@@ -1500,7 +1509,8 @@ memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintpt
         memmi_Status set_addr_result = set_thread_debug_register(tid, reg, new_dr_value);
         memmi_Status set_dr7_result = set_thread_debug_register(tid, DEBUG_REG_DR7, new_dr7_value);
 
-        result |= set_addr_result | set_dr7_result;
+        result |= set_addr_result
+               | set_dr7_result;
     }
 
     return result;
@@ -1562,13 +1572,12 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
                 // TODO: check to make sure which error actually occurred
                 result = MEMMI_NO_SUCH_PROCESS;
             } else {
-                // TODO: simplify
-                // TODO: don't fail if child thread died while we were setting breakpoints, as long as setting
-                // breakpoint on main thread succeeded
-                // TODO: store masked out value in a variable
-                if (context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS) {
-                    result = context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
-                }
+                // If setting a breakpoint on a child thread died due to that thread dying due to a
+                // race, we'll ignore it. Any other error we'll report.
+                uint32_t statuses_excluding_no_such_process =
+                    context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+
+                result = statuses_excluding_no_such_process;
             }
         }
     }
