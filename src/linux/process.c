@@ -89,7 +89,6 @@ static ProcessName get_process_name(int proc_dir_fd, memmi_Allocator allocator)
     return result;
 }
 
-// TODO: rename to ptrace_errno_to_memmi_status? I think that's all it's used for
 static memmi_Status errno_to_memmi_status(int errno_value)
 {
     memmi_Status result = 0;
@@ -349,7 +348,7 @@ static StatusFileRow get_proc_status_file_row(pid_t tid, memmi_String row_name)
     return result;
 }
 
-static memmi_Status pid_exists(memmi_PID pid)
+static memmi_Status pid_exists(pid_t pid)
 {
     // TODO: error check and return memmi_Status
     memmi_Status result = 0;
@@ -361,7 +360,7 @@ static memmi_Status pid_exists(memmi_PID pid)
         result = MEMMI_NO_SUCH_PROCESS;
     } else {
         char pid_str[64];
-        int chars_written = snprintf(pid_str, ARRAY_COUNT(pid_str), "%ld", pid.value);
+        int chars_written = snprintf(pid_str, ARRAY_COUNT(pid_str), "%d", pid);
         ASSERT(chars_written < (int)ARRAY_COUNT(pid_str));
 
         struct stat stat_buf = {0};
@@ -461,7 +460,7 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
 {
     memmi_OpenProcess result = {0};
 
-    memmi_Status pid_exists_result = pid_exists(pid);
+    memmi_Status pid_exists_result = pid_exists((pid_t)pid.value);
 
     if (pid_exists_result != MEMMI_OK) {
         result.status = pid_exists_result;
@@ -478,6 +477,7 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
 
     return result;
 }
+
 memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 {
     ProcessDynArray processes = {0};
@@ -1288,7 +1288,7 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
     pid_t native_pid = (pid_t)pid.value;
 
     // TODO: this check should be done in more places
-    memmi_Status pid_exists_result = pid_exists(pid);
+    memmi_Status pid_exists_result = pid_exists(native_pid);
 
     if (pid_exists_result != MEMMI_OK) {
         result.status = pid_exists_result;
