@@ -175,6 +175,8 @@ typedef struct {
 static ProcessDirFd get_process_directory_fd(pid_t pid)
 {
     ProcessDirFd result = {0};
+    result.fd = -1;
+
     DIR *proc_dir = opendir("/proc");
 
     if (!proc_dir) {
@@ -274,16 +276,14 @@ static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn 
         }
     }
 
-    if (proc_dir_fd.status == MEMMI_OK) {
-        close(proc_dir_fd.fd);
-    }
-
     if (!found_thread_dir) {
         // If we first found the process directory but then didn't find a single thread in
         // /proc/<pid>/task, that must mean that the process died before we had a chance
         // to iterate through the threads.
         result = MEMMI_NO_SUCH_PROCESS;
     }
+
+    close(proc_dir_fd.fd);
 
     return result;
 }
@@ -340,9 +340,7 @@ static StatusFileRow get_proc_status_file_row(pid_t tid, memmi_String row_name)
         close(status_fd);
     }
 
-    if (proc_dir_fd.status == MEMMI_OK) {
-        close(proc_dir_fd.fd);
-    }
+    close(proc_dir_fd.fd);
 
     return result;
 }
@@ -720,9 +718,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
             }
         }
 
-        if (proc_dir_fd.status == MEMMI_OK) {
-            close(proc_dir_fd.fd);
-        }
+        close(proc_dir_fd.fd);
     }
 
     return result;
