@@ -16,6 +16,8 @@ CFLAGS="
     -Wstrict-prototypes
     -Wsign-conversion
     -Wsign-compare
+    -Wenum-compare
+    -Wenum-conversion
     -Wnull-dereference
     -Wdouble-promotion
     -Wformat=2

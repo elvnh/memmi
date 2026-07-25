@@ -15,4 +15,5 @@ typedef enum {
     MEMMI_INVALID_ARGUMENTS        = (1u << 2u),
     MEMMI_ALLOCATION_FAILED        = (1u << 3u),
     MEMMI_PARTIAL_READ_OR_WRITE    = (1u << 4u),
+    MEMMI_OTHER_ERROR              = (1u << 5u),
 } memmi_Status;

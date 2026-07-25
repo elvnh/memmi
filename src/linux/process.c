@@ -89,15 +89,114 @@ static ProcessName get_process_name(int proc_dir_fd, memmi_Allocator allocator)
     return result;
 }
 
-static int get_process_directory_fd(pid_t pid)
+static memmi_Status errno_to_memmi_status(int errno_value)
 {
+    memmi_Status result = 0;
+
+    switch (errno_value) {
+        case 0: {
+            ASSERT(0 && "Shouldn't call this unless there was an actual error");
+        } break;
+
+        case EACCES:
+        case EPERM: {
+            result = MEMMI_INSUFFICIENT_PERMISSIONS;
+        } break;
+
+        case ESRCH: {
+            result = MEMMI_NO_SUCH_PROCESS;
+        } break;
+
+        case ENOMEM: {
+            result = MEMMI_ALLOCATION_FAILED;
+        } break;
+
+        case EFAULT:
+        case EINVAL: {
+            result = MEMMI_INVALID_ARGUMENTS;
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+}
+
+static memmi_Status proc_fs_errno_to_memmi_status(int errno_value)
+{
+    memmi_Status result = 0;
+
+    switch (errno_value) {
+        case 0: {
+            ASSERT(0 && "Shouldn't call this unless there was an actual error");
+        } break;
+
+        case EPERM:
+        case EACCES: {
+            result = MEMMI_INSUFFICIENT_PERMISSIONS;
+        } break;
+
+        case EBADF: {
+            ASSERT(0 && "Should not have happened as fd should already have been verified to be valid.");
+        } break;
+
+        case ENFILE:
+        case EMFILE: {
+            ASSERT(0 && "TODO: generic MEMMI_OTHER_ERROR");
+        } break;
+
+        case ENOENT: {
+            result = MEMMI_NO_SUCH_PROCESS;
+        } break;
+
+        case ENOMEM: {
+            result = MEMMI_ALLOCATION_FAILED;
+        } break;
+
+        case ENOTDIR: {
+            // TODO: return generic error here too
+            ASSERT(0 && "Should not happen");
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+}
+typedef struct {
+    memmi_Status status;
+    int fd;
+} ProcessDirFd;
+
+static ProcessDirFd get_process_directory_fd(pid_t pid)
+{
+    ProcessDirFd result = {0};
     DIR *proc_dir = opendir("/proc");
-    int proc_dir_fd = dirfd(proc_dir);
 
-    char buf[64];
-    snprintf(buf, ARRAY_COUNT(buf), "%d", pid);
+    if (!proc_dir) {
+        result.status = proc_fs_errno_to_memmi_status(errno);
+    } else {
+        // Gets closed by closedir.
+        int proc_dir_fd = dirfd(proc_dir);
 
-    int result = openat(proc_dir_fd, buf, O_RDONLY);
+        if (proc_dir_fd == -1) {
+            ASSERT(0 && "Should never happen, as we provided a valid DIR pointer.");
+            result.status = MEMMI_OTHER_ERROR;
+        } else {
+            char buf[64];
+            snprintf(buf, ARRAY_COUNT(buf), "%d", pid);
+
+            result.fd = openat(proc_dir_fd, buf, O_RDONLY);
+
+            if (result.fd == -1) {
+                result.status = proc_fs_errno_to_memmi_status(errno);
+            }
+        }
+    }
 
     closedir(proc_dir);
 
@@ -112,49 +211,79 @@ typedef enum {
 
 typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, pid_t tid);
 
-// TODO: return error enum from this function, not a bool
-static bool for_each_thread(pid_t pid, void *user_data, ForEachThreadFn fn)
+static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn fn)
 {
-    int proc_dir_fd = get_process_directory_fd(pid);
-    int threads_dir_fd = openat(proc_dir_fd, "task", O_RDONLY);
+    memmi_Status result = 0;
 
-    DIR *threads_dir = fdopendir(threads_dir_fd);
+    bool found_thread_dir = false;
+    ProcessDirFd proc_dir_fd = get_process_directory_fd(pid);
 
-    bool result = false;
+    if (proc_dir_fd.status != MEMMI_OK) {
+        result = proc_dir_fd.status;
+    } else {
+        // Gets closed by closedir.
+        int threads_dir_fd = openat(proc_dir_fd.fd, "task", O_RDONLY);
+        ASSERT(proc_dir_fd.fd > 0);
 
-    if (threads_dir) {
-        struct dirent *subdir_entry = 0;
+        if (threads_dir_fd == -1) {
+            result = proc_fs_errno_to_memmi_status(errno);
+        } else {
+            DIR *threads_dir = fdopendir(threads_dir_fd);
 
-        while ((subdir_entry = readdir(threads_dir))) {
-            // Only count as a success if there was at least one thread,
-            // as otherwise the process has been killed.
-            result = true;
+            if (!threads_dir) {
+                result = proc_fs_errno_to_memmi_status(errno);
+            } else {
+                struct dirent *subdir_entry = 0;
 
-            // TODO: properly check if is dir with fstat
-            ASSERT(subdir_entry->d_type == DT_DIR);
+                errno = 0;
+                while ((subdir_entry = readdir(threads_dir))) {
+                    // Only count as a success if there was at least one thread,
+                    // as otherwise the process has been killed.
+                    found_thread_dir = true;
 
-            memmi_String name = str_from_c_str(subdir_entry->d_name);
-            MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
+                    // TODO: properly check if is dir with fstat
+                    ASSERT(subdir_entry->d_type == DT_DIR);
 
-            if (tid_opt.ok) {
-                pid_t tid = (pid_t)tid_opt.value;
+                    memmi_String name = str_from_c_str(subdir_entry->d_name);
+                    MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
 
-                ForEachThreadResult cb_result = fn(user_data, tid);
+                    if (tid_opt.ok) {
+                        pid_t tid = (pid_t)tid_opt.value;
 
-                if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
-                    break;
+                        ForEachThreadResult cb_result = fn(user_data, tid);
+
+                        if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
+                            break;
+                        }
+                    }
+                }
+
+                if (errno != 0) {
+                    result = proc_fs_errno_to_memmi_status(errno);
                 }
             }
+
+            closedir(threads_dir);
         }
+
     }
 
-    close(proc_dir_fd);
-    closedir(threads_dir);
+    if (proc_dir_fd.status == MEMMI_OK) {
+        close(proc_dir_fd.fd);
+    }
+
+    if (!found_thread_dir) {
+        // If we first found the process directory but then didn't find a single thread in
+        // /proc/<pid>/task, that must mean that the process died before we had a chance
+        // to iterate through the threads.
+        result = MEMMI_NO_SUCH_PROCESS;
+    }
 
     return result;
 }
 
 typedef struct {
+    memmi_Status status;
     char data[256];
     size_t count;
 } StatusEntry;
@@ -163,42 +292,59 @@ static StatusEntry get_proc_status_entry(pid_t tid, memmi_String row_name)
 {
     StatusEntry result = {0};
 
-    int proc_dir_fd = get_process_directory_fd(tid);
-    int status_fd = openat(proc_dir_fd, "status", O_RDONLY);
+    ProcessDirFd proc_dir_fd = get_process_directory_fd(tid);
 
-    if ((proc_dir_fd != -1) && (status_fd != -1)) {
-        FILE *status_file = fdopen(status_fd, "r");
+    if (proc_dir_fd.status != MEMMI_OK) {
+        result.status = proc_dir_fd.status;
+    } else {
+        ASSERT(proc_dir_fd.fd != -1);
+        ASSERT(proc_dir_fd.fd != 0);
 
-        if (status_file) {
-            while (fgets(result.data, ARRAY_COUNT(result.data), status_file)) {
-                memmi_String line = str_from_c_str(result.data);
+        int status_fd = openat(proc_dir_fd.fd, "status", O_RDONLY);
 
-                if (str_starts_with(line, row_name)) {
-                    Cut cut = str_cut(line, str_lit(":"));
+        if (status_fd == -1) {
+            result.status = proc_fs_errno_to_memmi_status(errno);
+        } else {
+            FILE *status_file = fdopen(status_fd, "r");
 
-                    if (cut.ok) {
-                        memmi_String trimmed = str_trim_whitespace(cut.tail);
-                        ASSERT(trimmed.count <= ARRAY_COUNT(result.data));
+            if (!status_file) {
+                result.status = proc_fs_errno_to_memmi_status(errno);
+            } else {
+                while (fgets(result.data, ARRAY_COUNT(result.data), status_file)) {
+                    memmi_String line = str_from_c_str(result.data);
 
-                        memmove(result.data, trimmed.data, trimmed.count);
-                        result.count = trimmed.count;
-                        break;
+                    if (str_starts_with(line, row_name)) {
+                        Cut cut = str_cut(line, str_lit(":"));
+
+                        if (cut.ok) {
+                            memmi_String trimmed = str_trim_whitespace(cut.tail);
+                            ASSERT(trimmed.count <= ARRAY_COUNT(result.data));
+
+                            memmove(result.data, trimmed.data, trimmed.count);
+                            result.count = trimmed.count;
+                            break;
+                        }
                     }
                 }
             }
+
+            fclose(status_file);
         }
 
-        fclose(status_file);
+
+        close(status_fd);
     }
 
-    close(proc_dir_fd);
-    close(status_fd);
+    if (proc_dir_fd.status == MEMMI_OK) {
+        close(proc_dir_fd.fd);
+    }
 
     return result;
 }
 
 static bool pid_exists(memmi_PID pid)
 {
+    // TODO: error check and return memmi_Status
     bool result = false;
 
     DIR *proc_dir = opendir("/proc");
@@ -223,40 +369,59 @@ static bool pid_exists(memmi_PID pid)
     return result;
 }
 
-static pid_t get_pid_of_tracing_process(pid_t tid)
+typedef struct {
+    memmi_Status status;
+    pid_t pid;
+} PidResult;
+
+static PidResult get_pid_of_tracing_process(pid_t tid)
 {
+    PidResult result = {0};
     StatusEntry entry = get_proc_status_entry(tid, str_lit("TracerPid"));
-    ASSERT(entry.data);
-    ASSERT(entry.count);
 
-    memmi_String str = str_from_span(entry);
-    MaybeS64 pid_opt = str_to_s64(str, NUM_BASE_DEC);
-    ASSERT(pid_opt.ok);
-    pid_t result = (pid_t)pid_opt.value;
+    if (entry.status != MEMMI_OK) {
+        result.status = entry.status;
+    } else {
+        memmi_String str = str_from_span(entry);
+        MaybeS64 pid_opt = str_to_s64(str, NUM_BASE_DEC);
+        ASSERT(pid_opt.ok);
 
-    return result;
-}
+        result.pid = (pid_t)pid_opt.value;
+    }
 
-static pid_t get_thread_group_id(pid_t tid)
-{
-    StatusEntry entry = get_proc_status_entry(tid, str_lit("Tgid"));
-    ASSERT(entry.data);
-    ASSERT(entry.count);
-
-    memmi_String tgid_str = str_from_span(entry);
-    MaybeS64 tgid_opt = str_to_s64(tgid_str, NUM_BASE_DEC);
-    ASSERT(tgid_opt.ok);
-
-    pid_t result = (pid_t)tgid_opt.value;
 
     return result;
 }
 
 static bool thread_is_traced_by_us(pid_t pid)
 {
-    pid_t tracer_pid = get_pid_of_tracing_process(pid);
+    bool result = false;
+    PidResult tracer_pid = get_pid_of_tracing_process(pid);
 
-    bool result = tracer_pid == getpid();
+    if (tracer_pid.status == MEMMI_OK) {
+        result = tracer_pid.pid == getpid();
+    }
+
+    return result;
+}
+
+static PidResult get_thread_group_id(pid_t tid)
+{
+    PidResult result = {0};
+
+    StatusEntry entry = get_proc_status_entry(tid, str_lit("Tgid"));
+
+    if (entry.status != MEMMI_OK) {
+        result.status = entry.status;
+    } else {
+        ASSERT(entry.data);
+        ASSERT(entry.count);
+
+        memmi_String tgid_str = str_from_span(entry);
+        MaybeS64 tgid_opt = str_to_s64(tgid_str, NUM_BASE_DEC);
+        ASSERT(tgid_opt.ok);
+        result.pid = (pid_t)tgid_opt.value;
+    }
 
     return result;
 }
@@ -275,40 +440,6 @@ static int get_signal_from_wait_status(int status)
         ASSERT(WIFCONTINUED(status));
 
         result = SIGCONT;
-    }
-
-    return result;
-}
-
-static memmi_Status errno_to_memmi_status(int errno_value)
-{
-    memmi_Status result = 0;
-
-    switch (errno_value) {
-        case 0: {
-            ASSERT(0 && "Shouldn't call this unless there was an actual error");
-        } break;
-
-        case EPERM: {
-            result = MEMMI_INSUFFICIENT_PERMISSIONS;
-        } break;
-
-        case ESRCH: {
-            result = MEMMI_NO_SUCH_PROCESS;
-        } break;
-
-        case ENOMEM: {
-            result = MEMMI_ALLOCATION_FAILED;
-        } break;
-
-        case EFAULT:
-        case EINVAL: {
-            result = MEMMI_INVALID_ARGUMENTS;
-        } break;
-
-        default: {
-            ASSERT(0);
-        } break;
     }
 
     return result;
@@ -541,35 +672,49 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
 
 memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator)
 {
+    memmi_MemoryRegions result = {0};
     RegionDynArray regions = {0};
 
     memmi_PID pid = get_platform_process_handle(process)->pid;
     pid_t native_pid = (pid_t)pid.value;
 
-    int proc_dir_fd = get_process_directory_fd(native_pid);
-    int maps_fd = openat(proc_dir_fd, "maps", O_RDONLY);
+    ProcessDirFd proc_dir_fd = get_process_directory_fd(native_pid);
 
-    FILE *maps_file = fdopen(maps_fd, "r");
-
-    memmi_MemoryRegions result = {0};
-
-    if (!maps_file) {
-        // TODO: check whether this is due to process not existing or something else
-        result.status = MEMMI_NO_SUCH_PROCESS;
+    if (proc_dir_fd.status != MEMMI_OK) {
+        result.status = proc_dir_fd.status;
     } else {
-        char buffer[256];
+        ASSERT(proc_dir_fd.fd > 0);
 
-        while (fgets(buffer, ARRAY_COUNT(buffer), maps_file)) {
-            memmi_MemoryRegion region = parse_memory_region(str_from_c_str(buffer));
-            dyn_arr_push(&regions, region, allocator);
+        // TODO: this pattern of proc dir fd, followed by open of subdir, followed by fdopen etc.
+        // is starting to be a pattern, maybe extract out to a function
+        int maps_fd = openat(proc_dir_fd.fd, "maps", O_RDONLY);
+
+        if (maps_fd == -1) {
+            result.status = proc_fs_errno_to_memmi_status(errno);
+        } else {
+            FILE *maps_file = fdopen(maps_fd, "r");
+
+            if (!maps_file) {
+                result.status = proc_fs_errno_to_memmi_status(errno);
+            } else {
+                char buffer[256];
+
+                while (fgets(buffer, ARRAY_COUNT(buffer), maps_file)) {
+                    memmi_MemoryRegion region = parse_memory_region(str_from_c_str(buffer));
+                    dyn_arr_push(&regions, region, allocator);
+                }
+
+                result.data = regions.data;
+                result.count = regions.count;
+            }
+
+            fclose(maps_file);
         }
-
-        result.data = regions.data;
-        result.count = regions.count;
     }
 
-    close(proc_dir_fd);
-    fclose(maps_file);
+    if (proc_dir_fd.status == MEMMI_OK) {
+        close(proc_dir_fd.fd);
+    }
 
     return result;
 }
@@ -720,37 +865,33 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
         // Attach to each thread in process until the number of attached threads
         // stabilizes. This is done in order to prevent races with thread creation.
         while (!suspended_thread_count_is_stable) {
-            // Reset the context each iteration as outside the loop we only care
-            // about the results from the last iteration.
-            cb_context = (AttachThreadsContext){0};
+            cb_context.suspended_thread_count = 0;
 
-            for_each_thread(native_pid, &cb_context, attach_to_thread_cb);
+            memmi_Status for_each_thread_result = for_each_thread(native_pid, &cb_context, attach_to_thread_cb);
 
-            if (cb_context.suspended_thread_count <= last_attached_thread_count) {
-                // The number of threads we attached to has not grown since last iteration, meaning
-                // no new threads can be spawned since all threads in process are suspended. We are
-                // therefore done.  It could also mean that we didn't attach to a single thread,
-                // which we'll notice later on when checking last_attached_thread_count.
-                suspended_thread_count_is_stable = true;
+            if (for_each_thread_result != MEMMI_OK) {
+                result = for_each_thread_result;
+                break;
+            } else {
+                if (cb_context.suspended_thread_count <= last_attached_thread_count) {
+                    // The number of threads we attached to has not grown since last iteration, meaning
+                    // no new threads can be spawned since all threads in process are suspended. We are
+                    // therefore done.  It could also mean that we didn't attach to a single thread,
+                    // which we'll notice later on when checking last_attached_thread_count.
+                    suspended_thread_count_is_stable = true;
+                }
+
+                last_attached_thread_count = cb_context.suspended_thread_count;
             }
-
-            last_attached_thread_count = cb_context.suspended_thread_count;
         }
 
-        if (last_attached_thread_count == 0) {
-            // If we didn't manage to attach to a single thread, the process probably died.
-            // TODO: check errno to make sure?
-            result = MEMMI_NO_SUCH_PROCESS;
-        } else {
-            // If we failed to attach to some threads due to them dying, we'll count it as a
-            // success, as threads dying can legitimately happen. If we failed for any other reason,
-            // we'll count it as a failure.
-            uint32_t statuses_excluding_no_such_process =
-                cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+        // If we failed to attach to some threads due to them dying, we'll count it as a
+        // success, as threads dying can legitimately happen. If we failed for any other reason,
+        // we'll count it as a failure.
+        uint32_t statuses_excluding_no_such_process =
+            cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
 
-            // TODO: these casts are pretty ugly
-            result = statuses_excluding_no_such_process;
-        }
+        result = statuses_excluding_no_such_process;
     }
 
     return result;
@@ -780,15 +921,11 @@ memmi_Status memmi_detach_from_process(memmi_Process process)
 
     DetachContext context = {0};
 
-    bool for_each_result = for_each_thread(native_pid, &context, detach_from_thread_cb);
-
     memmi_Status result = 0;
+    memmi_Status for_each_result = for_each_thread(native_pid, &context, detach_from_thread_cb);
 
-    if (!for_each_result) {
-        // If we failed to iterate the threads, we'll assume it was because the
-        // process died.
-        // TODO: check to make sure
-        result = MEMMI_NO_SUCH_PROCESS;
+    if (for_each_result != MEMMI_OK) {
+        result = for_each_result;
     } else {
         // If we failed to detach from any thread for any reason except for the thread dying,
         // count this as a failure. If we failed due to threads dying, we'll ignore that and
@@ -820,12 +957,12 @@ memmi_Status memmi_resume_process(memmi_Process process)
             .parent_pid = native_pid,
         };
 
-        bool for_each_result = for_each_thread(native_pid, &resume_cb_context, resume_thread_cb);
+        memmi_Status for_each_result = for_each_thread(native_pid, &resume_cb_context, resume_thread_cb);
 
-        if (!for_each_result) {
+        if (for_each_result != MEMMI_OK) {
             // Process probably died before we had a chance to resume child threads.
             // TODO: check to make sure
-            result = MEMMI_NO_SUCH_PROCESS;
+            result = for_each_result;
         } else {
             // Check if errors occured when resuming certain threads or if all succeeded. If any
             // threads failed due to them dying, we'll ignore that as threads can die without an
@@ -882,14 +1019,10 @@ static ForEachThreadResult suspend_thread_cb(void *user_data, pid_t tid)
     SuspendThreadsContext *context = user_data;
 
     bool is_suspended = false;
-    // TODO: make get_proc_status_entry take tid as arg
     StatusEntry state_entry = get_proc_status_entry(tid, str_lit("State"));
 
-    if (state_entry.count <= 0) {
-        // Failed to get state for thread, probably because the thread died.
-        // TODO: make sure that this is the case by checking errno
-        ASSERT(state_entry.count == 0);
-        context->statuses |= MEMMI_NO_SUCH_PROCESS;
+    if (state_entry.status != MEMMI_OK) {
+        context->statuses |= state_entry.status;
     } else {
         memmi_String state_entry_str = str_from_span(state_entry);
 
@@ -939,34 +1072,30 @@ memmi_Status memmi_suspend_process(memmi_Process process)
         while (!suspended_thread_count_is_stable) {
             // Keep trying to suspend threads until the number of suspended threads in the process
             // has stabilized.
-            cb_context = (SuspendThreadsContext){0};
+            cb_context.suspended_thread_count = 0;
 
-            for_each_thread(native_pid, &cb_context, suspend_thread_cb);
+            // TODO: break early if non-NO_SUCH_PROC error occurs
+            memmi_Status for_each_result = for_each_thread(native_pid, &cb_context, suspend_thread_cb);
 
-            if (cb_context.suspended_thread_count <= last_suspended_thread_count) {
-                suspended_thread_count_is_stable = true;
+            if (for_each_result != MEMMI_OK) {
+                result = for_each_result;
+                break;
+            } else {
+                if (cb_context.suspended_thread_count <= last_suspended_thread_count) {
+                    suspended_thread_count_is_stable = true;
+                }
+
+                last_suspended_thread_count = cb_context.suspended_thread_count;
             }
-
-            last_suspended_thread_count = cb_context.suspended_thread_count;
         }
 
-        if (last_suspended_thread_count == 0) {
-            // If we didn't manage to suspend a single thread, count this as a complete failure.
-            if (cb_context.statuses & MEMMI_INSUFFICIENT_PERMISSIONS) {
-                result = MEMMI_INSUFFICIENT_PERMISSIONS;
-            } else  {
-                // TODO: check errno to see why this failed
-                result = MEMMI_NO_SUCH_PROCESS;
-            }
-        } else {
-            // If we failed to suspend some threads for any reason except threads dying, count this
-            // as a failure. If we failed to suspend some threads due to them dying, we'll count it
-            // as a success, as threads dying can legitimately happen.
-            uint32_t statuses_excluding_no_such_process =
-                cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+        // If we failed to suspend some threads for any reason except threads dying, count
+        // this as a failure. If we failed to suspend some threads due to them dying,
+        // we'll count it as a success, as threads dying can legitimately happen.
+        uint32_t statuses_excluding_no_such_process =
+            cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
 
-            result = statuses_excluding_no_such_process;
-        }
+        result = statuses_excluding_no_such_process;
     }
 
     return result;
@@ -993,6 +1122,8 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
     CollectThreadsContext context = {
         .allocator = allocator
     };
+
+    ASSERT(0 && "TODO: handle errors");
 
     for_each_thread(native_pid, &context, collect_threads);
 
@@ -1034,89 +1165,92 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
         // waitpid(-1, ...) will wait on any children, not just tracees,
         // including threads of the client process. We'll check that this thread
         // actually belongs to our tracee before reporting any events.
-        pid_t thread_group_id = get_thread_group_id(id_of_affected_thread);
-        bool thread_belongs_to_traced_process = thread_group_id == pid.value;
+        PidResult thread_group_id = get_thread_group_id(id_of_affected_thread);
 
-        if (thread_belongs_to_traced_process) {
-            result = allocate(allocator, memmi_DebugEvent, 1);
-            *result = (memmi_DebugEvent){0};
+        if (thread_group_id.status != MEMMI_OK) {
+            ASSERT(0 && "TODO: report errors");
+        } else {
+            bool thread_belongs_to_traced_process = thread_group_id.pid == pid.value;
 
-            result->id_of_affected_thread = (memmi_TID){id_of_affected_thread};
+            if (thread_belongs_to_traced_process) {
+                result = allocate(allocator, memmi_DebugEvent, 1);
+                *result = (memmi_DebugEvent){0};
 
-            siginfo_t sig_info = {0};
-            long get_sig_result = ptrace(PTRACE_GETSIGINFO, id_of_affected_thread, 0, &sig_info);
+                result->id_of_affected_thread = (memmi_TID){id_of_affected_thread};
 
-            // TODO: breakpoints etc
+                siginfo_t sig_info = {0};
+                long get_sig_result = ptrace(PTRACE_GETSIGINFO, id_of_affected_thread, 0, &sig_info);
 
-            DEBUG_BREAK;
+                DEBUG_BREAK;
 
-            if (get_sig_result == -1) {
-                ASSERT(0 && "TODO: Report error");
-            } else {
-                switch (sig_info.si_code) {
-                    // ptrace events
-                    case ptrace_event_code(PTRACE_EVENT_STOP): {
-                        result->kind = MEMMI_DEBUG_EVENT_THREAD_SUSPENDED;
-                    } break;
+                if (get_sig_result == -1) {
+                    ASSERT(0 && "TODO: Report error");
+                } else {
+                    switch (sig_info.si_code) {
+                        // ptrace events
+                        case ptrace_event_code(PTRACE_EVENT_STOP): {
+                            result->kind = MEMMI_DEBUG_EVENT_THREAD_SUSPENDED;
+                        } break;
 
-                    case ptrace_event_code(PTRACE_EVENT_CLONE): {
-                        long new_thread_id = 0;
-                        long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &new_thread_id);
+                        case ptrace_event_code(PTRACE_EVENT_CLONE): {
+                            long new_thread_id = 0;
+                            long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &new_thread_id);
 
-                        if (get_msg_result == -1) {
-                            ASSERT(0 && "TODO: Report error");
-                        } else {
-                            result->kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
-                            result->as.new_thread.id = (memmi_TID){(int64_t)new_thread_id};
-                        }
-                    } break;
-
-                    case ptrace_event_code(PTRACE_EVENT_EXIT): {
-                        /* There's a bug in the kernel that causes SIGKILL to generate a
-                           PTRACE_EVENT_EXIT. As far as I can tell there's no way to differentiate
-                           this from a normal exit, so we'll have to simply report it as a normal
-                           exit with code 0. Thanks ptrace! */
-                        long exit_code = 0;
-                        long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &exit_code);
-
-                        if (get_msg_result == -1) {
-                            ASSERT(0 && "TODO: Report error");
-                        } else {
-                            result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                            result->as.thread_exited.exit_code = (int)(exit_code >> 8);
-                        }
-                    } break;
-
-                    default: {
-                        // Normal signals
-                        if (WIFEXITED(status)) {
-                            ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_EXIT.");
-
-                            result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                            result->as.thread_exited.exit_code = WEXITSTATUS(status);
-                        } else if (WIFSIGNALED(status)) {
-                            result->kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
-                        } else if (WIFSTOPPED(status)) {
-                            int signal = WSTOPSIG(status);
-
-                            if (signal == SIGTRAP) {
-                                // TODO: report pc register
-                                // TODO: ensure that this works for hardware breakpoints too
-                                result->kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
+                            if (get_msg_result == -1) {
+                                ASSERT(0 && "TODO: Report error");
                             } else {
-                                result->kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
+                                result->kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
+                                result->as.new_thread.id = (memmi_TID){(int64_t)new_thread_id};
                             }
-                        } else if (WIFCONTINUED(status)) {
-                            ASSERT(0 && "Unimplemented, how should this be handled?");
-                        } else {
-                            ASSERT(0 && "Unreachable");
-                        }
-                    } break;
+                        } break;
+
+                        case ptrace_event_code(PTRACE_EVENT_EXIT): {
+                            /* There's a bug in the kernel that causes SIGKILL to generate a
+                               PTRACE_EVENT_EXIT. As far as I can tell there's no way to differentiate
+                               this from a normal exit, so we'll have to simply report it as a normal
+                               exit with code 0. Thanks ptrace! */
+                            long exit_code = 0;
+                            long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &exit_code);
+
+                            if (get_msg_result == -1) {
+                                ASSERT(0 && "TODO: Report error");
+                            } else {
+                                result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+                                result->as.thread_exited.exit_code = (int)(exit_code >> 8);
+                            }
+                        } break;
+
+                        default: {
+                            // Normal signals
+                            if (WIFEXITED(status)) {
+                                ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_EXIT.");
+
+                                result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+                                result->as.thread_exited.exit_code = WEXITSTATUS(status);
+                            } else if (WIFSIGNALED(status)) {
+                                result->kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
+                            } else if (WIFSTOPPED(status)) {
+                                int signal = WSTOPSIG(status);
+
+                                if (signal == SIGTRAP) {
+                                    // TODO: report pc register
+                                    // TODO: ensure that this works for hardware breakpoints too
+                                    result->kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
+                                } else {
+                                    result->kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
+                                }
+                            } else if (WIFCONTINUED(status)) {
+                                ASSERT(0 && "Unimplemented, how should this be handled?");
+                            } else {
+                                ASSERT(0 && "Unreachable");
+                            }
+                        } break;
+                    }
                 }
             }
         }
-    }
 
+    }
 
     return result;
 }
@@ -1572,11 +1706,10 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
             context.condition = condition;
             context.length = length;
 
-            bool for_each_result = for_each_thread(native_pid, &context, set_hardware_breakpoint_on_thread_cb);
+            memmi_Status for_each_result = for_each_thread(native_pid, &context, set_hardware_breakpoint_on_thread_cb);
 
-            if (!for_each_result) {
-                // TODO: check to make sure which error actually occurred
-                result = MEMMI_NO_SUCH_PROCESS;
+            if (for_each_result != MEMMI_OK) {
+                result = for_each_result;
             } else {
                 // If setting a breakpoint on a child thread died due to that thread dying due to a
                 // race, we'll ignore it. Any other error we'll report.
