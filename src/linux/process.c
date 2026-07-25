@@ -238,24 +238,30 @@ static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn 
                 struct dirent *subdir_entry = 0;
 
                 errno = 0;
+
                 while ((subdir_entry = readdir(threads_dir))) {
                     // Only count as a success if there was at least one thread,
                     // as otherwise the process has been killed.
-                    found_thread_dir = true;
+                    struct stat stat_buf = {0};
+                    int stat_result = fstatat(threads_dir_fd, subdir_entry->d_name, &stat_buf, 0);
+                    ASSERT(stat_result == 0);
 
-                    // TODO: properly check if is dir with fstat
-                    ASSERT(subdir_entry->d_type == DT_DIR);
+                    // I believe there should never be any non-directory entries in the
+                    // task subdirectory, but we'll check just to be sure.
+                    if ((stat_result == 0) && S_ISDIR(stat_buf.st_mode)) {
+                        found_thread_dir = true;
 
-                    memmi_String name = str_from_c_str(subdir_entry->d_name);
-                    MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
+                        memmi_String name = str_from_c_str(subdir_entry->d_name);
+                        MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
 
-                    if (tid_opt.ok) {
-                        pid_t tid = (pid_t)tid_opt.value;
+                        if (tid_opt.ok) {
+                            pid_t tid = (pid_t)tid_opt.value;
 
-                        ForEachThreadResult cb_result = fn(user_data, tid);
+                            ForEachThreadResult cb_result = fn(user_data, tid);
 
-                        if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
-                            break;
+                            if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
+                                break;
+                            }
                         }
                     }
                 }
