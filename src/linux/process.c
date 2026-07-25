@@ -1122,6 +1122,8 @@ static ForEachThreadResult collect_threads(void *user_data, pid_t tid)
 
 memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
 {
+    memmi_ThreadList result = {0};
+
     memmi_PID pid = get_platform_process_handle(process)->pid;
     pid_t native_pid = (pid_t)pid.value;
 
@@ -1129,14 +1131,14 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
         .allocator = allocator
     };
 
-    ASSERT(0 && "TODO: handle errors");
+    memmi_Status for_each_result = for_each_thread(native_pid, &context, collect_threads);
 
-    for_each_thread(native_pid, &context, collect_threads);
-
-    memmi_ThreadList result = {
-        .data = context.thread_list.data,
-        .count = context.thread_list.count
-    };
+    if (for_each_result != MEMMI_OK) {
+        result.status = for_each_result;
+    } else {
+        result.data = context.thread_list.data;
+        result.count = context.thread_list.count;
+    }
 
     return result;
 }

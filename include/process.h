@@ -69,17 +69,16 @@ typedef struct {
     memmi_MemoryRegionPermission permissions;
 } memmi_MemoryRegion;
 
-// TODO: rename to memmi_MemoryRegions
 typedef struct {
     memmi_Status         status;
     memmi_MemoryRegion  *data;
     size_t               count;
 } memmi_MemoryRegions;
 
-// TODO: communicate errors
 typedef struct {
-    memmi_TID *data;
-    size_t     count;
+    memmi_Status   status;
+    memmi_TID     *data;
+    size_t         count;
 } memmi_ThreadList;
 
 // TODO: is both THREAD_SUSPENDED and THREAD_STOPPED needed?
