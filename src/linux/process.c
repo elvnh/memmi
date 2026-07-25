@@ -294,11 +294,11 @@ typedef struct {
     memmi_Status status;
     char data[256];
     size_t count;
-} StatusEntry;
+} StatusFileRow;
 
-static StatusEntry get_proc_status_entry(pid_t tid, memmi_String row_name)
+static StatusFileRow get_proc_status_file_row(pid_t tid, memmi_String row_name)
 {
-    StatusEntry result = {0};
+    StatusFileRow result = {0};
 
     ProcessDirFd proc_dir_fd = get_process_directory_fd(tid);
 
@@ -339,7 +339,6 @@ static StatusEntry get_proc_status_entry(pid_t tid, memmi_String row_name)
             fclose(status_file);
         }
 
-
         close(status_fd);
     }
 
@@ -350,15 +349,17 @@ static StatusEntry get_proc_status_entry(pid_t tid, memmi_String row_name)
     return result;
 }
 
-static bool pid_exists(memmi_PID pid)
+static memmi_Status pid_exists(memmi_PID pid)
 {
     // TODO: error check and return memmi_Status
-    bool result = false;
+    memmi_Status result = 0;
 
     DIR *proc_dir = opendir("/proc");
     int proc_dir_fd = dirfd(proc_dir);
 
-    if (proc_dir_fd != -1) {
+    if (proc_dir_fd == -1) {
+        result = MEMMI_NO_SUCH_PROCESS;
+    } else {
         char pid_str[64];
         int chars_written = snprintf(pid_str, ARRAY_COUNT(pid_str), "%ld", pid.value);
         ASSERT(chars_written < (int)ARRAY_COUNT(pid_str));
@@ -366,8 +367,8 @@ static bool pid_exists(memmi_PID pid)
         struct stat stat_buf = {0};
         int stat_result = fstatat(proc_dir_fd, pid_str, &stat_buf, 0);
 
-        if (stat_result != -1) {
-            result = true;
+        if (stat_result == -1) {
+            result = proc_fs_errno_to_memmi_status(errno);
         }
 
     }
@@ -385,7 +386,7 @@ typedef struct {
 static PidResult get_pid_of_tracing_process(pid_t tid)
 {
     PidResult result = {0};
-    StatusEntry entry = get_proc_status_entry(tid, str_lit("TracerPid"));
+    StatusFileRow entry = get_proc_status_file_row(tid, str_lit("TracerPid"));
 
     if (entry.status != MEMMI_OK) {
         result.status = entry.status;
@@ -417,7 +418,7 @@ static PidResult get_thread_group_id(pid_t tid)
 {
     PidResult result = {0};
 
-    StatusEntry entry = get_proc_status_entry(tid, str_lit("Tgid"));
+    StatusFileRow entry = get_proc_status_file_row(tid, str_lit("Tgid"));
 
     if (entry.status != MEMMI_OK) {
         result.status = entry.status;
@@ -460,8 +461,10 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
 {
     memmi_OpenProcess result = {0};
 
-    if (!pid_exists(pid)) {
-        result.status = MEMMI_NO_SUCH_PROCESS;
+    memmi_Status pid_exists_result = pid_exists(pid);
+
+    if (pid_exists_result != MEMMI_OK) {
+        result.status = pid_exists_result;
     } else {
         memmi_ProcessImpl *data = allocate(allocator, memmi_ProcessImpl, 1);
 
@@ -1032,7 +1035,7 @@ static ForEachThreadResult suspend_thread_cb(void *user_data, pid_t tid)
     SuspendThreadsContext *context = user_data;
 
     bool is_suspended = false;
-    StatusEntry state_entry = get_proc_status_entry(tid, str_lit("State"));
+    StatusFileRow state_entry = get_proc_status_file_row(tid, str_lit("State"));
 
     if (state_entry.status != MEMMI_OK) {
         context->statuses |= state_entry.status;
@@ -1284,9 +1287,11 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
     memmi_PID pid = get_platform_process_handle(process)->pid;
     pid_t native_pid = (pid_t)pid.value;
 
-    if (!pid_exists(pid)) {
-        // TODO: this check should be done in more places
-        result.status = MEMMI_NO_SUCH_PROCESS;
+    // TODO: this check should be done in more places
+    memmi_Status pid_exists_result = pid_exists(pid);
+
+    if (pid_exists_result != MEMMI_OK) {
+        result.status = pid_exists_result;
     } else {
         // TODO: do we need to check that all threads are traced by us too?
         if (!thread_is_traced_by_us(native_pid)) {
