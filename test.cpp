@@ -7,7 +7,7 @@
 #if defined(__x86_64__)
 #    define DEBUG_BREAK __asm volatile("int3")
 #else
-#    error Unsupported architecture
+//#    error Unsupported architecture
 #endif
 
 static void thread_proc2()

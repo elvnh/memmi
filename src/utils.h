@@ -15,10 +15,35 @@
 
 #define str_from_span(span) (memmi_String) {(span).data, (span).count}
 
-#if defined(__x86_64__)
-#    define DEBUG_BREAK __asm volatile("int3")
+// TODO: move all architecture/OS checking into its own file
+
+// TODO: use __builtin_trap or similar instead
+
+
+#if defined(__GNUC__)
+#    error
+//#    define DEBUG_BREAK __builtin_trap()
+#elif defined(_MSC_VER)
+#    define DEBUG_BREAK __debugbreak()
 #else
-#    error Unsupported architecture
+#    error DEBUG_BREAK undefined for compiler
+#endif
+
+
+#if defined(__GNUC__)
+#    define FILENAME __FILE_NAME__
+#elif defined(_MSC_VER)
+#    define FILENAME __FILE__
+#else
+#    error FILENAME undefined for compiler
+#endif
+
+#if defined(__GNUC__)
+#    define ALIGNOF(t) __alignof__(t)
+#elif defined(_MSC_VER)
+#    define ALIGNOF(t) __alignof(t)
+#else
+#    error ALIGNOF undefined for compiler
 #endif
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -48,17 +73,11 @@ do {                                                                    \
                                                 \
     } while (0)
 
-#if defined(__GNUC__)
-#    define ALIGNOF(t) __alignof__(t)
-#else
-#    error Unsupported compiler
-#endif
-
 #define ASSERT(e) do {                                      \
         if (!(e)) {                                         \
             fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
                 "Expression: '%s'\nFunction: %s\n%s:%d:\n", \
-                #e, __func__, __FILE_NAME__, __LINE__);     \
+                #e, __func__, FILENAME, __LINE__);     \
             DEBUG_BREAK;                                    \
         }                                                   \
     } while (0)

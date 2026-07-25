@@ -1,13 +1,3 @@
-#define _GNU_SOURCE
-#include <unistd.h>
-#include <stdio.h>
-#include <limits.h>
-#include <stdlib.h>
-#include <sys/ptrace.h>
-#include <signal.h>           /* Definition of SIG* constants */
-#include <sys/syscall.h>      /* Definition of SYS_* constants */
-#include <unistd.h>
-
 #include "process.h"
 #include "utils.h"
 

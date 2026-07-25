@@ -217,8 +217,14 @@ MaybeU64 str_to_u64(memmi_String str, NumberBase base)
 #    define SAFE_MUL_S64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
 #    define SAFE_MUL_U64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
 #    define SAFE_MUL_USIZE(a, b, result_ptr) !__builtin_mul_overflow((a), (b), (result_ptr))
+#elif defined(_MSC_VER)
+#    define SAFE_ADD_U64(a, b, result_ptr)   (abort(), 0)
+#    define SAFE_ADD_S64(a, b, result_ptr)   (abort(), 0)
+#    define SAFE_MUL_S64(a, b, result_ptr)   (abort(), 0)
+#    define SAFE_MUL_U64(a, b, result_ptr)   (abort(), 0)
+#    define SAFE_MUL_USIZE(a, b, result_ptr) (abort(), 0)
 #else
-#    error Unsupported compiler
+#    error Safe arithmetic undefined for compiler
 #endif
 
 MaybeS64 safe_add_s64(int64_t a, int64_t b)
