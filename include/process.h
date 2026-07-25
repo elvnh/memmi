@@ -108,8 +108,8 @@ typedef struct memmi_DebugEvent {
     struct memmi_DebugEvent *next;
 } memmi_DebugEvent;
 
-// TODO: Report failure to get event
 typedef struct {
+    memmi_Status      status;
     memmi_DebugEvent *first;
     memmi_DebugEvent *last;
 } memmi_EventList;

@@ -89,6 +89,7 @@ static ProcessName get_process_name(int proc_dir_fd, memmi_Allocator allocator)
     return result;
 }
 
+// TODO: rename to ptrace_errno_to_memmi_status? I think that's all it's used for
 static memmi_Status errno_to_memmi_status(int errno_value)
 {
     memmi_Status result = 0;
@@ -1150,9 +1151,14 @@ typedef enum {
 
 #define ptrace_event_code(e) (SIGTRAP | ((unsigned int)(e)) << 8)
 
-static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang hang, memmi_Allocator allocator)
+typedef struct {
+    memmi_Status status;
+    memmi_DebugEvent *data;
+} DebugEventResult;
+
+static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang hang, memmi_Allocator allocator)
 {
-    memmi_DebugEvent *result = 0;
+    DebugEventResult result = {0};
 
     memmi_PID pid = get_platform_process_handle(proc)->pid;
 
@@ -1176,15 +1182,15 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
         PidResult thread_group_id = get_thread_group_id(id_of_affected_thread);
 
         if (thread_group_id.status != MEMMI_OK) {
-            ASSERT(0 && "TODO: report errors");
+            result.status = thread_group_id.status;
         } else {
             bool thread_belongs_to_traced_process = thread_group_id.pid == pid.value;
 
             if (thread_belongs_to_traced_process) {
-                result = allocate(allocator, memmi_DebugEvent, 1);
-                *result = (memmi_DebugEvent){0};
+                result.data = allocate(allocator, memmi_DebugEvent, 1);
+                *result.data = (memmi_DebugEvent){0};
 
-                result->id_of_affected_thread = (memmi_TID){id_of_affected_thread};
+                result.data->id_of_affected_thread = (memmi_TID){id_of_affected_thread};
 
                 siginfo_t sig_info = {0};
                 long get_sig_result = ptrace(PTRACE_GETSIGINFO, id_of_affected_thread, 0, &sig_info);
@@ -1192,12 +1198,12 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
                 DEBUG_BREAK;
 
                 if (get_sig_result == -1) {
-                    ASSERT(0 && "TODO: Report error");
+                    result.status = errno_to_memmi_status(errno);
                 } else {
                     switch (sig_info.si_code) {
                         // ptrace events
                         case ptrace_event_code(PTRACE_EVENT_STOP): {
-                            result->kind = MEMMI_DEBUG_EVENT_THREAD_SUSPENDED;
+                            result.data->kind = MEMMI_DEBUG_EVENT_THREAD_SUSPENDED;
                         } break;
 
                         case ptrace_event_code(PTRACE_EVENT_CLONE): {
@@ -1205,10 +1211,10 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
                             long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &new_thread_id);
 
                             if (get_msg_result == -1) {
-                                ASSERT(0 && "TODO: Report error");
+                                result.status = errno_to_memmi_status(errno);
                             } else {
-                                result->kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
-                                result->as.new_thread.id = (memmi_TID){(int64_t)new_thread_id};
+                                result.data->kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
+                                result.data->as.new_thread.id = (memmi_TID){(int64_t)new_thread_id};
                             }
                         } break;
 
@@ -1221,10 +1227,10 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
                             long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &exit_code);
 
                             if (get_msg_result == -1) {
-                                ASSERT(0 && "TODO: Report error");
+                                result.status = errno_to_memmi_status(errno);
                             } else {
-                                result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                                result->as.thread_exited.exit_code = (int)(exit_code >> 8);
+                                result.data->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+                                result.data->as.thread_exited.exit_code = (int)(exit_code >> 8);
                             }
                         } break;
 
@@ -1233,19 +1239,19 @@ static memmi_DebugEvent *wait_for_debug_event(memmi_Process proc, WaitpidHang ha
                             if (WIFEXITED(status)) {
                                 ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_EXIT.");
 
-                                result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                                result->as.thread_exited.exit_code = WEXITSTATUS(status);
+                                result.data->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+                                result.data->as.thread_exited.exit_code = WEXITSTATUS(status);
                             } else if (WIFSIGNALED(status)) {
-                                result->kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
+                                result.data->kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
                             } else if (WIFSTOPPED(status)) {
                                 int signal = WSTOPSIG(status);
 
                                 if (signal == SIGTRAP) {
                                     // TODO: report pc register
                                     // TODO: ensure that this works for hardware breakpoints too
-                                    result->kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
+                                    result.data->kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
                                 } else {
-                                    result->kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
+                                    result.data->kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
                                 }
                             } else if (WIFCONTINUED(status)) {
                                 ASSERT(0 && "Unimplemented, how should this be handled?");
@@ -1272,22 +1278,38 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
     memmi_PID pid = get_platform_process_handle(process)->pid;
     pid_t native_pid = (pid_t)pid.value;
 
-    // TODO: check that process exists
-
-    // TODO: do we need to check that all threads are traced by us too?
-    if (!thread_is_traced_by_us(native_pid)) {
-        ASSERT(0 && "Cannot wait for events in a non-traced process");
+    if (!pid_exists(pid)) {
+        // TODO: this check should be done in more places
+        result.status = MEMMI_NO_SUCH_PROCESS;
     } else {
-        memmi_resume_process(process);
+        // TODO: do we need to check that all threads are traced by us too?
+        if (!thread_is_traced_by_us(native_pid)) {
+            ASSERT(0 && "Cannot wait for events in a non-traced process");
+        } else {
+            memmi_Status resume_result = memmi_resume_process(process);
 
-        memmi_DebugEvent *event = wait_for_debug_event(process, WAITPID_HANG, allocator);
+            if (resume_result != MEMMI_OK) {
+                result.status = resume_result;
+            } else {
+                DebugEventResult event = wait_for_debug_event(process, WAITPID_HANG, allocator);
 
-        while (event) {
-            sl_push_back(&result, event);
+                // Keep checking for debug events without hanging in case any more were queued.
+                while (event.status == MEMMI_OK) {
+                    ASSERT(event.data);
 
-            // Keep checking for debug events without hanging in case any more were queued.
-            event = wait_for_debug_event(process, WAITPID_NO_HANG, allocator);
+                    sl_push_back(&result, event.data);
+
+                    event = wait_for_debug_event(process, WAITPID_NO_HANG, allocator);
+                }
+
+                if (event.status != MEMMI_OK) {
+                    result.status = event.status;
+                }
+            }
+
+
         }
+
     }
 
     return result;
