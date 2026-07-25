@@ -211,6 +211,7 @@ typedef enum {
 
 typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, pid_t tid);
 
+// TODO: generalize this?
 static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn fn)
 {
     memmi_Status result = 0;
@@ -864,14 +865,13 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
 
         // Attach to each thread in process until the number of attached threads
         // stabilizes. This is done in order to prevent races with thread creation.
-        while (!suspended_thread_count_is_stable) {
+        while (!suspended_thread_count_is_stable && (result == MEMMI_OK)) {
             cb_context.suspended_thread_count = 0;
 
             memmi_Status for_each_thread_result = for_each_thread(native_pid, &cb_context, attach_to_thread_cb);
 
             if (for_each_thread_result != MEMMI_OK) {
                 result = for_each_thread_result;
-                break;
             } else {
                 if (cb_context.suspended_thread_count <= last_attached_thread_count) {
                     // The number of threads we attached to has not grown since last iteration, meaning
@@ -882,16 +882,22 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
                 }
 
                 last_attached_thread_count = cb_context.suspended_thread_count;
+
+                // If we didn't manage to attach to a single thread, we care about the
+                // error code MEMMI_NO_SUCH_PROCESS as this probably means the process
+                // died. If we attached to at least one thread however, we don't care
+                // about that code as a child thread may have legitimately died.
+                if (last_attached_thread_count == 0) {
+                    result = cb_context.statuses;
+                    ASSERT(result != MEMMI_OK);
+                } else {
+                    uint32_t statuses_excluding_no_such_process =
+                        cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+
+                    result = statuses_excluding_no_such_process;
+                }
             }
         }
-
-        // If we failed to attach to some threads due to them dying, we'll count it as a
-        // success, as threads dying can legitimately happen. If we failed for any other reason,
-        // we'll count it as a failure.
-        uint32_t statuses_excluding_no_such_process =
-            cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
-
-        result = statuses_excluding_no_such_process;
     }
 
     return result;
@@ -1069,33 +1075,33 @@ memmi_Status memmi_suspend_process(memmi_Process process)
         SuspendThreadsContext cb_context = {0};
         bool suspended_thread_count_is_stable = false;
 
-        while (!suspended_thread_count_is_stable) {
+        while (!suspended_thread_count_is_stable && (result == MEMMI_OK)) {
             // Keep trying to suspend threads until the number of suspended threads in the process
             // has stabilized.
             cb_context.suspended_thread_count = 0;
 
-            // TODO: break early if non-NO_SUCH_PROC error occurs
             memmi_Status for_each_result = for_each_thread(native_pid, &cb_context, suspend_thread_cb);
 
             if (for_each_result != MEMMI_OK) {
                 result = for_each_result;
-                break;
             } else {
                 if (cb_context.suspended_thread_count <= last_suspended_thread_count) {
                     suspended_thread_count_is_stable = true;
                 }
 
                 last_suspended_thread_count = cb_context.suspended_thread_count;
+
+                if (last_suspended_thread_count == 0) {
+                    result = cb_context.statuses;
+                    ASSERT(result != MEMMI_OK);
+                } else {
+                    uint32_t statuses_excluding_no_such_process =
+                        cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+
+                    result = statuses_excluding_no_such_process;
+                }
             }
         }
-
-        // If we failed to suspend some threads for any reason except threads dying, count
-        // this as a failure. If we failed to suspend some threads due to them dying,
-        // we'll count it as a success, as threads dying can legitimately happen.
-        uint32_t statuses_excluding_no_such_process =
-            cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
-
-        result = statuses_excluding_no_such_process;
     }
 
     return result;
