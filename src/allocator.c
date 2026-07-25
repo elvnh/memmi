@@ -9,10 +9,15 @@ static void *memmi_default_allocate(void *ctx, void *ptr, size_t old_count, size
     (void)ctx;
     (void)old_count;
     (void)align;
-    // TODO: get rid of libc
-    // TODO: arithmetic overflow checks
 
-    void *result = realloc(ptr, new_count * item_size);
+    void *result = 0;
+
+    // TODO: get rid of libc?
+    MaybeUsize new_size = safe_mul_usize(new_count, item_size);
+
+    if (new_size.ok) {
+        result = realloc(ptr, new_size.value);
+    }
 
     return result;
 }

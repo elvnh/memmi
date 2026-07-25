@@ -210,12 +210,22 @@ MaybeU64 str_to_u64(memmi_String str, NumberBase base)
     return result;
 }
 
-// TODO: define these for other compilers and for other sizes of long
+// TODO: define these for other compilers
+#if defined(__GNUC__)
+#    define SAFE_ADD_S64(a, b, result_ptr)   !__builtin_add_overflow((a), (b), (result_ptr))
+#    define SAFE_ADD_U64(a, b, result_ptr)   !__builtin_add_overflow((a), (b), (result_ptr))
+#    define SAFE_MUL_S64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
+#    define SAFE_MUL_U64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
+#    define SAFE_MUL_USIZE(a, b, result_ptr) !__builtin_mul_overflow((a), (b), (result_ptr))
+#else
+#    error Unsupported compiler
+#endif
+
 MaybeS64 safe_add_s64(int64_t a, int64_t b)
 {
     MaybeS64 result = {0};
 
-    result.ok = !__builtin_saddl_overflow (a, b, &result.value);
+    result.ok = SAFE_ADD_S64(a, b, &result.value);
 
     return result;
 }
@@ -223,7 +233,8 @@ MaybeS64 safe_add_s64(int64_t a, int64_t b)
 MaybeU64 safe_add_u64(uint64_t a, uint64_t b)
 {
     MaybeU64 result = {0};
-    result.ok = !__builtin_uaddl_overflow(a, b, &result.value);
+
+    result.ok = SAFE_ADD_U64(a, b, &result.value);
 
     return result;
 }
@@ -231,7 +242,8 @@ MaybeU64 safe_add_u64(uint64_t a, uint64_t b)
 MaybeS64 safe_mul_s64(int64_t a, int64_t b)
 {
     MaybeS64 result = {0};
-    result.ok = !__builtin_smull_overflow(a, b, &result.value);
+
+    result.ok = SAFE_MUL_S64(a, b, &result.value);
 
     return result;
 }
@@ -239,7 +251,17 @@ MaybeS64 safe_mul_s64(int64_t a, int64_t b)
 MaybeU64 safe_mul_u64(uint64_t a, uint64_t b)
 {
     MaybeU64 result = {0};
-    result.ok = !__builtin_umull_overflow(a, b, &result.value);
+
+    result.ok = SAFE_MUL_U64(a, b, &result.value);
+
+    return result;
+}
+
+MaybeUsize safe_mul_usize(size_t a, size_t b)
+{
+    MaybeUsize result = {0};
+
+    result.ok = SAFE_MUL_USIZE(a, b, &result.value);
 
     return result;
 }

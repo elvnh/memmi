@@ -131,6 +131,11 @@ typedef struct {
     bool ok;
 } MaybeU64;
 
+typedef struct {
+    size_t value;
+    bool ok;
+} MaybeUsize;
+
 memmi_String   str_from_c_str(char *str);
 bool           str_starts_with(memmi_String str, memmi_String substr);
 Cut            str_cut(memmi_String str, memmi_String pattern);
@@ -144,3 +149,4 @@ MaybeS64       safe_add_s64(int64_t a, int64_t b);
 MaybeU64       safe_add_u64(uint64_t a, uint64_t b);
 MaybeS64       safe_mul_s64(int64_t a, int64_t b);
 MaybeU64       safe_mul_u64(uint64_t a, uint64_t b);
+MaybeUsize     safe_mul_usize(size_t a, size_t b);
