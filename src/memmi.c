@@ -36,7 +36,7 @@
 /***************************/
 #define allocate(a, t, count) (t *)((a).function((a).context, 0, 0, (count), sizeof(t), ALIGNOF(t)))
 #define reallocate(a, ptr, old_count, new_count) (a).function((a).context, (ptr), (old_count), \
-        (new_count), sizeof(*(ptr)), ALIGNOF(*(ptr)))
+        (new_count), sizeof(*(ptr)), ALIGNOF(TYPEOF(*(ptr))))
 #define deallocate(a, ptr, count) (a).function((a).context, (ptr), (count), 0, sizeof(*(ptr)), ALIGNOF(*(ptr)))
 #define str_from_span(span) (memmi_String) {(span).data, (span).count}
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -89,7 +89,15 @@ do {                                                                    \
 #elif defined(MEMMI_MSVC)
 #    define ALIGNOF(t) __alignof(t)
 #else
-#    error ALIGNOF not defined for this compilre
+#    error ALIGNOF not defined for this compiler
+#endif
+
+#if defined(MEMMI_GCC)
+#    error TODO
+#elif defined(MEMMI_MSVC)
+#    define TYPEOF(t) __typeof__(t)
+#else
+#    error TYPEOF not defined for this compiler
 #endif
 
 // TODO: move closer to function definition
