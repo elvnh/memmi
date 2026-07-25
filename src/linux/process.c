@@ -1032,8 +1032,6 @@ typedef struct {
 
 static ForEachThreadResult suspend_thread_cb(void *user_data, pid_t tid)
 {
-    DEBUG_BREAK;
-
     SuspendThreadsContext *context = user_data;
 
     bool is_suspended = false;

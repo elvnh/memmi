@@ -8,10 +8,10 @@
 #include "string8.h"
 #include "status.h"
 
-#define allocate(a, t, count) (t *)((a).function((a).context, 0, 0, (count) * sizeof(t), ALIGNOF(t)))
-#define reallocate(a, ptr, old, new) (a).function((a).context, (ptr), (old) * sizeof(*(ptr)), \
-        (new) * sizeof(*(ptr)), ALIGNOF(*(ptr)))
-#define deallocate(a, ptr, size) (a).function((a).context, (ptr), (size) * sizeof(*(ptr)), 0, 0)
+#define allocate(a, t, count) (t *)((a).function((a).context, 0, 0, (count), sizeof(t), ALIGNOF(t)))
+#define reallocate(a, ptr, old_count, new_count) (a).function((a).context, (ptr), (old_count), \
+        (new_count), sizeof(*(ptr)), ALIGNOF(*(ptr)))
+#define deallocate(a, ptr, count) (a).function((a).context, (ptr), (count), 0, sizeof(*(ptr)), ALIGNOF(*(ptr)))
 
 #define str_from_span(span) (memmi_String) {(span).data, (span).count}
 

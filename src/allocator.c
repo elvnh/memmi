@@ -4,14 +4,15 @@
 
 #include "utils.h"
 
-static void *memmi_default_allocate(void *ctx, void *ptr, size_t old_size, size_t new_size, size_t align)
+static void *memmi_default_allocate(void *ctx, void *ptr, size_t old_count, size_t new_count, size_t item_size, size_t align)
 {
     (void)ctx;
-    (void)old_size;
+    (void)old_count;
     (void)align;
     // TODO: get rid of libc
+    // TODO: arithmetic overflow checks
 
-    void *result = realloc(ptr, new_size);
+    void *result = realloc(ptr, new_count * item_size);
 
     return result;
 }
