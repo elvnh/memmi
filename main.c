@@ -1,18 +1,4 @@
-#include <unistd.h>
-#include <stdio.h>
-#include <limits.h>
-#include <stdlib.h>
-#include <sys/ptrace.h>
-#include <signal.h>           /* Definition of SIG* constants */
-#include <sys/syscall.h>      /* Definition of SYS_* constants */
-#include <unistd.h>
-
-#include <assert.h>
-#include <stdbool.h>
-
 #include "memmi.h"
-
-#define ASSERT(e) assert(e)
 
 int main(int argc, char **argv)
 {

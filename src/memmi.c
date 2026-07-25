@@ -6,8 +6,10 @@
 #    error Unsupported operating system
 #endif
 
-#ifdef __GNUC__
+#if defined(__GNUC__)
 #    define MEMMI_GCC
+#elif defined(_MSC_VER)
+#    define MEMMI_MSVC
 #else
 #    error Unsupported compiler
 #endif
@@ -73,15 +75,19 @@ do {                                                                    \
                                                 \
     } while (0)
 
-// TODO: use __builtin_trap()
-#ifdef MEMMI_GCC
+// TODO: collapse all these into one ifdef
+#if defined(MEMMI_GCC)
 #    define DEBUG_BREAK __builtin_trap()
+#elif defined(MEMMI_MSVC)
+#    define DEBUG_BREAK __debugbreak()
 #else
 #    error DEBUG_BREAK not defined for this compiler
 #endif
 
-#if defined(__GNUC__)
+#if defined(MEMMI_GCC)
 #    define ALIGNOF(t) __alignof__(t)
+#elif defined(MEMMI_MSVC)
+#    define ALIGNOF(t) __alignof(t)
 #else
 #    error ALIGNOF not defined for this compilre
 #endif
