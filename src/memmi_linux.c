@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <dirent.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -9,15 +8,13 @@
 #include <sys/ptrace.h>
 #include <sys/user.h>
 
-#include "process.h"
+#include "memmi.h"
 
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
 #include <limits.h>
 #include <errno.h>
-
-#include "utils.h"
 
 typedef struct {
     memmi_String value;

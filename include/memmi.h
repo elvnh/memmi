@@ -3,18 +3,28 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "allocator.h"
-#include "string8.h"
-#include "status.h"
+/* Type definitions */
+typedef enum {
+    MEMMI_OK                       =  0u,
+    MEMMI_NO_SUCH_PROCESS          = (1u << 0u),
+    MEMMI_INSUFFICIENT_PERMISSIONS = (1u << 1u),
+    MEMMI_INVALID_ARGUMENTS        = (1u << 2u),
+    MEMMI_ALLOCATION_FAILED        = (1u << 3u),
+    MEMMI_PARTIAL_READ_OR_WRITE    = (1u << 4u),
+    MEMMI_OTHER_ERROR              = (1u << 5u),
+} memmi_Status;
 
-/*
-  TODO:
-  - Opaque thread handle?
-  - Store pid in opaque process handle
-  - Software breakpoints
-  - Separate architecture-specific things into separate file
-  - Unit test breakpoints
- */
+typedef void *(*memmi_AllocateFn)(void *ctx, void *ptr, size_t old_count, size_t new_count, size_t item_size, size_t align);
+
+typedef struct {
+    void             *context;
+    memmi_AllocateFn  function;
+} memmi_Allocator;
+
+typedef struct {
+    char *data;
+    size_t count;
+} memmi_String;
 
 typedef struct {
     int64_t value;
@@ -155,6 +165,20 @@ typedef struct {
     uint64_t     values[MEMMI_REG_COUNT]; // TODO: typedef register values to make porting to other arch easier
 } memmi_Registers;
 
+typedef enum {
+    MEMMI_BREAKPOINT_READ_WRITE,
+    MEMMI_BREAKPOINT_WRITE,
+    /* MEMMI_BREAKPOINT_EXECUTE, */
+} memmi_BreakpointCondition;
+
+typedef enum {
+    MEMMI_BREAKPOINT_1_BYTES = 1,
+    MEMMI_BREAKPOINT_2_BYTES = 2,
+    MEMMI_BREAKPOINT_4_BYTES = 4,
+    MEMMI_BREAKPOINT_8_BYTES = 8,
+} memmi_BreakpointLength;
+
+/* Functions */
 // TODO: allow checking if process exists
 memmi_ProcessList        memmi_get_running_processes(memmi_Allocator allocator);
 memmi_OpenProcess        memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
@@ -170,20 +194,7 @@ memmi_Status             memmi_suspend_process(memmi_Process process);
 memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
 memmi_Registers          memmi_get_thread_registers(memmi_TID tid);
 memmi_Status             memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value);
-
-/* Breakpoint */
-typedef enum {
-    MEMMI_BREAKPOINT_READ_WRITE,
-    MEMMI_BREAKPOINT_WRITE,
-    /* MEMMI_BREAKPOINT_EXECUTE, */
-} memmi_BreakpointCondition;
-
-typedef enum {
-    MEMMI_BREAKPOINT_1_BYTES = 1,
-    MEMMI_BREAKPOINT_2_BYTES = 2,
-    MEMMI_BREAKPOINT_4_BYTES = 4,
-    MEMMI_BREAKPOINT_8_BYTES = 8,
-} memmi_BreakpointLength;
-
-memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
-    memmi_BreakpointCondition condition, uint32_t index, memmi_BreakpointLength length);
+memmi_Status             memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
+                                                       memmi_BreakpointCondition condition, uint32_t index,
+                                                       memmi_BreakpointLength length);
+memmi_Allocator          memmi_default_allocator(void);

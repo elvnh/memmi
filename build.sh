@@ -3,7 +3,7 @@
 CFLAGS="
     -Werror
     -fsanitize=address,undefined
-    -std=c99
+    -std=gnu99
     -Wall
     -Wextra
     -ggdb
@@ -40,5 +40,5 @@ CFLAGS="
     -Wno-error=unused-but-set-variable
 "
 
-gcc ${CFLAGS} main.c -Iinclude -Isrc src/*.c src/**/*.c -o memmi;
+gcc ${CFLAGS} main.c -Iinclude -Isrc src/memmi.c -o memmi;
 g++ -Wall -Wextra -ggdb test.cpp -o test;

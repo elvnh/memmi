@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <unistd.h>
 #include <stdio.h>
 #include <limits.h>
@@ -8,8 +7,12 @@
 #include <sys/syscall.h>      /* Definition of SYS_* constants */
 #include <unistd.h>
 
-#include "process.h"
-#include "utils.h"
+#include <assert.h>
+#include <stdbool.h>
+
+#include "memmi.h"
+
+#define ASSERT(e) assert(e)
 
 int main(int argc, char **argv)
 {
