@@ -39,6 +39,10 @@ project.
 In the future, there will be a Makefile/build script provided for users who prefer that.
 
 ## Example usage
+memmi lets the user control all allocations. Therefore, all functions in memmi that may
+allocate take an allocator as a parameter. If you wish to simply use `malloc`/`free`, pass
+in the return value of `memmi_default_allocator()` wherever an allocator is required.
+
 ```c
 memmi_PID pid = {atoi(argv[1])};
 memmi_OpenProcess open_result = memmi_open_process(pid, memmi_default_allocator());
