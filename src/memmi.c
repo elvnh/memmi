@@ -1,4 +1,20 @@
-#define _GNU_SOURCE
+#if defined(__linux__)
+#    define MEMMI_LINUX
+#elif defined(_WIN32)
+#    define MEMMI_WINDOWS
+#else
+#    error Unsupported operating system
+#endif
+
+#ifdef __GNUC__
+#    define MEMMI_GCC
+#else
+#    error Unsupported compiler
+#endif
+
+#ifdef MEMMI_LINUX
+#    define _GNU_SOURCE
+#endif
 
 #include "memmi.h"
 
@@ -6,6 +22,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <limits.h>
+
+/*
+  TODO:
+  - Undefine all macros at end of file
+ */
 
 /***************************/
 /*    General utilities    */
@@ -52,16 +74,16 @@ do {                                                                    \
     } while (0)
 
 // TODO: use __builtin_trap()
-#if defined(__x86_64__)
-#    define DEBUG_BREAK __asm volatile("int3")
+#ifdef MEMMI_GCC
+#    define DEBUG_BREAK __builtin_trap()
 #else
-#    error Unsupported architecture
+#    error DEBUG_BREAK not defined for this compiler
 #endif
 
 #if defined(__GNUC__)
 #    define ALIGNOF(t) __alignof__(t)
 #else
-#    error Unsupported compiler
+#    error ALIGNOF not defined for this compilre
 #endif
 
 // TODO: move closer to function definition
@@ -229,7 +251,6 @@ memmi_String str_trim_whitespace(memmi_String str)
 
     return result;
 }
-
 
 /***************************/
 /*      Safe arithmetic    */
@@ -438,4 +459,6 @@ memmi_Allocator memmi_default_allocator()
     return result;
 }
 
-#include "memmi_linux.c"
+#ifdef MEMMI_LINUX
+#    include "memmi_linux.c"
+#endif

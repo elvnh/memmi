@@ -8,13 +8,10 @@
 #include <sys/ptrace.h>
 #include <sys/user.h>
 
+#include <errno.h>
+
 #include "memmi.h"
 
-#include <stdio.h>
-#include <stdbool.h>
-#include <string.h>
-#include <limits.h>
-#include <errno.h>
 
 typedef struct {
     memmi_String value;
