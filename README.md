@@ -1,8 +1,8 @@
 # memmi
-memmi is a simple process debugging/hacking library made in C99. It allows the user to do
-things such as attaching to a remote process as a debugger, reading/writing its memory,
-setting breakpoints in it and so on. The library is currently under development and the
-API is subject to change.
+memmi is a simple process debugging library made in C99. It allows the user to do things
+such as attaching to a remote process as a debugger, reading/writing its memory, setting
+breakpoints in it and so on. The library is currently under development, as such the API is
+subject to change and no guarantees are made about the library being correct.
 
 memmi is currently available for Linux but a Windows version is currently in progress. The
 library only supports x86 architectures but in the future, support may be added for other
