@@ -8,10 +8,15 @@ int main(int argc, char **argv)
 #if 1
     memmi_ProcessList procs = memmi_get_running_processes(memmi_default_allocator());
     ASSERT(procs.status == MEMMI_OK);
+    ASSERT(procs.count > 0);
     
-    for (size_t i = 0; i < procs.count; ++i) {
-        printf("%d %.*s\n", (int)procs.data[i].pid.value, (int)procs.data[i].name.count, procs.data[i].name.data);
-    }
+    memmi_OpenProcess proc_opt = memmi_open_process(procs.data[0].pid, memmi_default_allocator());
+    ASSERT(proc_opt.status == MEMMI_OK);
+    memmi_Process proc = proc_opt.process;
+    
+    memmi_close_process(proc, memmi_default_allocator());
+    
+    
 #else
     ASSERT(argc > 2);
 

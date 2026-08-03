@@ -15,10 +15,16 @@ typedef struct {
     size_t capacity;
 } ProcessDynArray;
 
+// TODO: just store PID directly in memmi_Process, and use data field for win32 handle
+typedef struct {
+    HANDLE handle;
+    memmi_PID pid;
+} memmi_ProcessImpl;
+
 /***************************/
 /* Common helper functions */
 /***************************/
-memmi_Status windows_error_to_memmi_status(DWORD error_code)
+static memmi_Status windows_error_to_memmi_status(DWORD error_code)
 {
     memmi_Status result = 0;
     
@@ -27,6 +33,13 @@ memmi_Status windows_error_to_memmi_status(DWORD error_code)
             ASSERT(0);
         } break;
     }
+    
+    return result;
+}
+
+static memmi_ProcessImpl *get_platform_process_handle(memmi_Process process)
+{
+    memmi_ProcessImpl *result = process.data;
     
     return result;
 }
@@ -66,12 +79,13 @@ static memmi_String get_process_name(DWORD pid, memmi_Allocator allocator)
             proc_handle, &module, sizeof(module), &bytes_stored);
             
         if (enum_modules_result) {
+            // TODO: use GetProcessImageFilenameA or QueryFullProcessImageName?
             DWORD module_name_chars_written = GetModuleBaseNameA(
                 proc_handle, module, proc_name_buf, ARRAY_COUNT(proc_name_buf));
+
+            ASSERT((module_name_chars_written > 0) && "TODO: how to handle this? Just ignore?");
                 
-            if (module_name_chars_written == 0) {
-                ASSERT(0 && "TODO: how to handle?");
-            } else {
+            if (module_name_chars_written > 0) { 
                 memmi_String proc_name = (memmi_String){proc_name_buf, module_name_chars_written};
                 result = str_copy(proc_name, allocator);
             }
@@ -154,14 +168,40 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 
 memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
 {
-    ASSERT(0 && "Unimplemented");
+    memmi_OpenProcess result = {0};
     
-    return (memmi_OpenProcess){0};
+    DWORD access = 
+      PROCESS_QUERY_INFORMATION 
+    | PROCESS_VM_READ 
+    | PROCESS_VM_WRITE 
+    | PROCESS_VM_OPERATION;
+    
+    HANDLE handle = OpenProcess(access, FALSE, (DWORD)pid.value);
+    
+    if (!handle) {
+        result.status = windows_error_to_memmi_status(GetLastError());
+    } else {
+        memmi_ProcessImpl *process = allocate(allocator, memmi_ProcessImpl, 1);
+        
+        if (!process) {
+            result.status = MEMMI_ALLOCATION_FAILED;
+        } else {
+            process->pid = pid;
+            process->handle = handle;
+            
+            result.process.data = process;
+        }
+    }
+    
+    return result;
 }
 
 void memmi_close_process(memmi_Process process, memmi_Allocator allocator)
 {
-    ASSERT(0 && "Unimplemented");
+    memmi_ProcessImpl *impl = get_platform_process_handle(process);
+    CloseHandle(impl->handle);
+    
+    deallocate(allocator, impl, 1);
 }
 
 memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator)
