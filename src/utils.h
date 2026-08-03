@@ -11,7 +11,7 @@
 #define allocate(a, t, count) (t *)((a).function((a).context, 0, 0, (count), sizeof(t), ALIGNOF(t)))
 #define reallocate(a, ptr, old_count, new_count) (a).function((a).context, (ptr), (old_count), \
         (new_count), sizeof(*(ptr)), ALIGNOF(TYPEOF(*(ptr))))
-#define deallocate(a, ptr, count) (a).function((a).context, (ptr), (count), 0, sizeof(*(ptr)), ALIGNOF(*(ptr)))
+#define deallocate(a, ptr, count) (a).function((a).context, (ptr), (count), 0, sizeof(*(ptr)), ALIGNOF(TYPEOF(*(ptr))))
 
 #define str_from_span(span) (memmi_String) {(span).data, (span).count}
 

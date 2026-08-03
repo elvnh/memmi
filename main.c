@@ -6,6 +6,14 @@
 int main(int argc, char **argv)
 {
 
+#if 1
+    memmi_ProcessList procs = memmi_get_running_processes(memmi_default_allocator());
+    ASSERT(procs.status == MEMMI_OK);
+    
+    for (size_t i = 0; i < procs.count; ++i) {
+        printf("%d %.*s\n", (int)procs.data[i].pid.value, (int)procs.data[i].name.count, procs.data[i].name.data);
+    }
+#else
     ASSERT(argc > 2);
 
     int pid = atoi(argv[1]);
@@ -58,4 +66,5 @@ int main(int argc, char **argv)
 
     memmi_Status detached = memmi_detach_from_process(proc);
     ASSERT(detached == MEMMI_OK);
+#endif
 }

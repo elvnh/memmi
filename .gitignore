@@ -2,6 +2,9 @@ compile_commands.json
 a.out
 
 .cache/
+.vs/
 
 *.obj
 *.exe
+*.ilk
+*.pdb

@@ -210,7 +210,6 @@ MaybeU64 str_to_u64(memmi_String str, NumberBase base)
     return result;
 }
 
-// TODO: define these for other compilers
 #if defined(__GNUC__)
 #    define SAFE_ADD_S64(a, b, result_ptr)   !__builtin_add_overflow((a), (b), (result_ptr))
 #    define SAFE_ADD_U64(a, b, result_ptr)   !__builtin_add_overflow((a), (b), (result_ptr))
@@ -218,11 +217,88 @@ MaybeU64 str_to_u64(memmi_String str, NumberBase base)
 #    define SAFE_MUL_U64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
 #    define SAFE_MUL_USIZE(a, b, result_ptr) !__builtin_mul_overflow((a), (b), (result_ptr))
 #elif defined(_MSC_VER)
-#    define SAFE_ADD_U64(a, b, result_ptr)   (abort(), 0)
-#    define SAFE_ADD_S64(a, b, result_ptr)   (abort(), 0)
-#    define SAFE_MUL_S64(a, b, result_ptr)   (abort(), 0)
-#    define SAFE_MUL_U64(a, b, result_ptr)   (abort(), 0)
-#    define SAFE_MUL_USIZE(a, b, result_ptr) (abort(), 0)
+// Thanks MSVC, I'll do it myself.
+// TODO: use macros to generate the various types of these
+// TODO: the implementations of these are so simple that maybe 
+// we should just use them for all compilers. They aren't used in any performance
+// critical paths anyways.
+
+static bool safe_add_s64_impl(int64_t a, int64_t b, int64_t *out)
+{
+    bool result = false;
+    
+    if (a <= (INT64_MAX - b)) {
+        result = true;
+        *out = a + b;
+    }
+    
+    return result;   
+}
+
+static bool safe_add_u64_impl(uint64_t a, uint64_t b, uint64_t *out)
+{
+    bool result = false;
+    
+    if (a <= (UINT64_MAX - b)) {
+        result = true;
+        *out = a + b;
+    }
+    
+    return result;   
+}
+
+static bool safe_mul_s64_impl(int64_t a, int64_t b, int64_t *out)
+{
+    bool result = false;
+    
+    if ((a == 0) || (b == 0)) {
+        result = true;
+        *out = 0;
+    } else if (a <= (INT64_MAX / b)) {
+        result = true;
+        *out = a * b;
+    }
+    
+    return result;  
+}
+
+
+static bool safe_mul_u64_impl(uint64_t a, uint64_t b, uint64_t *out)
+{
+    bool result = false;
+    
+    if ((a == 0) || (b == 0)) {
+        result = true;
+        *out = 0;
+    } else if (a <= (UINT64_MAX / b)) {
+        result = true;
+        *out = a * b;
+    }
+    
+    return result; 
+}
+
+
+static bool safe_mul_usize_impl(size_t a, size_t b, size_t *out)
+{
+    bool result = false;
+    
+    if ((a == 0) || (b == 0)) {
+        result = true;
+        *out = 0;
+    } else if (a <= (SIZE_MAX / b)) {
+        result = true;
+        *out = a * b;
+    }
+    
+    return result; 
+}
+
+#    define SAFE_ADD_U64(a, b, result_ptr)   safe_add_u64_impl(a, b, result_ptr)
+#    define SAFE_ADD_S64(a, b, result_ptr)   safe_add_s64_impl(a, b, result_ptr)
+#    define SAFE_MUL_S64(a, b, result_ptr)   safe_mul_s64_impl(a, b, result_ptr)
+#    define SAFE_MUL_U64(a, b, result_ptr)   safe_mul_u64_impl(a, b, result_ptr)
+#    define SAFE_MUL_USIZE(a, b, result_ptr) safe_mul_usize_impl(a, b, result_ptr)
 #else
 #    error Safe arithmetic undefined for compiler
 #endif
