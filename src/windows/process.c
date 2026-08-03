@@ -15,6 +15,12 @@ typedef struct {
     size_t capacity;
 } ProcessDynArray;
 
+typedef struct {
+    memmi_MemoryRegion *data;
+    size_t count;
+    size_t capacity;
+} MemoryRegionDynArray;
+
 // TODO: just store PID directly in memmi_Process, and use data field for win32 handle
 typedef struct {
     HANDLE handle;
@@ -216,10 +222,117 @@ memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void 
     return (memmi_WriteMemory){0};
 }
 
+static memmi_MemoryRegionPermission page_protection_to_memmi_permissions(DWORD protect)
+{
+    memmi_MemoryRegionPermission result = 0;
+ 
+    // Mask out modifiers in the region protection.
+    // TODO: should we handle any of these in a special way? 
+    DWORD protection_without_modifiers = protect 
+        & ~(PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE);
+                
+    switch (protection_without_modifiers) {
+        case PAGE_EXECUTE: {
+            result = MEMMI_REGION_PERMISSION_EXECUTE;
+        } break;
+        
+        case PAGE_EXECUTE_READ: {
+            result = 
+              MEMMI_REGION_PERMISSION_EXECUTE
+            | MEMMI_REGION_PERMISSION_READ;
+        } break;
+        
+        case PAGE_EXECUTE_READWRITE: {
+            result = 
+              MEMMI_REGION_PERMISSION_EXECUTE
+            | MEMMI_REGION_PERMISSION_READ
+            | MEMMI_REGION_PERMISSION_WRITE;
+        } break;
+        
+        case PAGE_EXECUTE_WRITECOPY: {
+            result = 
+              MEMMI_REGION_PERMISSION_EXECUTE
+            | MEMMI_REGION_PERMISSION_WRITE;
+        } break;
+        
+        case PAGE_READONLY: {
+            result = MEMMI_REGION_PERMISSION_READ;
+        }break;
+        
+        case PAGE_READWRITE: {
+            result = 
+              MEMMI_REGION_PERMISSION_READ 
+            | MEMMI_REGION_PERMISSION_WRITE;
+        } break;
+        
+        case PAGE_WRITECOPY: {
+            result = MEMMI_REGION_PERMISSION_WRITE;
+        } break;
+        
+        default: {
+            ASSERT(0);
+        } break;
+    }
+ 
+    return result;
+}
+
 memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator)
 {
-    ASSERT(0 && "Unimplemented");
-    return (memmi_MemoryRegions){0};
+    MemoryRegionDynArray regions = {0};
+    memmi_MemoryRegions result = {0};
+    
+    memmi_ProcessImpl *impl = get_platform_process_handle(process);
+    
+    // TODO: allow user to customize which regions they are interested in
+    // by specifying which permissions the page can/must have
+    // TODO: how to specify that user wants pages that are readable AND writable?
+    
+    size_t current_base_address = 0;
+    bool done = false;
+    
+    while (!done) {
+        MEMORY_BASIC_INFORMATION info = {0};
+        
+        size_t query_result = VirtualQueryEx(impl->handle, (void *)current_base_address, &info, sizeof(info));
+        
+        if (query_result == 0) {
+            // If there is no range of pages at the address we provided, we have reached
+            // the end of the memory the process has mapped, and the function fails with 
+            // ERROR_INVALID_PARAMETER. If it failed with another error code, something 
+            // else has gone wrong.
+            DWORD error = GetLastError();
+            
+            if (error != ERROR_INVALID_PARAMETER) {
+                result.status = windows_error_to_memmi_status(error);
+            }
+            
+            done = true;
+        } else {
+            ASSERT((size_t)info.BaseAddress == current_base_address);
+            
+            // We are only interested in pages that have actually been commited by
+            // the process, not just reserved. Additionally, we'll skip pages which are 
+            // PAGE_NOACCESS as they can't be used in any way by the process.
+            // TODO: make sure that Linux skips non-commited pages too
+            if ((info.State == MEM_COMMIT) && (info.Protect != PAGE_NOACCESS)) {
+                memmi_MemoryRegion region = {0};
+                region.base_address = (uintptr_t)info.BaseAddress;
+                region.size = info.RegionSize;
+                region.permissions = page_protection_to_memmi_permissions(info.Protect);
+                
+                // TODO: check that dyn_arr_push doesn't fail
+                dyn_arr_push(&regions, region, allocator);
+            }
+            
+            current_base_address += info.RegionSize;
+        }
+    }
+
+    result.data = regions.data;
+    result.count = regions.count;
+    
+    return result;
 }
 
 memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
