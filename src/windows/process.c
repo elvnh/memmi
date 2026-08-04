@@ -3,6 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <psapi.h>
+#include <tlhelp32.h>
 
 #include "utils.h"
 
@@ -20,6 +21,12 @@ typedef struct {
     size_t count;
     size_t capacity;
 } MemoryRegionDynArray;
+
+typedef struct {
+    memmi_TID *data;
+    size_t count;
+    size_t capacity;
+} ThreadDynArray;
 
 // TODO: just store PID directly in memmi_Process, and use data field for win32 handle
 typedef struct {
@@ -394,8 +401,52 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
 
 memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
 {
-    ASSERT(0 && "Unimplemented");
-    return (memmi_ThreadList){0};
+    // "If the specified process is a 64-bit process and the caller is
+    // a 32-bit process, this function fails and the last error code
+    // is ERROR_PARTIAL_COPY (299)."
+    memmi_ThreadList result = {0};
+    ThreadDynArray threads = {0};
+
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+
+    HANDLE handle = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+
+    if (!handle) {
+        result.status = windows_error_to_memmi_status(GetLastError());
+    } else {
+        THREADENTRY32 thread_entry = {0};
+        thread_entry.dwSize = sizeof(thread_entry);
+
+        if (!Thread32First(handle, &thread_entry)) {
+            result.status = windows_error_to_memmi_status(GetLastError());
+        } else {
+            do {
+                const size_t owner_pid_end_offset = offsetof(THREADENTRY32, th32OwnerProcessID)
+                    + sizeof(thread_entry.th32OwnerProcessID);
+
+                // According to https://devblogs.microsoft.com/oldnewthing/20060223-14/?p=32173
+                // this check has to be performed.
+                if (thread_entry.dwSize >= owner_pid_end_offset) {
+                    // CreateToolhelp32Snapshot will enumerate all threads in the system,
+                    // so we'll have to check that the thread actually belongs to the
+                    // process provided by the user.
+                    if (thread_entry.th32OwnerProcessID == pid.value) {
+                        memmi_TID tid = {thread_entry.th32ThreadID};
+                        dyn_arr_push(&threads, tid, allocator);
+                    }
+                }
+
+                thread_entry.dwSize = sizeof(thread_entry);
+            } while (Thread32Next(handle, &thread_entry));
+        }
+    }
+
+    CloseHandle(handle);
+
+    result.data = threads.data;
+    result.count = threads.count;
+
+    return result;
 }
 
 memmi_Status memmi_attach_to_process(memmi_Process process)
