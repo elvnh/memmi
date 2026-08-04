@@ -10,28 +10,31 @@ int main(int argc, char **argv)
     memmi_ProcessList procs = memmi_get_running_processes(memmi_default_allocator());
     ASSERT(procs.status == MEMMI_OK);
     ASSERT(procs.count > 0);
-    
+
     memmi_OpenProcess proc_opt = memmi_open_process(procs.data[1].pid, memmi_default_allocator());
     ASSERT(proc_opt.status == MEMMI_OK);
     memmi_Process proc = proc_opt.process;
-    
+
     memmi_MemoryRegions regions = memmi_get_process_memory_regions(proc, memmi_default_allocator());
     ASSERT(regions.status == MEMMI_OK);
-    
+
     size_t total_memory_size = 0;
     for (size_t i = 0; i < regions.count; ++i) {
         memmi_MemoryRegion region = regions.data[i];
-        
+
         printf("%p: %lu (%x)\n", (void *)region.base_address, region.size, region.permissions);
-        
+
         total_memory_size += region.size;
     }
-    
+
     printf("\n\ntotal_memory_size: %zu\n", total_memory_size);
-    
+
+    memmi_MemoryRegion first = regions.data[0];
+    memmi_ReadMemory read_result = memmi_read_memory(proc, first.base_address, first.size, memmi_default_allocator());
+
     memmi_close_process(proc, memmi_default_allocator());
-    
-    
+
+
 #else
     ASSERT(argc > 2);
 
