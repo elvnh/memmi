@@ -30,6 +30,10 @@ int main(int argc, char **argv)
 
     printf("\n\ntotal_memory_size: %zu\n", total_memory_size);
 
+    memmi_ThreadList threads = memmi_get_process_threads(proc, memmi_default_allocator());
+    ASSERT(threads.status == MEMMI_OK);
+
+#if 0
     memmi_MemoryRegion first = regions.data[0];
     memmi_ReadMemory read_result = memmi_read_memory(proc, first.base_address, first.size, memmi_default_allocator());
     ASSERT(read_result.status == MEMMI_OK);
@@ -38,6 +42,7 @@ int main(int argc, char **argv)
 
     memmi_WriteMemory write_result = memmi_write_memory(proc, first.base_address, read_result.memory, read_result.bytes_read);
     ASSERT(write_result.status == MEMMI_OK);
+#endif
 
     memmi_close_process(proc, memmi_default_allocator());
 
