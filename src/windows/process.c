@@ -35,6 +35,10 @@ static memmi_Status windows_error_to_memmi_status(DWORD error_code)
     memmi_Status result = 0;
 
     switch (error_code) {
+        case ERROR_NOACCESS: {
+            result = MEMMI_INSUFFICIENT_PERMISSIONS;
+        } break;
+
         default: {
             ASSERT(0);
         } break;
@@ -248,8 +252,31 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, siz
 
 memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size)
 {
-    ASSERT(0 && "Unimplemented");
-    return (memmi_WriteMemory){0};
+    memmi_WriteMemory result = {0};
+
+    memmi_ProcessImpl *impl = get_platform_process_handle(process);
+
+    SIZE_T bytes_written = 0;
+
+    BOOL write_memory_result = WriteProcessMemory(
+        impl->handle,
+        (void *)dst,
+        src,
+        src_size,
+        &bytes_written
+    );
+
+    if (!write_memory_result) {
+        result.status = windows_error_to_memmi_status(GetLastError());
+    } else {
+        if (bytes_written < src_size) {
+            result.status = MEMMI_PARTIAL_READ_OR_WRITE;
+        }
+
+        result.bytes_written = bytes_written;
+    }
+
+    return result;
 }
 
 static memmi_MemoryRegionPermission page_protection_to_memmi_permissions(DWORD protect)

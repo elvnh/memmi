@@ -1,6 +1,7 @@
 #include "memmi.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 int main(int argc, char **argv)
 {
@@ -30,6 +31,12 @@ int main(int argc, char **argv)
 
     memmi_MemoryRegion first = regions.data[0];
     memmi_ReadMemory read_result = memmi_read_memory(proc, first.base_address, first.size, memmi_default_allocator());
+    ASSERT(read_result.status == MEMMI_OK);
+
+    memset(read_result.memory, 0, read_result.bytes_read);
+
+    memmi_WriteMemory write_result = memmi_write_memory(proc, first.base_address, read_result.memory, read_result.bytes_read);
+    ASSERT(write_result.status == MEMMI_OK);
 
     memmi_close_process(proc, memmi_default_allocator());
 
