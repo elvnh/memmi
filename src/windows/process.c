@@ -119,8 +119,15 @@ static memmi_Status for_each_thread(DWORD pid, void *user_data, ForEachThreadFn 
                 }
 
                 thread_entry.dwSize = sizeof(thread_entry);
-                // TODO: report errors from Thread32Next
             } while (Thread32Next(handle, &thread_entry));
+
+            // If we reached the end of the thread list, GetLastError will report
+            // ERROR_NO_MORE_FILES. If we received some other error, something must
+            // have gone wrong.
+            DWORD error = GetLastError();
+            if (error != ERROR_NO_MORE_FILES) {
+                result = windows_error_to_memmi_status(error);
+            }
         }
     }
 
@@ -128,7 +135,6 @@ static memmi_Status for_each_thread(DWORD pid, void *user_data, ForEachThreadFn 
 
     return result;
 }
-
 
 /**********************/
 /* API implementation */
