@@ -11,10 +11,35 @@ int main(int argc, char **argv)
     ASSERT(procs.status == MEMMI_OK);
     ASSERT(procs.count > 0);
 
-    memmi_OpenProcess proc_opt = memmi_open_process(procs.data[1].pid, memmi_default_allocator());
+    bool found = false;
+    memmi_PID pid = {0};
+
+    // TODO: processinfo name should be null terminated
+    // TODO: we're finding very few processes
+    for (size_t i = 0; i < procs.count; ++i) {
+        memmi_ProcessInfo info = procs.data[i];
+
+        //printf("%.*s\n", info.name.count, info.name.data);
+        if (strncmp(info.name.data, "test.exe", info.name.count) == 0) {
+            found = true;
+            pid = info.pid;
+            break;
+        }
+    }
+
+    ASSERT(found);
+
+    memmi_OpenProcess proc_opt = memmi_open_process(pid, memmi_default_allocator());
     ASSERT(proc_opt.status == MEMMI_OK);
     memmi_Process proc = proc_opt.process;
 
+    memmi_Status suspend_result = memmi_suspend_process(proc);
+    ASSERT(suspend_result == MEMMI_OK);
+
+    memmi_Status resume_result = memmi_resume_process(proc);
+    ASSERT(resume_result == MEMMI_OK);
+
+    return 0;
     memmi_Status attach_res = memmi_attach_to_process(proc);
     ASSERT(attach_res == MEMMI_OK);
 
