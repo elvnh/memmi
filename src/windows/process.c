@@ -77,6 +77,27 @@ static memmi_String str_copy(memmi_String str, memmi_Allocator allocator)
     return result;
 }
 
+typedef struct {
+    HANDLE data;
+    memmi_Status status;
+} Win32Handle;
+
+Win32Handle get_thread_handle(DWORD tid)
+{
+    Win32Handle result = {0};
+
+    HANDLE handle = OpenThread(THREAD_ALL_ACCESS, FALSE, tid);
+
+    if (!handle) {
+        ASSERT(0);
+        result.status = windows_error_to_memmi_status(GetLastError());
+    } else {
+        result.data = handle;
+    }
+
+    return result;
+}
+
 typedef enum {
     FOR_EACH_THREAD_RES_CONTINUE,
     FOR_EACH_THREAD_RES_BREAK,
@@ -529,16 +550,136 @@ memmi_Status memmi_detach_from_process(memmi_Process process)
     return result;
 }
 
+typedef struct {
+    memmi_Status statuses;
+} ResumeThreadsContext;
+
+static ForEachThreadResult resume_thread_cb(void *user_data, DWORD pid)
+{
+    ResumeThreadsContext *context = user_data;
+
+    Win32Handle handle = get_thread_handle(pid);
+
+    context->statuses |= handle.status;
+
+    if (handle.status == MEMMI_OK) {
+        DWORD prev_suspend_count = 0;
+
+        do {
+            prev_suspend_count = ResumeThread(handle.data);
+        } while (prev_suspend_count > 0);
+
+        if (prev_suspend_count == -1) {
+            context->statuses |= windows_error_to_memmi_status(GetLastError());
+        }
+    }
+
+    CloseHandle(handle.data);
+
+    return FOR_EACH_THREAD_RES_CONTINUE;
+}
+
 memmi_Status memmi_resume_process(memmi_Process process)
 {
-    ASSERT(0 && "Unimplemented");
-    return 0;
+    memmi_Status result = 0;
+
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    DWORD native_pid = (DWORD)pid.value;
+
+    ResumeThreadsContext cb_context = {0};
+    memmi_Status for_each_thread_result = for_each_thread(native_pid, &cb_context, resume_thread_cb);
+
+    if (for_each_thread_result != MEMMI_OK) {
+        result = for_each_thread_result;
+    } else {
+        result = cb_context.statuses;
+    }
+
+    return result;
+}
+
+memmi_Status suspend_thread(DWORD tid)
+{
+    memmi_Status result = 0;
+
+    Win32Handle handle = get_thread_handle(tid);
+
+    if (handle.status != MEMMI_OK) {
+        result = handle.status;
+    } else {
+        DWORD prev_suspend_count = SuspendThread(handle.data);
+
+        if (prev_suspend_count < 0) {
+            result = windows_error_to_memmi_status(GetLastError());
+        }
+    }
+
+    CloseHandle(handle.data);
+
+    return result;
+}
+
+typedef struct {
+    memmi_Status statuses;
+    int32_t suspended_thread_count;
+} SuspendThreadsContext;
+
+ForEachThreadResult suspend_thread_cb(void *user_data, DWORD tid)
+{
+    SuspendThreadsContext *context = user_data;
+
+    memmi_Status suspend_result = suspend_thread(tid);
+
+    if (suspend_result == MEMMI_OK) {
+        ++context->suspended_thread_count;
+    }
+
+    context->statuses |= suspend_result;
+
+    return FOR_EACH_THREAD_RES_CONTINUE;
 }
 
 memmi_Status memmi_suspend_process(memmi_Process process)
 {
-    ASSERT(0 && "Unimplemented");
-    return 0;
+    // TODO: this function is very similar to the linux implementation
+    memmi_Status result = 0;
+
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    DWORD native_pid = (DWORD)pid.value;
+
+    int32_t last_suspended_thread_count = 0;
+    SuspendThreadsContext cb_context = {0};
+    bool suspended_thread_count_is_stable = false;
+
+    while (!suspended_thread_count_is_stable && (result == MEMMI_OK)) {
+        // Keep trying to suspend threads until the number of suspended threads in the process
+        // has stabilized.
+        cb_context.suspended_thread_count = 0;
+
+        memmi_Status for_each_result = for_each_thread(native_pid, &cb_context, suspend_thread_cb);
+
+        if (for_each_result != MEMMI_OK) {
+            result = for_each_result;
+        } else {
+            if (cb_context.suspended_thread_count <= last_suspended_thread_count) {
+                suspended_thread_count_is_stable = true;
+            }
+
+            last_suspended_thread_count = cb_context.suspended_thread_count;
+
+            if (last_suspended_thread_count == 0) {
+                result = cb_context.statuses;
+                ASSERT(result != MEMMI_OK);
+            } else {
+                uint32_t statuses_excluding_no_such_process =
+                    cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+
+                result = statuses_excluding_no_such_process;
+            }
+        }
+    }
+
+    return result;
 
 }
 
