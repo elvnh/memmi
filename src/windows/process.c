@@ -77,6 +77,59 @@ static memmi_String str_copy(memmi_String str, memmi_Allocator allocator)
     return result;
 }
 
+typedef enum {
+    FOR_EACH_THREAD_RES_CONTINUE,
+    FOR_EACH_THREAD_RES_BREAK,
+} ForEachThreadResult;
+
+typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, DWORD tid);
+
+static memmi_Status for_each_thread(DWORD pid, void *user_data, ForEachThreadFn callback)
+{
+    memmi_Status result = 0;
+
+    HANDLE handle = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+
+    if (!handle) {
+        result = windows_error_to_memmi_status(GetLastError());
+    } else {
+        THREADENTRY32 thread_entry = {0};
+        thread_entry.dwSize = sizeof(thread_entry);
+
+        if (!Thread32First(handle, &thread_entry)) {
+            result = windows_error_to_memmi_status(GetLastError());
+        } else {
+            do {
+                const size_t owner_pid_end_offset = offsetof(THREADENTRY32, th32OwnerProcessID)
+                    + sizeof(thread_entry.th32OwnerProcessID);
+
+                // According to https://devblogs.microsoft.com/oldnewthing/20060223-14/?p=32173
+                // this check has to be performed.
+                if (thread_entry.dwSize >= owner_pid_end_offset) {
+                    // CreateToolhelp32Snapshot will enumerate all threads in the system,
+                    // so we'll have to check that the thread actually belongs to the
+                    // process provided by the user.
+                    if (thread_entry.th32OwnerProcessID == pid) {
+                        ForEachThreadResult cb_result = callback(user_data, thread_entry.th32ThreadID);
+
+                        if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
+                            break;
+                        }
+                    }
+                }
+
+                thread_entry.dwSize = sizeof(thread_entry);
+                // TODO: report errors from Thread32Next
+            } while (Thread32Next(handle, &thread_entry));
+        }
+    }
+
+    CloseHandle(handle);
+
+    return result;
+}
+
+
 /**********************/
 /* API implementation */
 /**********************/
@@ -400,49 +453,36 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
     return result;
 }
 
+typedef struct {
+    ThreadDynArray threads;
+    memmi_Allocator allocator;
+} CollectThreadsContext;
+
+ForEachThreadResult collect_threads_cb(void *user_data, DWORD tid)
+{
+    CollectThreadsContext *context = user_data;
+
+    memmi_TID thread = {tid};
+    dyn_arr_push(&context->threads, thread, context->allocator);
+
+    return FOR_EACH_THREAD_RES_CONTINUE;
+}
+
 memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
 {
     memmi_ThreadList result = {0};
-    ThreadDynArray threads = {0};
 
     memmi_PID pid = get_platform_process_handle(process)->pid;
 
-    HANDLE handle = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    CollectThreadsContext cb_context = {0};
+    cb_context.allocator = allocator;
 
-    if (!handle) {
-        result.status = windows_error_to_memmi_status(GetLastError());
-    } else {
-        THREADENTRY32 thread_entry = {0};
-        thread_entry.dwSize = sizeof(thread_entry);
+    result.status = for_each_thread((DWORD)pid.value, &cb_context, collect_threads_cb);
 
-        if (!Thread32First(handle, &thread_entry)) {
-            result.status = windows_error_to_memmi_status(GetLastError());
-        } else {
-            do {
-                const size_t owner_pid_end_offset = offsetof(THREADENTRY32, th32OwnerProcessID)
-                    + sizeof(thread_entry.th32OwnerProcessID);
-
-                // According to https://devblogs.microsoft.com/oldnewthing/20060223-14/?p=32173
-                // this check has to be performed.
-                if (thread_entry.dwSize >= owner_pid_end_offset) {
-                    // CreateToolhelp32Snapshot will enumerate all threads in the system,
-                    // so we'll have to check that the thread actually belongs to the
-                    // process provided by the user.
-                    if (thread_entry.th32OwnerProcessID == pid.value) {
-                        memmi_TID tid = {thread_entry.th32ThreadID};
-                        dyn_arr_push(&threads, tid, allocator);
-                    }
-                }
-
-                thread_entry.dwSize = sizeof(thread_entry);
-            } while (Thread32Next(handle, &thread_entry));
-        }
+    if (result.status == MEMMI_OK) {
+        result.data = cb_context.threads.data;
+        result.count = cb_context.threads.count;
     }
-
-    CloseHandle(handle);
-
-    result.data = threads.data;
-    result.count = threads.count;
 
     return result;
 }
@@ -487,7 +527,6 @@ memmi_Status memmi_resume_process(memmi_Process process)
 {
     ASSERT(0 && "Unimplemented");
     return 0;
-
 }
 
 memmi_Status memmi_suspend_process(memmi_Process process)
