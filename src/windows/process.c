@@ -41,6 +41,7 @@ static memmi_Status windows_error_to_memmi_status(DWORD error_code)
 {
     memmi_Status result = 0;
 
+    // TODO: fill out more of these errors
     switch (error_code) {
         case ERROR_NOACCESS: {
             result = MEMMI_INSUFFICIENT_PERMISSIONS;
@@ -61,9 +62,6 @@ static memmi_ProcessImpl *get_platform_process_handle(memmi_Process process)
     return result;
 }
 
-/**********************/
-/* API implementation */
-/**********************/
 // TODO: move to utils file
 static memmi_String str_copy(memmi_String str, memmi_Allocator allocator)
 {
@@ -79,6 +77,9 @@ static memmi_String str_copy(memmi_String str, memmi_Allocator allocator)
     return result;
 }
 
+/**********************/
+/* API implementation */
+/**********************/
 static memmi_String get_process_name(DWORD pid, memmi_Allocator allocator)
 {
     memmi_String result = {0};
@@ -378,7 +379,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
             // We are only interested in pages that have actually been commited by
             // the process, not just reserved. Additionally, we'll skip pages which are
             // PAGE_NOACCESS as they can't be used in any way by the process.
-            // TODO: make sure that Linux skips non-commited pages too
+            // TODO: make it so that Linux skips non-commited pages too if possible?
             if ((info.State == MEM_COMMIT) && (info.Protect != PAGE_NOACCESS)) {
                 memmi_MemoryRegion region = {0};
                 region.base_address = (uintptr_t)info.BaseAddress;
@@ -401,9 +402,6 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
 
 memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
 {
-    // "If the specified process is a 64-bit process and the caller is
-    // a 32-bit process, this function fails and the last error code
-    // is ERROR_PARTIAL_COPY (299)."
     memmi_ThreadList result = {0};
     ThreadDynArray threads = {0};
 
@@ -451,14 +449,38 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
 
 memmi_Status memmi_attach_to_process(memmi_Process process)
 {
-    ASSERT(0 && "Unimplemented");
-    return 0;
+    memmi_Status result = 0;
+
+    memmi_ProcessImpl *impl = get_platform_process_handle(process);
+    BOOL attach_result = DebugActiveProcess((DWORD)impl->pid.value);
+
+    if (!attach_result) {
+        result = windows_error_to_memmi_status(GetLastError());
+    } else {
+        // We probably don't want to kill the debuggee when we exit.
+        // TODO: make this a parameter so the user can choose
+        BOOL set_kill_on_exit_result = DebugSetProcessKillOnExit(FALSE);
+
+        if (!set_kill_on_exit_result) {
+            result = windows_error_to_memmi_status(GetLastError());
+        }
+    }
+
+    return result;
 }
 
 memmi_Status memmi_detach_from_process(memmi_Process process)
 {
-    ASSERT(0 && "Unimplemented");
-    return 0;
+    memmi_Status result = 0;
+
+    memmi_ProcessImpl *impl = get_platform_process_handle(process);
+    BOOL detach_result = DebugActiveProcessStop((DWORD)impl->pid.value);
+
+    if (!detach_result) {
+        result = windows_error_to_memmi_status(GetLastError());
+    }
+
+    return result;
 }
 
 memmi_Status memmi_resume_process(memmi_Process process)
