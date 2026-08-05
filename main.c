@@ -16,6 +16,12 @@ int main(int argc, char **argv)
     ASSERT(proc_opt.status == MEMMI_OK);
     memmi_Process proc = proc_opt.process;
 
+    memmi_Status attach_res = memmi_attach_to_process(proc);
+    ASSERT(attach_res == MEMMI_OK);
+
+    memmi_Status detach_res = memmi_detach_from_process(proc);
+    ASSERT(detach_res == MEMMI_OK);
+
     memmi_MemoryRegions regions = memmi_get_process_memory_regions(proc, memmi_default_allocator());
     ASSERT(regions.status == MEMMI_OK);
 
