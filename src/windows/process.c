@@ -37,6 +37,7 @@ typedef struct {
 /***************************/
 /* Common helper functions */
 /***************************/
+// TODO: use win32 prefix
 static memmi_Status windows_error_to_memmi_status(DWORD error_code)
 {
     memmi_Status result = 0;
@@ -157,6 +158,18 @@ static memmi_Status for_each_thread(DWORD pid, void *user_data, ForEachThreadFn 
     return result;
 }
 
+static bool process_exists(DWORD pid)
+{
+    bool result = false;
+
+    HANDLE handle = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+    result = handle != 0;
+
+    CloseHandle(handle);
+
+    return result;
+}
+
 /**********************/
 /* API implementation */
 /**********************/
@@ -164,6 +177,7 @@ static memmi_String get_process_name(DWORD pid, memmi_Allocator allocator)
 {
     memmi_String result = {0};
 
+    // TODO: is PROCESS_VM_READ really needed here?
     HANDLE proc_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
 
     // If we can't open the process, that probably means that we don't have the permissions
@@ -270,10 +284,11 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
     memmi_OpenProcess result = {0};
 
     DWORD access =
-      PROCESS_QUERY_INFORMATION
-    | PROCESS_VM_READ
-    | PROCESS_VM_WRITE
-    | PROCESS_VM_OPERATION;
+    /*   PROCESS_QUERY_INFORMATION */
+    /* | PROCESS_VM_READ */
+    /* | PROCESS_VM_WRITE */
+    /* | PROCESS_VM_OPERATION */
+        PROCESS_ALL_ACCESS;
 
     HANDLE handle = OpenProcess(access, FALSE, (DWORD)pid.value);
 
@@ -598,7 +613,7 @@ memmi_Status memmi_resume_process(memmi_Process process)
     return result;
 }
 
-memmi_Status suspend_thread(DWORD tid)
+static memmi_Status suspend_thread(DWORD tid)
 {
     memmi_Status result = 0;
 
@@ -624,7 +639,7 @@ typedef struct {
     int32_t suspended_thread_count;
 } SuspendThreadsContext;
 
-ForEachThreadResult suspend_thread_cb(void *user_data, DWORD tid)
+static ForEachThreadResult suspend_thread_cb(void *user_data, DWORD tid)
 {
     SuspendThreadsContext *context = user_data;
 
@@ -683,11 +698,170 @@ memmi_Status memmi_suspend_process(memmi_Process process)
 
 }
 
+// TODO: we may want to pass the event via pointer in case the struct is very large
+static memmi_DebugEvent *win32_event_to_memmi_event(DEBUG_EVENT win32_event, memmi_Allocator allocator)
+{
+    // TODO: make allocate macro zero initialize. Don't put that functionality in
+    // the allocator function itself.
+
+    memmi_DebugEvent *result = allocate(allocator, memmi_DebugEvent, 1);
+
+    *result = (memmi_DebugEvent){0};
+
+    bool should_ignore = false;
+
+    switch (win32_event.dwDebugEventCode) {
+        case EXCEPTION_DEBUG_EVENT: {
+            switch(win32_event.u.Exception.ExceptionRecord.ExceptionCode) {
+                case EXCEPTION_ACCESS_VIOLATION: {
+                    // segfault
+                    ASSERT(0 && "Unimplemented");
+                } break;
+
+                case EXCEPTION_BREAKPOINT: {
+                    // breakpoint, report PC register
+                    ASSERT(0 && "TODO: breakpoint");
+                } break;
+
+                case EXCEPTION_DATATYPE_MISALIGNMENT: {
+                    // TODO: is there something similar for Linux?
+                    ASSERT(0 && "Unimplemented");
+                } break;
+
+                case EXCEPTION_SINGLE_STEP: {
+                    // TODO: how to report?
+                    ASSERT(0 && "Unimplemented");
+                } break;
+
+                case DBG_CONTROL_C: {
+                    // TODO: how to report?
+                    ASSERT(0 && "Unimplemented");
+                } break;
+
+                default: {
+                    ASSERT(0);
+                    should_ignore = true;
+                } break;
+            }
+        } break;
+
+        case CREATE_THREAD_DEBUG_EVENT: {
+            // created thread
+            // TODO: should we close the handles we receive?
+            result->kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
+
+            HANDLE thread_handle = win32_event.u.CreateThread.hThread;
+            ASSERT(thread_handle);
+            DWORD tid = GetThreadId(thread_handle);
+            ASSERT(tid != 0);
+
+            result->as.new_thread.id = (memmi_TID){(uint64_t)tid};
+
+            CloseHandle(thread_handle);
+        } break;
+
+        case CREATE_PROCESS_DEBUG_EVENT: {
+            // is this only created when first attaching? do we even need to handle it?
+            should_ignore = true;
+        } break;
+
+        case EXIT_THREAD_DEBUG_EVENT: {
+            // thread exit
+            result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+            result->as.thread_exited.exit_code = win32_event.u.ExitThread.dwExitCode;
+        } break;
+
+        case EXIT_PROCESS_DEBUG_EVENT: {
+            // process exit
+            DBG_EVENT(0 && "TODO: we'll need to extend the public API to also include PROCESS_EXIT_PROCESS_DEBUG_EVENT");
+        } break;
+
+        // TODO: Investigate if we can implement SO loading events for Linux. If so,
+        // make these part of the librarys event types.
+        case LOAD_DLL_DEBUG_EVENT: {
+            should_ignore = true;
+        } break;
+
+        case UNLOAD_DLL_DEBUG_EVENT: {
+            should_ignore = true;
+        } break;
+
+        case OUTPUT_DEBUG_STRING_EVENT: {
+            should_ignore = true;
+        } break;
+
+        case RIP_EVENT: {
+            // ???
+            should_ignore = true;
+        } break;
+
+        default: {
+            ASSERT(0);
+            should_ignore = true;
+        } break;
+    }
+
+    if (should_ignore) {
+        deallocate(allocator, result, 1);
+        result = 0;
+    }
+
+    return result;
+}
+
 memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator)
 {
-    ASSERT(0 && "Unimplemented");
-    return (memmi_EventList){0};
+    // TODO: get_native_pid helper function
+    // TODO: what is the EXCEPTION_BREAKPOINT being triggered?
+    // TODO: allow timeouts
 
+    memmi_EventList result = {0};
+
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    DWORD native_pid = (DWORD)pid.value;
+
+    if (!process_exists(native_pid)) {
+        result.status = MEMMI_NO_SUCH_PROCESS;
+    } else {
+        DEBUG_EVENT win32_event = {0};
+        BOOL wait_for_event_result = WaitForDebugEvent(&win32_event, INFINITE);
+
+        if (!wait_for_event_result) {
+            result.status = windows_error_to_memmi_status(GetLastError());
+        } else {
+            // We're only interested in this event if the thread that caused it
+            // belongs to the traced process.
+            if (native_pid == win32_event.dwProcessId) {
+                result.id_of_affected_thread = (memmi_TID){win32_event.dwThreadId};
+
+                memmi_DebugEvent *event = win32_event_to_memmi_event(win32_event, allocator);
+
+                if (event) {
+                    sl_push_back(&result, event);
+                }
+            } else {
+                ASSERT(0 && "Can this happen?");
+            }
+        }
+    }
+
+    return result;
+}
+
+memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_EventList events)
+{
+    memmi_Status result = 0;
+
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    BOOL continue_result = ContinueDebugEvent(
+        (DWORD)pid.value, (DWORD)events.id_of_affected_thread.value, DBG_CONTINUE);
+
+    if (!continue_result) {
+        result = windows_error_to_memmi_status(GetLastError());
+        ASSERT(0);
+    }
+
+    return result;
 }
 
 memmi_Registers memmi_get_thread_registers(memmi_TID tid)
