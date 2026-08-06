@@ -14,6 +14,7 @@
   - Software breakpoints
   - Separate architecture-specific things into separate file
   - Unit test breakpoints
+  - Letting user spawn a new process as a debuggee rather than just attaching
  */
 
 typedef struct {
@@ -82,6 +83,7 @@ typedef struct {
 } memmi_ThreadList;
 
 // TODO: is both THREAD_SUSPENDED and THREAD_STOPPED needed?
+// TODO: on linux, if the main thread exits, report as PROCESS_EXIT
 typedef struct memmi_DebugEvent {
     enum {
         MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED,
@@ -108,8 +110,11 @@ typedef struct memmi_DebugEvent {
     struct memmi_DebugEvent *next;
 } memmi_DebugEvent;
 
+// TODO: it's unfortunate that we have to return a list of events
+// due to ptrace jank. Try to get rid of this requirement somehow.
 typedef struct {
     memmi_Status      status;
+    memmi_TID         id_of_affected_thread;
     memmi_DebugEvent *first;
     memmi_DebugEvent *last;
 } memmi_EventList;
@@ -150,6 +155,7 @@ typedef enum {
     MEMMI_REG_COUNT
 } memmi_Register;
 
+// TODO: include debug registers in this
 typedef struct {
     memmi_Status status;
     uint64_t     values[MEMMI_REG_COUNT]; // TODO: typedef register values to make porting to other arch easier
@@ -168,6 +174,7 @@ memmi_Status             memmi_detach_from_process(memmi_Process process);
 memmi_Status             memmi_resume_process(memmi_Process process);
 memmi_Status             memmi_suspend_process(memmi_Process process);
 memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
+memmi_Status             memmi_continue_after_debug_events(memmi_Process process, memmi_EventList events);
 memmi_Registers          memmi_get_thread_registers(memmi_TID tid);
 memmi_Status             memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value);
 
