@@ -1546,35 +1546,6 @@ static memmi_Status set_thread_debug_register(pid_t tid, DebugRegister reg, uint
     return result;
 }
 
-static DebugRegister debug_register_from_index(uint32_t index)
-{
-    DebugRegister result = 0;
-
-    switch (index) {
-        case 0: {
-            result = DEBUG_REG_DR0;
-        } break;
-
-        case 1: {
-            result = DEBUG_REG_DR1;
-        } break;
-
-        case 2: {
-            result = DEBUG_REG_DR2;
-        } break;
-
-        case 3: {
-            result = DEBUG_REG_DR3;
-        } break;
-
-        default: {
-            ASSERT(0);
-            result = DEBUG_REG_DR0;
-        } break;
-    }
-
-    return result;
-}
 
 memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintptr_t address,
     memmi_BreakpointCondition cond, memmi_BreakpointLength length)

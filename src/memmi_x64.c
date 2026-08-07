@@ -1,5 +1,5 @@
 // TODO: is this file compatible with 32 bit x86?
-// TODO: undefine these macros
+// TODO: undefine these macros at end of file
 #define DR7_ENABLE_BIT_BASE_INDEX   16u
 #define DR7_ENABLE_BIT_STRIDE       2u
 #define DR7_COND_BITS_BASE_INDEX    16u
@@ -28,6 +28,36 @@ typedef struct {
     memmi_Status status;
     uint64_t     values[DEBUG_REG_COUNT];
 } DebugRegisters;
+
+static DebugRegister debug_register_from_index(uint32_t index)
+{
+    DebugRegister result = 0;
+
+    switch (index) {
+        case 0: {
+            result = DEBUG_REG_DR0;
+        } break;
+
+        case 1: {
+            result = DEBUG_REG_DR1;
+        } break;
+
+        case 2: {
+            result = DEBUG_REG_DR2;
+        } break;
+
+        case 3: {
+            result = DEBUG_REG_DR3;
+        } break;
+
+        default: {
+            ASSERT(0);
+            result = DEBUG_REG_DR0;
+        } break;
+    }
+
+    return result;
+}
 
 static uint64_t dr7_breakpoint_mask(uint32_t breakpoint_index)
 {
@@ -97,7 +127,7 @@ static uint64_t dr7_length_bits(uint32_t reg_index, memmi_BreakpointLength lengt
     return result;
 }
 
-static uint64_t dr7_set_breakpoint(uint64_t old_dr7, uint32_t index, memmi_BreakpointCondition cond, memmi_BreakpointLength length)
+static uint64_t dr7_set_breakpoint_value(uint64_t old_dr7, uint32_t index, memmi_BreakpointCondition cond, memmi_BreakpointLength length)
 {
     ASSERT(index <= 3);
 
