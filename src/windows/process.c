@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <psapi.h>
 #include <tlhelp32.h>
+#include <processthreadsapi.h>
 
 #include "utils.h"
 
@@ -773,7 +774,7 @@ static memmi_DebugEvent *win32_event_to_memmi_event(DEBUG_EVENT win32_event, mem
 
         case EXIT_PROCESS_DEBUG_EVENT: {
             // process exit
-            DBG_EVENT(0 && "TODO: we'll need to extend the public API to also include PROCESS_EXIT_PROCESS_DEBUG_EVENT");
+            ASSERT(0 && "TODO: we'll need to extend the public API to also include PROCESS_EXIT_PROCESS_DEBUG_EVENT");
         } break;
 
         // TODO: Investigate if we can implement SO loading events for Linux. If so,
@@ -864,10 +865,118 @@ memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_Even
     return result;
 }
 
+typedef struct {
+    void *address;
+    size_t size;
+} Win32ContextMember;
+
+static Win32ContextMember win32_context_member_ptr_from_register(CONTEXT *context, memmi_Register reg)
+{
+    #define CONTEXT_MEMBER(memmi_name, member_name)         \
+        case memmi_name: {                                  \
+            result.address = &context->member_name;         \
+            result.size = sizeof(context->member_name);     \
+        } break
+
+    Win32ContextMember result = {0};
+
+    switch (reg) {
+        CONTEXT_MEMBER(MEMMI_REG_RAX, Rax);
+        CONTEXT_MEMBER(MEMMI_REG_RCX, Rcx);
+        CONTEXT_MEMBER(MEMMI_REG_RDX, Rdx);
+        CONTEXT_MEMBER(MEMMI_REG_RSI, Rsi);
+        CONTEXT_MEMBER(MEMMI_REG_RDI, Rdi);
+        CONTEXT_MEMBER(MEMMI_REG_RSP, Rsp);
+        CONTEXT_MEMBER(MEMMI_REG_RBP, Rbp);
+        CONTEXT_MEMBER(MEMMI_REG_RBX, Rbx);
+
+        CONTEXT_MEMBER(MEMMI_REG_R8, R8);
+        CONTEXT_MEMBER(MEMMI_REG_R9, R9);
+        CONTEXT_MEMBER(MEMMI_REG_R10, R10);
+        CONTEXT_MEMBER(MEMMI_REG_R11, R11);
+        CONTEXT_MEMBER(MEMMI_REG_R12, R12);
+        CONTEXT_MEMBER(MEMMI_REG_R13, R13);
+        CONTEXT_MEMBER(MEMMI_REG_R14, R14);
+        CONTEXT_MEMBER(MEMMI_REG_R15, R15);
+
+        CONTEXT_MEMBER(MEMMI_REG_RIP, Rip);
+
+        CONTEXT_MEMBER(MEMMI_REG_CS, SegCs);
+        CONTEXT_MEMBER(MEMMI_REG_EFLAGS, EFlags);
+
+        CONTEXT_MEMBER(MEMMI_REG_SS, SegSs);
+        CONTEXT_MEMBER(MEMMI_REG_DS, SegDs);
+        CONTEXT_MEMBER(MEMMI_REG_ES, SegEs);
+        CONTEXT_MEMBER(MEMMI_REG_FS, SegFs);
+        CONTEXT_MEMBER(MEMMI_REG_GS, SegGs);
+
+        case MEMMI_REG_FS_BASE: {
+
+        } break;
+
+        case MEMMI_REG_GS_BASE: {
+
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+
+    #undef CONTEXT_MEMBER
+}
+
+typedef struct {
+    memmi_Status status;
+    CONTEXT data;
+} Win32Context;
+
+Win32Context win32_get_thread_context(HANDLE handle)
+{
+    Win32Context result = {0};
+
+    CONTEXT context = {0};
+    context.ContextFlags = CONTEXT_FULL;
+
+    BOOL get_context_result = GetThreadContext(handle, &context);
+
+    if (!get_context_result) {
+        result.status = windows_error_to_memmi_status(GetLastError());
+    } else {
+        result.data = context;
+    }
+
+    return result;
+}
+
 memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 {
-    ASSERT(0 && "Unimplemented");
-    return (memmi_Registers){0};
+    memmi_Registers result = {0};
+
+    DWORD native_tid = (DWORD)tid.value;
+    Win32Handle handle = get_thread_handle(native_tid);
+
+    if (handle.status != MEMMI_OK) {
+        result.status = handle.status;
+    } else {
+        Win32Context context = win32_get_thread_context(handle.data);
+
+        BOOL get_context_result = GetThreadContext(handle.data, &context.data);
+
+        if (!get_context_result) {
+            result.status = windows_error_to_memmi_status(GetLastError());
+        } else {
+            for (memmi_Register reg = 0; reg < MEMMI_REG_COUNT; ++reg) {
+                Win32ContextMember member = win32_context_member_ptr_from_register(&context.data, reg);
+
+                memcpy(&result.values[reg], member.address, member.size);
+            }
+        }
+    }
+
+    return result;
 
 }
 
