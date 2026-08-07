@@ -1,7 +1,7 @@
 #if defined(__linux__)
 #    define MEMMI_LINUX
 #elif defined(_WIN32)
-#    define MEMMI_WINDOWS
+#    define MEMMI_WIN32
 #else
 #    error Unsupported operating system
 #endif
@@ -561,6 +561,8 @@ memmi_Allocator memmi_default_allocator()
     return result;
 }
 
-#ifdef MEMMI_LINUX
+#if defined(MEMMI_LINUX)
 #    include "memmi_linux.c"
+#elif defined(MEMMI_WIN32)
+#    include "memmi_win32.c"
 #endif
