@@ -1481,20 +1481,8 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64
     return result;
 }
 
-typedef enum {
-    DEBUG_REG_DR0,
-    DEBUG_REG_DR1,
-    DEBUG_REG_DR2,
-    DEBUG_REG_DR3,
-    DEBUG_REG_DR6,
-    DEBUG_REG_DR7,
-    DEBUG_REG_COUNT,
-} DebugRegister;
-
-typedef struct {
-    memmi_Status status;
-    uint64_t     values[DEBUG_REG_COUNT];
-} DebugRegisters;
+// TODO: include this in memmi.c instead
+#include "memmi_x64.c"
 
 static size_t debug_register_user_struct_indices[DEBUG_REG_COUNT] = {
     [DEBUG_REG_DR0] = 0,
@@ -1582,88 +1570,6 @@ static DebugRegister debug_register_from_index(uint32_t index)
     return result;
 }
 
-#define DR7_ENABLE_BIT_BASE_INDEX   16u
-#define DR7_ENABLE_BIT_STRIDE       2u
-#define DR7_COND_BITS_BASE_INDEX    16u
-#define DR7_COND_BITS_STRIDE        4u
-#define DR7_LENGTH_BITS_BASE_INDEX  18u
-#define DR7_LENGTH_BITS_STRIDE      4u
-
-#define DR7_READ_WRITE_COND         0b11u
-#define DR7_WRITE_COND              0b01u
-#define DR7_SIZE_1_BYTES            0b00
-#define DR7_SIZE_2_BYTES            0b01
-#define DR7_SIZE_4_BYTES            0b11
-#define DR7_SIZE_8_BYTES            0b10
-
-static uint64_t dr7_breakpoint_mask(uint32_t breakpoint_index)
-{
-    uint32_t result =
-          (0b01u << (DR7_ENABLE_BIT_BASE_INDEX  + breakpoint_index * DR7_ENABLE_BIT_STRIDE))
-        | (0b11u << (DR7_COND_BITS_BASE_INDEX   + breakpoint_index * DR7_COND_BITS_STRIDE))
-        | (0b11u << (DR7_LENGTH_BITS_BASE_INDEX + breakpoint_index * DR7_LENGTH_BITS_STRIDE));
-
-    return result;
-}
-
-static uint64_t dr7_local_enable_bit(uint32_t reg_index)
-{
-    uint64_t result = 0x1 << (reg_index * DR7_ENABLE_BIT_STRIDE);
-
-    return result;
-}
-
-static uint64_t dr7_condition_bits(uint32_t reg_index, memmi_BreakpointCondition condition)
-{
-    uint64_t bits = 0;
-
-    switch (condition) {
-        case MEMMI_BREAKPOINT_READ_WRITE: {
-            bits = DR7_READ_WRITE_COND;
-        } break;
-
-        case MEMMI_BREAKPOINT_WRITE: {
-            bits = DR7_WRITE_COND;
-        } break;
-
-        default: {
-            ASSERT(0);
-            bits = DR7_READ_WRITE_COND;
-        } break;
-    }
-
-    uint64_t result = bits << (DR7_COND_BITS_BASE_INDEX + reg_index * DR7_COND_BITS_STRIDE);
-
-    return result;
-}
-
-static uint64_t dr7_length_bits(uint32_t reg_index, memmi_BreakpointLength length)
-{
-    uint64_t bits = 0;
-
-    switch (length) {
-        case MEMMI_BREAKPOINT_1_BYTES: {
-            bits = DR7_SIZE_1_BYTES;
-        } break;
-
-        case MEMMI_BREAKPOINT_2_BYTES: {
-            bits = DR7_SIZE_2_BYTES;
-        } break;
-
-        case MEMMI_BREAKPOINT_4_BYTES: {
-            bits = DR7_SIZE_4_BYTES;
-        } break;
-
-        case MEMMI_BREAKPOINT_8_BYTES: {
-            bits = DR7_SIZE_8_BYTES;
-        } break;
-    }
-
-    uint64_t result = bits << (DR7_LENGTH_BITS_BASE_INDEX + reg_index * DR7_LENGTH_BITS_STRIDE);
-
-    return result;
-}
-
 memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintptr_t address,
     memmi_BreakpointCondition cond, memmi_BreakpointLength length)
 {
@@ -1677,11 +1583,7 @@ memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintpt
         uint64_t old_dr7_value = debug_regs.values[DEBUG_REG_DR7];
 
         uint64_t new_dr_value = address;
-        uint64_t new_dr7_value =
-            (old_dr7_value & ~dr7_breakpoint_mask(index))
-            | dr7_local_enable_bit(index)
-            | dr7_condition_bits(index, cond)
-            | dr7_length_bits(index, length);
+        uint64_t new_dr7_value = dr7_set_breakpoint(old_dr7_value, index, cond, length);
 
         memmi_Status set_addr_result = set_thread_debug_register(tid, reg, new_dr_value);
         memmi_Status set_dr7_result = set_thread_debug_register(tid, DEBUG_REG_DR7, new_dr7_value);
