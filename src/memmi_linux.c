@@ -1554,7 +1554,7 @@ memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintpt
         uint64_t old_dr7_value = debug_regs.values[DEBUG_REG_DR7];
 
         uint64_t new_dr_value = address;
-        uint64_t new_dr7_value = dr7_set_breakpoint(old_dr7_value, index, cond, length);
+        uint64_t new_dr7_value = dr7_set_breakpoint_value(old_dr7_value, index, cond, length);
 
         memmi_Status set_addr_result = set_thread_debug_register(tid, reg, new_dr_value);
         memmi_Status set_dr7_result = set_thread_debug_register(tid, DEBUG_REG_DR7, new_dr7_value);

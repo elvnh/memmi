@@ -2,6 +2,11 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <assert.h>
+
+#define ASSERT(e) assert(e)
 
 int main(int argc, char **argv)
 {

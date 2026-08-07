@@ -93,7 +93,7 @@ do {                                                                    \
 #endif
 
 #if defined(MEMMI_GCC)
-#    error TODO
+#    define TYPEOF(t) __typeof__(t)
 #elif defined(MEMMI_MSVC)
 #    define TYPEOF(t) __typeof__(t)
 #else
@@ -277,11 +277,13 @@ memmi_String str_trim_whitespace(memmi_String str)
 #    define SAFE_MUL_U64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
 #    define SAFE_MUL_USIZE(a, b, result_ptr) !__builtin_mul_overflow((a), (b), (result_ptr))
 #elif defined(MEMMI_MSVC)
-#    define SAFE_ADD_S64(a, b, result_ptr)   !__builtin_add_overflow((a), (b), (result_ptr))
-#    define SAFE_ADD_U64(a, b, result_ptr)   !__builtin_add_overflow((a), (b), (result_ptr))
-#    define SAFE_MUL_S64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
-#    define SAFE_MUL_U64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
-#    define SAFE_MUL_USIZE(a, b, result_ptr) !__builtin_mul_overflow((a), (b), (result_ptr))
+// TODO: these can be simplified
+// TODO: are these even needed for win32?
+#    define SAFE_ADD_S64(a, b, result_ptr)   safe_add_s64_impl((a), (b), (result_ptr))
+#    define SAFE_ADD_U64(a, b, result_ptr)   safe_add_u64_impl((a), (b), (result_ptr))
+#    define SAFE_MUL_S64(a, b, result_ptr)   safe_mul_s64_impl((a), (b), (result_ptr))
+#    define SAFE_MUL_U64(a, b, result_ptr)   safe_mul_u64_impl((a), (b), (result_ptr))
+#    define SAFE_MUL_USIZE(a, b, result_ptr) safe_mul_usize_impl((a), (b), (result_ptr))
 // Thanks MSVC, I'll do it myself.
 // TODO: use macros to generate the various types of these
 // TODO: the implementations of these are so simple that maybe
