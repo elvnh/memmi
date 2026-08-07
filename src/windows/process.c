@@ -890,8 +890,8 @@ static Win32ContextMember win32_context_member_ptr_from_register(CONTEXT *contex
         CONTEXT_MEMBER(MEMMI_REG_RBP, Rbp);
         CONTEXT_MEMBER(MEMMI_REG_RBX, Rbx);
 
-        CONTEXT_MEMBER(MEMMI_REG_R8, R8);
-        CONTEXT_MEMBER(MEMMI_REG_R9, R9);
+        CONTEXT_MEMBER(MEMMI_REG_R8,  R8);
+        CONTEXT_MEMBER(MEMMI_REG_R9,  R9);
         CONTEXT_MEMBER(MEMMI_REG_R10, R10);
         CONTEXT_MEMBER(MEMMI_REG_R11, R11);
         CONTEXT_MEMBER(MEMMI_REG_R12, R12);
@@ -901,7 +901,7 @@ static Win32ContextMember win32_context_member_ptr_from_register(CONTEXT *contex
 
         CONTEXT_MEMBER(MEMMI_REG_RIP, Rip);
 
-        CONTEXT_MEMBER(MEMMI_REG_CS, SegCs);
+        CONTEXT_MEMBER(MEMMI_REG_CS,     SegCs);
         CONTEXT_MEMBER(MEMMI_REG_EFLAGS, EFlags);
 
         CONTEXT_MEMBER(MEMMI_REG_SS, SegSs);
@@ -928,12 +928,79 @@ static Win32ContextMember win32_context_member_ptr_from_register(CONTEXT *contex
     #undef CONTEXT_MEMBER
 }
 
+// NOTE: The reason for doing this is that the different members of CONTEXT
+// have different types/sizes, so simply returning a pointer won't work.
+#define WIN32_CONTEXT_MEMBER_LIST                       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RAX,    Rax)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RCX,    Rcx)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RDX,    Rdx)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RSI,    Rsi)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RDI,    Rdi)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RSP,    Rsp)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RBP,    Rbp)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RBX,    Rbx)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R8,     R8)          \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R9,     R9)          \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R10,    R10)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R11,    R11)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R12,    R12)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R13,    R13)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R14,    R14)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R15,    R15)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RIP,    Rip)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_CS,     SegCs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_EFLAGS, EFlags)      \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_SS,     SegSs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_DS,     SegDs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_ES,     SegEs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_FS,     SegFs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_GS,     SegGs)
+
+
+static uint64_t win32_load_context_struct_register_value(CONTEXT *context, memmi_Register reg)
+{
+    uint64_t result = 0;
+
+    switch (reg) {
+
+#define WIN32_CONTEXT_MEMBER(memmi_name, win32_name)                    \
+        case memmi_name: { result = context->win32_name; } break;
+
+        WIN32_CONTEXT_MEMBER_LIST
+
+#undef WIN32_CONTEXT_MEMBER
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+}
+
+static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Register reg, uint64_t value)
+{
+    switch (reg) {
+
+#define WIN32_CONTEXT_MEMBER(memmi_name, win32_name)                    \
+        case memmi_name: { context->win32_name = (TYPEOF(context->win32_name))value; } break;
+
+        WIN32_CONTEXT_MEMBER_LIST
+
+#undef WIN32_CONTEXT_MEMBER
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+}
+
 typedef struct {
     memmi_Status status;
     CONTEXT data;
 } Win32Context;
 
-Win32Context win32_get_thread_context(HANDLE handle)
+static Win32Context win32_get_thread_context(HANDLE handle)
 {
     Win32Context result = {0};
 
@@ -963,15 +1030,11 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
     } else {
         Win32Context context = win32_get_thread_context(handle.data);
 
-        BOOL get_context_result = GetThreadContext(handle.data, &context.data);
-
-        if (!get_context_result) {
+        if (!context.status != MEMMI_OK) {
             result.status = windows_error_to_memmi_status(GetLastError());
         } else {
             for (memmi_Register reg = 0; reg < MEMMI_REG_COUNT; ++reg) {
-                Win32ContextMember member = win32_context_member_ptr_from_register(&context.data, reg);
-
-                memcpy(&result.values[reg], member.address, member.size);
+                result.values[reg] = win32_load_context_struct_register_value(&context.data, reg);
             }
         }
     }
@@ -982,6 +1045,32 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 
 memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value)
 {
-    ASSERT(0 && "Unimplemented");
-    return 0;
+    memmi_Status result = 0;
+
+    DWORD native_tid = (DWORD)tid.value;
+    Win32Handle handle = get_thread_handle(native_tid);
+
+    if (handle.status != MEMMI_OK) {
+        result = handle.status;
+    } else {
+        Win32Context context = win32_get_thread_context(handle.data);
+
+        if (!context.status != MEMMI_OK) {
+            result = windows_error_to_memmi_status(GetLastError());
+        } else {
+            win32_set_context_struct_register_value(&context.data, reg, value);
+
+            // TODO: "A 64-bit application can set the context of a WOW64 thread using the Wow64SetThreadContext function."
+
+            BOOL set_context_result = SetThreadContext(handle.data, &context.data);
+
+            if (!set_context_result != MEMMI_OK) {
+                result = windows_error_to_memmi_status(GetLastError());
+            }
+        }
+    }
+
+    return result;
 }
+
+#undef WIN32_CONTEXT_MEMBER_LIST
