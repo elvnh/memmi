@@ -313,6 +313,8 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
 
 void memmi_close_process(memmi_Process process, memmi_Allocator allocator)
 {
+    // TODO: also detach from process just in case
+
     memmi_ProcessImpl *impl = get_platform_process_handle(process);
     CloseHandle(impl->handle);
 
@@ -720,8 +722,8 @@ static memmi_DebugEvent *win32_event_to_memmi_event(DEBUG_EVENT win32_event, mem
                 } break;
 
                 case EXCEPTION_BREAKPOINT: {
-                    // breakpoint, report PC register
-                    ASSERT(0 && "TODO: breakpoint");
+                    // TODO: report rip register
+                    result->kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
                 } break;
 
                 case EXCEPTION_DATATYPE_MISALIGNMENT: {
@@ -995,6 +997,81 @@ static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Regi
     }
 }
 
+// TODO: include this in memmi.c instead
+#include "memmi_x64.c"
+
+// TODO: just include debug registers in normal register enum so we don't have to have two separate functions
+static uint64_t win32_load_context_struct_debug_register_value(CONTEXT *context, DebugRegister reg)
+{
+    uint64_t result = 0;
+
+    switch (reg) {
+        case DEBUG_REG_DR0: {
+            result = context->Dr0;
+        } break;
+
+        case DEBUG_REG_DR1: {
+            result = context->Dr1;
+        } break;
+
+        case DEBUG_REG_DR2: {
+            result = context->Dr2;
+        } break;
+
+        case DEBUG_REG_DR3: {
+            result = context->Dr3;
+        } break;
+
+        case DEBUG_REG_DR6: {
+            result = context->Dr6;
+        } break;
+
+        case DEBUG_REG_DR7: {
+            result = context->Dr7;
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+}
+
+static void win32_set_context_struct_debug_register_value(CONTEXT *context, memmi_Register reg, uint64_t value)
+{
+    switch (reg) {
+        case DEBUG_REG_DR0: {
+            context->Dr0 = value;
+        } break;
+
+        case DEBUG_REG_DR1: {
+            context->Dr1 = value;
+        } break;
+
+        case DEBUG_REG_DR2: {
+            context->Dr2 = value;
+        } break;
+
+        case DEBUG_REG_DR3: {
+            context->Dr3 = value;
+        } break;
+
+        case DEBUG_REG_DR6: {
+            context->Dr6 = value;
+        } break;
+
+        case DEBUG_REG_DR7: {
+            context->Dr7 = value;
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+}
+
+
 typedef struct {
     memmi_Status status;
     CONTEXT data;
@@ -1048,6 +1125,8 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64
     memmi_Status result = 0;
 
     DWORD native_tid = (DWORD)tid.value;
+
+    ASSERT(0 && "TODO: Remember to close handles!");
     Win32Handle handle = get_thread_handle(native_tid);
 
     if (handle.status != MEMMI_OK) {
@@ -1068,6 +1147,78 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64
                 result = windows_error_to_memmi_status(GetLastError());
             }
         }
+    }
+
+    return result;
+}
+
+typedef struct {
+    uintptr_t address;
+    uint32_t index;
+    memmi_BreakpointCondition cond;
+    memmi_BreakpointLength length;
+    memmi_Status statuses;
+} SetBreakpointContext;
+
+static ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data, DWORD tid)
+{
+    memmi_Status status = 0;
+
+    SetBreakpointContext *cb_context = user_data;
+
+    Win32Handle handle = get_thread_handle(tid);
+    Win32Context context = win32_get_thread_context(handle.data);
+
+    if (context.status != MEMMI_OK) {
+        status = windows_error_to_memmi_status(GetLastError());
+    } else {
+        uintptr_t address = cb_context->address;
+        uint32_t index = cb_context->index;
+        memmi_BreakpointCondition cond = cb_context->cond;
+        memmi_BreakpointLength length = cb_context->length;
+
+        DebugRegister debug_reg = debug_register_from_index(index);
+
+        uint64_t old_dr7_value = win32_load_context_struct_debug_register_value(&context.data, DEBUG_REG_DR7);
+        uint64_t new_dr7_value = dr7_set_breakpoint_value(old_dr7_value, index, cond, length);
+
+        win32_set_context_struct_debug_register_value(&context.data, debug_reg, address);
+        win32_set_context_struct_debug_register_value(&context.data, DEBUG_REG_DR7, new_dr7_value);
+
+        BOOL set_context_result = SetThreadContext(handle.data, &context.data);
+
+        if (!set_context_result != MEMMI_OK) {
+            status = windows_error_to_memmi_status(GetLastError());
+        }
+    }
+
+    cb_context->statuses |= status;
+
+    CloseHandle(handle.data);
+
+    return FOR_EACH_THREAD_RES_CONTINUE;
+}
+
+memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
+    memmi_BreakpointCondition condition, uint32_t index, memmi_BreakpointLength length)
+{
+    memmi_Status result = 0;
+
+    memmi_PID pid = get_platform_process_handle(process)->pid;
+    DWORD native_pid = (DWORD)pid.value;
+
+    SetBreakpointContext cb_context = {0};
+    cb_context.address = address;
+    cb_context.index = index;
+    cb_context.cond = condition;
+    cb_context.length = length;
+
+    memmi_Status for_each_thread_result = for_each_thread(native_pid, &cb_context, set_hardware_breakpoint_on_thread_cb);
+
+    if (for_each_thread_result != MEMMI_OK) {
+        result = for_each_thread_result;
+    } else {
+        result = cb_context.statuses;
     }
 
     return result;

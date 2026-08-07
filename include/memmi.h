@@ -143,6 +143,7 @@ typedef struct {
 } memmi_EventList;
 
 // TODO: floating point registers
+// TODO: include debug registers in these?
 typedef enum {
     MEMMI_REG_RAX,
     MEMMI_REG_RCX,
@@ -199,6 +200,7 @@ typedef enum {
 
 /* Functions */
 // TODO: allow checking if process exists
+// TODO: should new threads start in suspended state?
 memmi_ProcessList        memmi_get_running_processes(memmi_Allocator allocator);
 memmi_OpenProcess        memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
 void                     memmi_close_process(memmi_Process process, memmi_Allocator allocator);
