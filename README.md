@@ -4,13 +4,12 @@ such as attaching to a remote process as a debugger, reading/writing its memory,
 breakpoints in it and so on. The library is currently under development, as such the API is
 subject to change and no guarantees are made about the library being correct.
 
-memmi is currently available for Linux but a Windows version is currently in progress. The
-library only supports x86 architectures but in the future, support may be added for other
-architectures such as ARM.
+memmi is currently available for Linux and Windows. The library only supports x86
+architectures but in the future, support may be added for other architectures such as ARM.
 
-## Roadmap
+## Features
 - [x] Linux support
-- [ ] Windows support
+- [x] Windows support
 - [ ] Non-x86 support
 - [x] Retrieving currently running processes
 - [x] Querying remote process information such as threads and mapped memory regions
