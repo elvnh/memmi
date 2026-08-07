@@ -9,12 +9,16 @@
 
 /*
   TODO:
+  - Make Linux implementation use continue_after_debug_events
+  - Make Linux report MEMMI_DEBUG_EVENT_PROCESS_EXIT if main thread
+    exits
   - Opaque thread handle?
   - Store pid in opaque process handle
   - Software breakpoints
   - Separate architecture-specific things into separate file
   - Unit test breakpoints
   - Letting user spawn a new process as a debuggee rather than just attaching
+
  */
 
 typedef struct {
@@ -111,7 +115,7 @@ typedef struct memmi_DebugEvent {
 } memmi_DebugEvent;
 
 // TODO: it's unfortunate that we have to return a list of events
-// due to ptrace jank. Try to get rid of this requirement somehow.
+// due to ptrace jank. Try to get rid of this.
 typedef struct {
     memmi_Status      status;
     memmi_TID         id_of_affected_thread;
@@ -145,8 +149,8 @@ typedef enum {
     MEMMI_REG_EFLAGS,
 
     MEMMI_REG_SS,
-    MEMMI_REG_FS_BASE,
-    MEMMI_REG_GS_BASE,
+    MEMMI_REG_FS_BASE, // TODO: not needed?
+    MEMMI_REG_GS_BASE, // TODO: not needed?
     MEMMI_REG_DS,
     MEMMI_REG_ES,
     MEMMI_REG_FS,
