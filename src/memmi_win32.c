@@ -997,9 +997,6 @@ static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Regi
     }
 }
 
-// TODO: include this in memmi.c instead
-#include "memmi_x64.c"
-
 // TODO: just include debug registers in normal register enum so we don't have to have two separate functions
 static uint64_t win32_load_context_struct_debug_register_value(CONTEXT *context, DebugRegister reg)
 {

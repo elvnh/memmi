@@ -1481,9 +1481,6 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64
     return result;
 }
 
-// TODO: include this in memmi.c instead
-#include "memmi_x64.c"
-
 static size_t debug_register_user_struct_indices[DEBUG_REG_COUNT] = {
     [DEBUG_REG_DR0] = 0,
     [DEBUG_REG_DR1] = 1,

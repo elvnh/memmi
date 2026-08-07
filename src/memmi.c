@@ -14,7 +14,13 @@
 #    error Unsupported compiler
 #endif
 
-#ifdef MEMMI_LINUX
+#if defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__amd64__)
+#    define MEMMI_X64
+#else
+#    error Unsupported architecture
+#endif
+
+#if defined(MEMMI_LINUX)
 #    define _GNU_SOURCE
 #endif
 
@@ -562,6 +568,10 @@ memmi_Allocator memmi_default_allocator()
 
     return result;
 }
+
+#if defined(MEMMI_X64)
+#    include "memmi_x64.c"
+#endif
 
 #if defined(MEMMI_LINUX)
 #    include "memmi_linux.c"
