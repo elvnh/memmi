@@ -221,7 +221,6 @@ static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn 
                     // I believe there should never be any non-directory entries in the
                     // task subdirectory, but we'll check just to be sure.
                     if ((stat_result == 0) && S_ISDIR(stat_buf.st_mode)) {
-
                         found_thread_dir = true;
 
                         memmi_String name = str_from_c_str(subdir_entry->d_name);
@@ -311,7 +310,7 @@ static StatusFileRow get_proc_status_file_row(pid_t tid, memmi_String row_name)
             fclose(status_file);
         }
 
-        close(status_fd);
+        // NOTE: status_fd does not need to be close as fclose does that for us.
     }
 
     close(proc_dir_fd.fd);
@@ -1287,6 +1286,7 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
         if (!thread_is_traced_by_us(native_pid)) {
             ASSERT(0 && "Cannot wait for events in a non-traced process");
         } else {
+            // TODO: don't resume here
             memmi_Status resume_result = memmi_resume_process(process);
 
             if (resume_result != MEMMI_OK) {
