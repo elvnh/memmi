@@ -292,7 +292,9 @@ static StatusFileRow get_proc_status_file_row(pid_t tid, memmi_String row_name)
                     memmi_String line = str_from_c_str(result.data);
 
                     if (str_starts_with(line, row_name)) {
-                        Cut cut = str_cut(line, str_lit(":"));
+                        // Predeclare literal to avoid extended initializer list errors in pre-C++11.
+                        memmi_String colon_lit = str_lit(":");
+                        Cut cut = str_cut(line, colon_lit);
 
                         if (cut.ok) {
                             memmi_String trimmed = str_trim_whitespace(cut.tail);
@@ -354,7 +356,9 @@ typedef struct {
 static PidResult get_pid_of_tracing_process(pid_t tid)
 {
     PidResult result = zero_struct(PidResult);
-    StatusFileRow entry = get_proc_status_file_row(tid, str_lit("TracerPid"));
+
+    memmi_String tracer_pid_lit = str_lit("TracerPid");
+    StatusFileRow entry = get_proc_status_file_row(tid, tracer_pid_lit);
 
     if (entry.status != MEMMI_OK) {
         result.status = entry.status;
@@ -386,7 +390,8 @@ static PidResult get_thread_group_id(pid_t tid)
 {
     PidResult result = zero_struct(PidResult);
 
-    StatusFileRow entry = get_proc_status_file_row(tid, str_lit("Tgid"));
+    memmi_String tgid_lit = str_lit("Tgid");
+    StatusFileRow entry = get_proc_status_file_row(tid, tgid_lit);
 
     if (entry.status != MEMMI_OK) {
         result.status = entry.status;
@@ -583,14 +588,15 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
 {
     memmi_String fields[6];
 
-    Cut cut = str_cut(line, str_lit(" "));
+    memmi_String space_lit = str_lit(" ");
+    Cut cut = str_cut(line, space_lit);
 
     for (size_t i = 0; i < ARRAY_COUNT(fields); ++i) {
         if (cut.head.count > 0) {
             fields[i] = cut.head;
 
             memmi_String trimmed_tail = str_trim_leading_whitespace(cut.tail);
-            cut = str_cut(trimmed_tail, str_lit(" "));
+            cut = str_cut(trimmed_tail, space_lit);
         } else {
             break;
         }
@@ -603,7 +609,8 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
     /* const size_t inode_index = 4; */
     /* const size_t pathname_index = 5; */
 
-    Cut addresses = str_cut(fields[address_index], str_lit("-"));
+    memmi_String dash_lit = str_lit("-");
+    Cut addresses = str_cut(fields[address_index], dash_lit);
     memmi_String base_address_str = addresses.head;
     memmi_String end_address_str = addresses.tail;
 
@@ -879,7 +886,7 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
                         ASSERT(result != MEMMI_OK);
                     } else {
                         uint32_t statuses_excluding_no_such_process =
-                            cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+                            (uint32_t)cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
 
                         result = (memmi_Status)statuses_excluding_no_such_process;
                     }
@@ -928,7 +935,7 @@ memmi_Status memmi_detach_from_process(memmi_Process process)
             // count this as a failure. If we failed due to threads dying, we'll ignore that and
             // count it as a success.
             uint32_t statuses_excluding_no_such_process =
-                cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+                (uint32_t)cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
 
             result = (memmi_Status)statuses_excluding_no_such_process;
         }
@@ -962,7 +969,7 @@ memmi_Status memmi_resume_process(memmi_Process process)
             // threads failed due to them dying, we'll ignore that as threads can die without an
             // error having occurred.
             uint32_t statuses_excluding_no_such_process =
-                resume_cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+                (uint32_t)resume_cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
 
             result = (memmi_Status)statuses_excluding_no_such_process;
         }
@@ -1010,15 +1017,18 @@ static ForEachThreadResult suspend_thread_cb(void *user_data, pid_t tid)
     SuspendThreadsContext *context = (SuspendThreadsContext *)user_data;
 
     bool is_suspended = false;
-    StatusFileRow state_entry = get_proc_status_file_row(tid, str_lit("State"));
+    memmi_String state_lit = str_lit("State");
+    StatusFileRow state_entry = get_proc_status_file_row(tid, state_lit);
 
     if (state_entry.status != MEMMI_OK) {
         set_flag(context->statuses, state_entry.status);
     } else {
         memmi_String state_entry_str = str_from_span(state_entry);
 
-        is_suspended = str_starts_with(state_entry_str, str_lit("T"))
-            || str_starts_with(state_entry_str, str_lit("t"));
+        memmi_String upper_t_lit = str_lit("T");
+        memmi_String lower_t_lit = str_lit("t");
+        is_suspended = str_starts_with(state_entry_str, upper_t_lit)
+            || str_starts_with(state_entry_str, lower_t_lit);
 
         if (!is_suspended) {
             memmi_Status suspend_result = suspend_thread(tid);
@@ -1078,7 +1088,7 @@ memmi_Status memmi_suspend_process(memmi_Process process)
                     ASSERT(result != MEMMI_OK);
                 } else {
                     uint32_t statuses_excluding_no_such_process =
-                        cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+                        (uint32_t)cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
 
                     result = (memmi_Status)statuses_excluding_no_such_process;
                 }
@@ -1179,7 +1189,7 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
 
             if (thread_belongs_to_traced_process) {
                 result.data = allocate(allocator, memmi_DebugEvent, 1);
-                *result.data = zero_struct(memmi_DebugEvent);
+                memset(result.data, 0, sizeof(*result.data));
 
                 result.data->id_of_affected_thread = (memmi_TID){id_of_affected_thread};
 
@@ -1614,7 +1624,7 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
                     // If setting a breakpoint on a child thread died due to that thread dying due to a
                     // race, we'll ignore it. Any other error we'll report.
                     uint32_t statuses_excluding_no_such_process =
-                        context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+                        (uint32_t)context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
 
                     result = (memmi_Status)statuses_excluding_no_such_process;
                 }

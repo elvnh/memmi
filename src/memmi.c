@@ -21,7 +21,9 @@
 #endif
 
 #if defined(MEMMI_LINUX)
-#    define _GNU_SOURCE
+#    ifndef _GNU_SOURCE
+#        define _GNU_SOURCE
+#    endif
 #endif
 
 #include "memmi.h"
@@ -453,21 +455,27 @@ static uint32_t parse_digit(char c, NumberBase base)
     return result;
 }
 
+// TODO: These number parsing functions are bad
 MaybeS64 str_to_s64(memmi_String str, NumberBase base)
 {
     // TODO: reduce code duplication between this and str_to_u64
     MaybeS64 result = zero_struct(MaybeS64);
     // negativ hex?
 
+    // Predeclare literals in order to avoid extended initializer list errors pre-C++11.
+    memmi_String minus_lit = str_lit("-");
+    memmi_String lower_hex_lit = str_lit("0x");
+    memmi_String upper_hex_lit = str_lit("0X");
+
     int32_t sign = 1;
-    if (str_starts_with(str, str_lit("-"))) {
+    if (str_starts_with(str, minus_lit)) {
         sign = -1;
 
         ++str.data;
         --str.count;
     }
 
-    if (str_starts_with(str, str_lit("0x")) || str_starts_with(str, str_lit("0X"))) {
+    if (str_starts_with(str, lower_hex_lit) || str_starts_with(str, upper_hex_lit)) {
         str.data += 2;
         str.count -= 2;
     }
@@ -512,7 +520,11 @@ MaybeU64 str_to_u64(memmi_String str, NumberBase base)
 {
     MaybeU64 result = zero_struct(MaybeU64);
 
-    if (str_starts_with(str, str_lit("0x")) || str_starts_with(str, str_lit("0X"))) {
+    // Predeclare literals in order to avoid extended initializer list errors pre-C++11.
+    memmi_String lower_hex_lit = str_lit("0x");
+    memmi_String upper_hex_lit = str_lit("0X");
+
+    if (str_starts_with(str, lower_hex_lit) || str_starts_with(str, upper_hex_lit)) {
         str.data += 2;
         str.count -= 2;
     }
