@@ -35,6 +35,8 @@
 /*
   TODO:
   - Undefine all macros at end of file
+  - Add namespace prefix to all macros/functions, in case user compiles
+    as single translation unit
  */
 
 /***************************/
@@ -57,16 +59,6 @@
         }                                                   \
     } while (0)
 
-#define dyn_arr_push(arr, item, alloc)                                  \
-do {                                                                    \
-    if ((arr)->count == (arr)->capacity) {                              \
-        (arr)->capacity = MAX((arr)->capacity, 32);                     \
-        (arr)->data = reallocate((alloc), (arr)->data,                  \
-            (arr)->capacity, (arr)->capacity * 2);                      \
-        (arr)->capacity *= 2;                                           \
-    }                                                                   \
-    (arr)->data[((arr)->count)++] = (item);                             \
-} while (0)
 
 #define sl_push_back(list, node)                \
     do {                                        \
@@ -568,6 +560,57 @@ memmi_Allocator memmi_default_allocator()
 
     return result;
 }
+
+/***************************/
+/*      Dynamic array      */
+/***************************/
+// This macro returns a type erased dynamic array that has the new data, count and
+// capacity. This result should be checked to ensure that any reallocation succeeded, and
+// can then be assigned using dyn_arr_assign.
+// TODO: check that sizeof item and sizeof arr->data is equal
+// TODO: Rename to dyn_arr_push
+#define dyn_arr_push2(arr, item, alloc)                                     \
+    dyn_arr_push2_impl((arr)->data, (arr)->count, (arr)->capacity, &(item), \
+        sizeof(*((arr)->data)), ALIGNOF(TYPEOF(*((arr)->data))), alloc)
+
+typedef struct {
+    void *data;
+    size_t count;
+    size_t capacity;
+} DynArray;
+
+static DynArray dyn_arr_push2_impl(void *data, size_t count, size_t cap, void *item,
+    size_t memb_size, size_t align, memmi_Allocator allocator)
+{
+    DynArray result = {0};
+    result.data = data;
+    result.count = count;
+    result.capacity = cap;
+
+    if (result.count == result.capacity) {
+        size_t new_cap = MAX(result.capacity * 2, 32);
+        result.data = allocator.function(allocator.context, data, result.capacity, new_cap, memb_size, align);
+        result.capacity = new_cap;
+    }
+
+    if (result.data) {
+        memcpy((char *)result.data + (memb_size * result.count), item, memb_size);
+        ++result.count;
+    }
+
+    return result;
+}
+
+#define dyn_arr_assign(lhs, rhs)                \
+    do {                                        \
+        ASSERT(rhs.data);                       \
+        ASSERT(rhs.count);                      \
+        ASSERT(rhs.capacity);                   \
+                                                \
+        (lhs)->data = (rhs).data;               \
+        (lhs)->count = (rhs).count;             \
+        (lhs)->capacity = (rhs).capacity;       \
+    } while (0);
 
 /***************************/
 /*       Common types      */
