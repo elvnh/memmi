@@ -53,10 +53,9 @@ typedef struct {
     memmi_PID pid;
 } memmi_ProcessInfo;
 
-// TODO: store PID directly here. Linux won't need to use data member, windows will use it for handle.
-// Doing it this way will skip an unnecessary allocation.
 typedef struct {
     void *data;
+    memmi_PID pid;
 } memmi_Process;
 
 typedef struct {
@@ -201,9 +200,10 @@ typedef enum {
 /* Functions */
 // TODO: allow checking if process exists
 // TODO: should new threads start in suspended state?
+// TODO: free_process_list
 memmi_ProcessList        memmi_get_running_processes(memmi_Allocator allocator);
-memmi_OpenProcess        memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
-void                     memmi_close_process(memmi_Process process, memmi_Allocator allocator);
+memmi_OpenProcess        memmi_open_process(memmi_PID pid);
+void                     memmi_close_process(memmi_Process process);
 memmi_ReadMemory         memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator);
 memmi_WriteMemory        memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size);
 memmi_MemoryRegions      memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator);

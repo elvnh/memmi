@@ -12,7 +12,6 @@
 
 #include "memmi.h"
 
-
 typedef struct {
     memmi_String value;
     bool ok;
@@ -36,16 +35,12 @@ typedef struct {
     size_t capacity;
 } ThreadDynArray;
 
-typedef struct {
-    memmi_PID pid;
-} memmi_ProcessImpl;
-
 /***************************/
 /* Common helper functions */
 /***************************/
-static memmi_ProcessImpl *get_platform_process_handle(memmi_Process proc)
+static pid_t get_native_pid(memmi_Process proc)
 {
-    memmi_ProcessImpl *result = proc.data;
+    pid_t result = (pid_t)proc.pid.value;
 
     return result;
 }
@@ -447,7 +442,7 @@ static int get_signal_from_wait_status(int status)
 /**********************/
 /* API implementation */
 /**********************/
-memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
+memmi_OpenProcess memmi_open_process(memmi_PID pid)
 {
     memmi_OpenProcess result = {0};
 
@@ -456,14 +451,7 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
     if (pid_exists_result != MEMMI_OK) {
         result.status = pid_exists_result;
     } else {
-        memmi_ProcessImpl *data = allocate(allocator, memmi_ProcessImpl, 1);
-
-        if (!data) {
-            result.status = MEMMI_ALLOCATION_FAILED;
-        } else {
-            data->pid = pid;
-            result.process.data = data;
-        }
+        result.process.pid = pid;
     }
 
     return result;
@@ -520,14 +508,15 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     return result;
 }
 
-void memmi_close_process(memmi_Process process, memmi_Allocator allocator)
+void memmi_close_process(memmi_Process process)
 {
-    deallocate(allocator, process.data, sizeof(memmi_ProcessImpl));
+    // no-op on Linux
+    (void)process;
 }
 
 memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator)
 {
-    memmi_ProcessImpl *proc = get_platform_process_handle(process);
+    pid_t pid = get_native_pid(process);
 
     memmi_ReadMemory result = {0};
 
@@ -549,7 +538,7 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, siz
                 .iov_len = size
             };
 
-            ssize_t bytes_read = process_vm_readv((int)proc->pid.value, &local_iov, 1, &remote_iov, 1, 0);
+            ssize_t bytes_read = process_vm_readv(pid, &local_iov, 1, &remote_iov, 1, 0);
 
             if (bytes_read == -1) {
                 result.status = errno_to_memmi_status(errno);
@@ -568,7 +557,7 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, siz
 
 memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size)
 {
-    memmi_PID pid = get_platform_process_handle(process)->pid;
+    pid_t pid = get_native_pid(process);
     memmi_WriteMemory result = {0};
 
     if (src_size > (size_t)SSIZE_MAX) {
@@ -584,7 +573,7 @@ memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void 
             .iov_len = src_size
         };
 
-        ssize_t bytes_written = process_vm_writev((int)pid.value, &local_iov, 1, &remote_iov, 1, 0);
+        ssize_t bytes_written = process_vm_writev(pid, &local_iov, 1, &remote_iov, 1, 0);
 
         if (bytes_written == -1) {
             result.status = errno_to_memmi_status(errno);
@@ -668,8 +657,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
     memmi_MemoryRegions result = {0};
     RegionDynArray regions = {0};
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    pid_t native_pid = (pid_t)pid.value;
+    pid_t native_pid = get_native_pid(process);
 
     memmi_Status pid_exists_result = pid_exists(native_pid);
 
@@ -843,8 +831,7 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
 {
     memmi_Status result = 0;
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    pid_t native_pid = (pid_t)pid.value;
+    pid_t native_pid = get_native_pid(process);
 
     memmi_Status pid_exists_result = pid_exists(native_pid);
 
@@ -928,8 +915,7 @@ memmi_Status memmi_detach_from_process(memmi_Process process)
     // TODO: clear breakpoints etc?
     memmi_Status result = 0;
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    pid_t native_pid = (pid_t)pid.value;
+    pid_t native_pid = get_native_pid(process);
     memmi_Status pid_exists_result = pid_exists(native_pid);
 
     if (pid_exists_result != MEMMI_OK) {
@@ -956,8 +942,7 @@ memmi_Status memmi_detach_from_process(memmi_Process process)
 
 memmi_Status memmi_resume_process(memmi_Process process)
 {
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    pid_t native_pid = (pid_t)pid.value;
+    pid_t native_pid = get_native_pid(process);
 
     memmi_Status result = 0;
 
@@ -1063,8 +1048,7 @@ memmi_Status memmi_suspend_process(memmi_Process process)
 {
     memmi_Status result = 0;
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    pid_t native_pid = (pid_t)pid.value;
+    pid_t native_pid = get_native_pid(process);
 
     memmi_Status main_thread_suspend_result = suspend_thread(native_pid);
 
@@ -1126,8 +1110,7 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
 {
     memmi_ThreadList result = {0};
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    pid_t native_pid = (pid_t)pid.value;
+    pid_t native_pid = get_native_pid(process);
 
     CollectThreadsContext context = {
         .allocator = allocator
@@ -1159,7 +1142,7 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
 {
     DebugEventResult result = {0};
 
-    memmi_PID pid = get_platform_process_handle(proc)->pid;
+    pid_t pid = get_native_pid(proc);
 
     int waitpid_flags = __WALL;
 
@@ -1183,7 +1166,7 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
         if (thread_group_id.status != MEMMI_OK) {
             result.status = thread_group_id.status;
         } else {
-            bool thread_belongs_to_traced_process = thread_group_id.pid == pid.value;
+            bool thread_belongs_to_traced_process = thread_group_id.pid == pid;
 
             if (thread_belongs_to_traced_process) {
                 result.data = allocate(allocator, memmi_DebugEvent, 1);
@@ -1274,8 +1257,7 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
 {
     memmi_EventList result = {0};
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    pid_t native_pid = (pid_t)pid.value;
+    pid_t native_pid = get_native_pid(process);
 
     memmi_Status pid_exists_result = pid_exists(native_pid);
 
@@ -1595,8 +1577,7 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
 {
     memmi_Status result = 0;
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    pid_t native_pid = (pid_t)pid.value;
+    pid_t native_pid = get_native_pid(process);
     memmi_Status pid_exists_result = pid_exists(native_pid);
 
     if (pid_exists_result != MEMMI_OK) {

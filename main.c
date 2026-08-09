@@ -33,7 +33,7 @@ int main(int argc, char **argv)
 
     ASSERT(found);
 
-    memmi_OpenProcess proc_opt = memmi_open_process(pid, memmi_default_allocator());
+    memmi_OpenProcess proc_opt = memmi_open_process(pid);
     ASSERT(proc_opt.status == MEMMI_OK);
     memmi_Process proc = proc_opt.process;
 
@@ -89,5 +89,5 @@ int main(int argc, char **argv)
     ASSERT(write_result.status == MEMMI_OK);
 #endif
 
-    memmi_close_process(proc, memmi_default_allocator());
+    memmi_close_process(proc);
 }

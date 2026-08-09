@@ -1,4 +1,4 @@
-# memmi
+# memmi (WUO(
 memmi is a simple process debugging library made in C99. It allows the user to do things
 such as attaching to a remote process as a debugger, reading/writing its memory, setting
 breakpoints in it and so on. The library is currently under development, as such the API is
