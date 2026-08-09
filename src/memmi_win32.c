@@ -243,7 +243,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                         proc_info.pid = (memmi_PID){pids[i]};
 
                         // TODO: check that dyn_arr_push doesn't fail
-                        DynArray new_procs = dyn_arr_push2(&procs, proc_info, allocator);
+                        DynArray new_procs = dyn_arr_push(&procs, proc_info, allocator);
                         
                         if (!new_procs.data) {
                             result.status = MEMMI_ALLOCATION_FAILED;
@@ -460,7 +460,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
                 region.permissions = page_protection_to_memmi_permissions(info.Protect);
 
                 // TODO: check that dyn_arr_push doesn't fail
-                DynArray new_regions = dyn_arr_push2(&regions, region, allocator);
+                DynArray new_regions = dyn_arr_push(&regions, region, allocator);
                 
                 if (!new_regions.data) {
                     result.status = MEMMI_ALLOCATION_FAILED;
@@ -493,7 +493,7 @@ ForEachThreadResult collect_threads_cb(void *user_data, DWORD tid)
     CollectThreadsContext *context = user_data;
 
     memmi_TID thread = {tid};
-    DynArray new_threads = dyn_arr_push2(&context->threads, thread, context->allocator);
+    DynArray new_threads = dyn_arr_push(&context->threads, thread, context->allocator);
     
     if (!new_threads.data) {
         context->statuses |= MEMMI_ALLOCATION_FAILED;

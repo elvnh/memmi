@@ -473,7 +473,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                             int64_t pid_value = number_opt.value;
                             memmi_ProcessInfo proc = {proc_name.value, {pid_value}};
 
-                            DynArray new_processes = dyn_arr_push2(&processes, proc, allocator);
+                            DynArray new_processes = dyn_arr_push(&processes, proc, allocator);
 
                             if (!new_processes.data) {
                                 result.status = MEMMI_ALLOCATION_FAILED;
@@ -679,7 +679,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
 
                     while (fgets(buffer, ARRAY_COUNT(buffer), maps_file)) {
                         memmi_MemoryRegion region = parse_memory_region(str_from_c_str(buffer));
-                        DynArray new_regions = dyn_arr_push2(&regions, region, allocator);
+                        DynArray new_regions = dyn_arr_push(&regions, region, allocator);
 
                         if (!new_regions.data) {
                             result.status = MEMMI_ALLOCATION_FAILED;
@@ -1101,7 +1101,7 @@ static ForEachThreadResult collect_threads(void *user_data, pid_t tid)
     ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
 
     CollectThreadsContext *context = user_data;
-    DynArray new_thread_list = dyn_arr_push2(&context->thread_list, (memmi_TID){tid}, context->allocator);
+    DynArray new_thread_list = dyn_arr_push(&context->thread_list, (memmi_TID){tid}, context->allocator);
 
     if (!new_thread_list.data) {
         context->statuses |= MEMMI_ALLOCATION_FAILED;

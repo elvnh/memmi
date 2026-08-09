@@ -564,8 +564,8 @@ memmi_Allocator memmi_default_allocator()
 // can then be assigned using dyn_arr_assign.
 // TODO: check that sizeof item and sizeof arr->data is equal
 // TODO: Rename to dyn_arr_push
-#define dyn_arr_push2(arr, item, alloc)                                     \
-    dyn_arr_push2_impl((arr)->data, (arr)->count, (arr)->capacity, &(item), \
+#define dyn_arr_push(arr, item, alloc)                                     \
+    dyn_arr_push_impl((arr)->data, (arr)->count, (arr)->capacity, &(item), \
         sizeof(*((arr)->data)), ALIGNOF(TYPEOF(*((arr)->data))), alloc)
 
 typedef struct {
@@ -574,7 +574,7 @@ typedef struct {
     size_t capacity;
 } DynArray;
 
-static DynArray dyn_arr_push2_impl(void *data, size_t count, size_t cap, void *item,
+static DynArray dyn_arr_push_impl(void *data, size_t count, size_t cap, void *item,
     size_t memb_size, size_t align, memmi_Allocator allocator)
 {
     DynArray result = {0};
