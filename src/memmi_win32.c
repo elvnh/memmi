@@ -6,8 +6,6 @@
 #include <tlhelp32.h>
 #include <processthreadsapi.h>
 
-#include "utils.h"
-
 #include <stdlib.h>
 
 /***************************/
@@ -32,13 +30,6 @@ static memmi_Status windows_error_to_memmi_status(DWORD error_code)
     return result;
 }
 
-static memmi_ProcessImpl *get_platform_process_handle(memmi_Process process)
-{
-    memmi_ProcessImpl *result = process.data;
-
-    return result;
-}
-
 // TODO: move to utils file
 static memmi_String str_copy(memmi_String str, memmi_Allocator allocator)
 {
@@ -54,12 +45,26 @@ static memmi_String str_copy(memmi_String str, memmi_Allocator allocator)
     return result;
 }
 
+static DWORD win32_get_native_pid(memmi_Process proc)
+{
+    DWORD result = (DWORD)proc.pid.value;
+    
+    return result;
+}
+
+static HANDLE win32_get_process_handle(memmi_Process proc)
+{
+    HANDLE result = (HANDLE)proc.data;
+    
+    return result;
+}
+
 typedef struct {
     HANDLE data;
     memmi_Status status;
 } Win32Handle;
 
-Win32Handle get_thread_handle(DWORD tid)
+Win32Handle win32_open_thread_handle(DWORD tid)
 {
     Win32Handle result = {0};
 
@@ -238,7 +243,14 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                         proc_info.pid = (memmi_PID){pids[i]};
 
                         // TODO: check that dyn_arr_push doesn't fail
-                        dyn_arr_push(&procs, proc_info, allocator);
+                        DynArray new_procs = dyn_arr_push2(&procs, proc_info, allocator);
+                        
+                        if (!new_procs.data) {
+                            result.status = MEMMI_ALLOCATION_FAILED;
+                            break;
+                        } else {
+                            dyn_arr_assign(&procs, new_procs);
+                        }
                     }
                 }
 
@@ -255,7 +267,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     return result;
 }
 
-memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
+memmi_OpenProcess memmi_open_process(memmi_PID pid)
 {
     memmi_OpenProcess result = {0};
 
@@ -271,45 +283,34 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
     if (!handle) {
         result.status = windows_error_to_memmi_status(GetLastError());
     } else {
-        memmi_ProcessImpl *process = allocate(allocator, memmi_ProcessImpl, 1);
-
-        if (!process) {
-            result.status = MEMMI_ALLOCATION_FAILED;
-        } else {
-            process->pid = pid;
-            process->handle = handle;
-
-            result.process.data = process;
-        }
+        result.process.pid = pid;
+        result.process.data = handle;
     }
 
     return result;
 }
 
-void memmi_close_process(memmi_Process process, memmi_Allocator allocator)
+void memmi_close_process(memmi_Process process)
 {
     // TODO: also detach from process just in case
-
-    memmi_ProcessImpl *impl = get_platform_process_handle(process);
-    CloseHandle(impl->handle);
-
-    deallocate(allocator, impl, 1);
+    HANDLE handle = win32_get_process_handle(process);
+    CloseHandle(handle);
 }
 
 memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator)
 {
     memmi_ReadMemory result = {0};
 
-    memmi_ProcessImpl *impl = get_platform_process_handle(process);
-
     void *buffer = (void *)allocate(allocator, uint8_t, size);
 
     if (!buffer) {
         result.status = MEMMI_ALLOCATION_FAILED;
     } else {
+        HANDLE handle = win32_get_process_handle(process);
+        
         SIZE_T bytes_read = 0;
         BOOL read_memory_result = ReadProcessMemory(
-            impl->handle,
+            handle,
             (void *)address,
             buffer,
             size,
@@ -335,12 +336,11 @@ memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void 
 {
     memmi_WriteMemory result = {0};
 
-    memmi_ProcessImpl *impl = get_platform_process_handle(process);
-
+    HANDLE handle = win32_get_process_handle(process);
     SIZE_T bytes_written = 0;
 
     BOOL write_memory_result = WriteProcessMemory(
-        impl->handle,
+        handle,
         (void *)dst,
         src,
         src_size,
@@ -417,10 +417,10 @@ static memmi_MemoryRegionPermission page_protection_to_memmi_permissions(DWORD p
 
 memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator)
 {
-    MemoryRegionDynArray regions = {0};
+    RegionDynArray regions = {0};
     memmi_MemoryRegions result = {0};
 
-    memmi_ProcessImpl *impl = get_platform_process_handle(process);
+    HANDLE handle = win32_get_process_handle(process);
 
     // TODO: allow user to customize which regions they are interested in
     // by specifying which permissions the page can/must have
@@ -432,7 +432,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
     while (!done) {
         MEMORY_BASIC_INFORMATION info = {0};
 
-        size_t query_result = VirtualQueryEx(impl->handle, (void *)current_base_address, &info, sizeof(info));
+        size_t query_result = VirtualQueryEx(handle, (void *)current_base_address, &info, sizeof(info));
 
         if (query_result == 0) {
             // If there is no range of pages at the address we provided, we have reached
@@ -460,7 +460,14 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
                 region.permissions = page_protection_to_memmi_permissions(info.Protect);
 
                 // TODO: check that dyn_arr_push doesn't fail
-                dyn_arr_push(&regions, region, allocator);
+                DynArray new_regions = dyn_arr_push2(&regions, region, allocator);
+                
+                if (!new_regions.data) {
+                    result.status = MEMMI_ALLOCATION_FAILED;
+                    break;
+                } else { 
+                    dyn_arr_assign(&regions, new_regions);
+                }
             }
 
             current_base_address += info.RegionSize;
@@ -474,31 +481,42 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
 }
 
 typedef struct {
+    memmi_Status statuses;
     ThreadDynArray threads;
     memmi_Allocator allocator;
 } CollectThreadsContext;
 
 ForEachThreadResult collect_threads_cb(void *user_data, DWORD tid)
 {
+    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
+    
     CollectThreadsContext *context = user_data;
 
     memmi_TID thread = {tid};
-    dyn_arr_push(&context->threads, thread, context->allocator);
-
-    return FOR_EACH_THREAD_RES_CONTINUE;
+    DynArray new_threads = dyn_arr_push2(&context->threads, thread, context->allocator);
+    
+    if (!new_threads.data) {
+        context->statuses |= MEMMI_ALLOCATION_FAILED;
+        result = FOR_EACH_THREAD_RES_BREAK;
+     } else { 
+        dyn_arr_assign(&context->threads, new_threads);
+     }
+     
+    return result;
 }
 
 memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
 {
     memmi_ThreadList result = {0};
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
+    DWORD pid = win32_get_native_pid(process);
 
     CollectThreadsContext cb_context = {0};
     cb_context.allocator = allocator;
 
-    result.status = for_each_thread((DWORD)pid.value, &cb_context, collect_threads_cb);
-
+    memmi_Status for_each_thread_result = for_each_thread(pid, &cb_context, collect_threads_cb);
+    result.status = for_each_thread_result | cb_context.statuses;
+    
     if (result.status == MEMMI_OK) {
         result.data = cb_context.threads.data;
         result.count = cb_context.threads.count;
@@ -511,8 +529,8 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
 {
     memmi_Status result = 0;
 
-    memmi_ProcessImpl *impl = get_platform_process_handle(process);
-    BOOL attach_result = DebugActiveProcess((DWORD)impl->pid.value);
+    DWORD pid = win32_get_native_pid(process);
+    BOOL attach_result = DebugActiveProcess(pid);
 
     if (!attach_result) {
         result = windows_error_to_memmi_status(GetLastError());
@@ -532,9 +550,9 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
 memmi_Status memmi_detach_from_process(memmi_Process process)
 {
     memmi_Status result = 0;
-
-    memmi_ProcessImpl *impl = get_platform_process_handle(process);
-    BOOL detach_result = DebugActiveProcessStop((DWORD)impl->pid.value);
+    
+    DWORD pid = win32_get_native_pid(process);
+    BOOL detach_result = DebugActiveProcessStop(pid);
 
     if (!detach_result) {
         result = windows_error_to_memmi_status(GetLastError());
@@ -551,7 +569,7 @@ static ForEachThreadResult resume_thread_cb(void *user_data, DWORD pid)
 {
     ResumeThreadsContext *context = user_data;
 
-    Win32Handle handle = get_thread_handle(pid);
+    Win32Handle handle = win32_open_thread_handle(pid);
 
     context->statuses |= handle.status;
 
@@ -576,11 +594,10 @@ memmi_Status memmi_resume_process(memmi_Process process)
 {
     memmi_Status result = 0;
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    DWORD native_pid = (DWORD)pid.value;
+    DWORD pid = win32_get_native_pid(process);
 
     ResumeThreadsContext cb_context = {0};
-    memmi_Status for_each_thread_result = for_each_thread(native_pid, &cb_context, resume_thread_cb);
+    memmi_Status for_each_thread_result = for_each_thread(pid, &cb_context, resume_thread_cb);
 
     if (for_each_thread_result != MEMMI_OK) {
         result = for_each_thread_result;
@@ -595,7 +612,7 @@ static memmi_Status suspend_thread(DWORD tid)
 {
     memmi_Status result = 0;
 
-    Win32Handle handle = get_thread_handle(tid);
+    Win32Handle handle = win32_open_thread_handle(tid);
 
     if (handle.status != MEMMI_OK) {
         result = handle.status;
@@ -637,8 +654,7 @@ memmi_Status memmi_suspend_process(memmi_Process process)
     // TODO: this function is very similar to the linux implementation
     memmi_Status result = 0;
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    DWORD native_pid = (DWORD)pid.value;
+    DWORD pid = win32_get_native_pid(process);
 
     int32_t last_suspended_thread_count = 0;
     SuspendThreadsContext cb_context = {0};
@@ -649,7 +665,7 @@ memmi_Status memmi_suspend_process(memmi_Process process)
         // has stabilized.
         cb_context.suspended_thread_count = 0;
 
-        memmi_Status for_each_result = for_each_thread(native_pid, &cb_context, suspend_thread_cb);
+        memmi_Status for_each_result = for_each_thread(pid, &cb_context, suspend_thread_cb);
 
         if (for_each_result != MEMMI_OK) {
             result = for_each_result;
@@ -795,10 +811,9 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
 
     memmi_EventList result = {0};
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    DWORD native_pid = (DWORD)pid.value;
+    DWORD pid = win32_get_native_pid(process);
 
-    if (!process_exists(native_pid)) {
+    if (!process_exists(pid)) {
         result.status = MEMMI_NO_SUCH_PROCESS;
     } else {
         DEBUG_EVENT win32_event = {0};
@@ -809,7 +824,7 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
         } else {
             // We're only interested in this event if the thread that caused it
             // belongs to the traced process.
-            if (native_pid == win32_event.dwProcessId) {
+            if (pid == win32_event.dwProcessId) {
                 result.id_of_affected_thread = (memmi_TID){win32_event.dwThreadId};
 
                 memmi_DebugEvent *event = win32_event_to_memmi_event(win32_event, allocator);
@@ -830,9 +845,9 @@ memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_Even
 {
     memmi_Status result = 0;
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
+    DWORD pid = win32_get_native_pid(process);
     BOOL continue_result = ContinueDebugEvent(
-        (DWORD)pid.value, (DWORD)events.id_of_affected_thread.value, DBG_CONTINUE);
+        pid, (DWORD)events.id_of_affected_thread.value, DBG_CONTINUE);
 
     if (!continue_result) {
         result = windows_error_to_memmi_status(GetLastError());
@@ -1072,7 +1087,7 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
     memmi_Registers result = {0};
 
     DWORD native_tid = (DWORD)tid.value;
-    Win32Handle handle = get_thread_handle(native_tid);
+    Win32Handle handle = win32_open_thread_handle(native_tid);
 
     if (handle.status != MEMMI_OK) {
         result.status = handle.status;
@@ -1099,7 +1114,7 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64
     DWORD native_tid = (DWORD)tid.value;
 
     ASSERT(0 && "TODO: Remember to close handles!");
-    Win32Handle handle = get_thread_handle(native_tid);
+    Win32Handle handle = win32_open_thread_handle(native_tid);
 
     if (handle.status != MEMMI_OK) {
         result = handle.status;
@@ -1138,7 +1153,7 @@ static ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data,
 
     SetBreakpointContext *cb_context = user_data;
 
-    Win32Handle handle = get_thread_handle(tid);
+    Win32Handle handle = win32_open_thread_handle(tid);
     Win32Context context = win32_get_thread_context(handle.data);
 
     if (context.status != MEMMI_OK) {
@@ -1176,8 +1191,7 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
 {
     memmi_Status result = 0;
 
-    memmi_PID pid = get_platform_process_handle(process)->pid;
-    DWORD native_pid = (DWORD)pid.value;
+    DWORD pid = win32_get_native_pid(process);
 
     SetBreakpointContext cb_context = {0};
     cb_context.address = address;
@@ -1185,14 +1199,9 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
     cb_context.cond = condition;
     cb_context.length = length;
 
-    memmi_Status for_each_thread_result = for_each_thread(native_pid, &cb_context, set_hardware_breakpoint_on_thread_cb);
-
-    if (for_each_thread_result != MEMMI_OK) {
-        result = for_each_thread_result;
-    } else {
-        result = cb_context.statuses;
-    }
-
+    memmi_Status for_each_thread_result = for_each_thread(pid, &cb_context, set_hardware_breakpoint_on_thread_cb);
+    result = for_each_thread_result | cb_context.statuses;
+    
     return result;
 }
 
