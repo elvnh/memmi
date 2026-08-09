@@ -72,7 +72,7 @@ typedef struct {
 
 typedef struct {
     memmi_Status  status;
-    char         *memory;
+    char         *memory; // TODO: make into void *
     size_t        bytes_read;
 } memmi_ReadMemory;
 

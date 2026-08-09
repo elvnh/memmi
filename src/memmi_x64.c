@@ -31,7 +31,7 @@ typedef struct {
 
 static DebugRegister debug_register_from_index(uint32_t index)
 {
-    DebugRegister result = zero_enum(0);
+    DebugRegister result = zero_enum(DebugRegister);
 
     switch (index) {
         case 0: {
@@ -71,7 +71,7 @@ static uint64_t dr7_breakpoint_mask(uint32_t breakpoint_index)
 
 static uint64_t dr7_local_enable_bit(uint32_t reg_index)
 {
-    uint64_t result = (uint64_t)(0x1u << (reg_index * DR7_ENABLE_BIT_STRIDE));
+    uint64_t result = (uint64_t)((uint64_t)0x1u << ((uint64_t)reg_index * (uint64_t)DR7_ENABLE_BIT_STRIDE));
 
     return result;
 }

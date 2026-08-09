@@ -51,7 +51,7 @@
 #define ARRAY_COUNT(arr) (sizeof((arr)) / sizeof(*(arr)))
 
 #if defined(__cplusplus)
-#    define zero_struct(t) (t){}
+#    define zero_struct(t) {}
 #    define zero_enum(e) (e)0
 #else
 #    define zero_struct(t) (t){0}
@@ -104,7 +104,11 @@
 #if defined(MEMMI_GCC)
 #    define TYPEOF(t) __typeof__(t)
 #elif defined(MEMMI_MSVC)
-#    define TYPEOF(t) __typeof__(t)
+#    if defined(__cplusplus)
+#        define TYPEOF(t) decltype(t)
+#    else
+#        define TYPEOF(t) __typeof__(t)
+#    endif
 #else
 #    error TYPEOF not defined for this compiler
 #endif
@@ -183,7 +187,11 @@ typedef struct {
 /***************************/
 /*         String          */
 /***************************/
-#define str_lit(s) (memmi_String) { s, ARRAY_COUNT(s) - 1 }
+#if defined(__cplusplus)
+#    define str_lit(s) { s, ARRAY_COUNT(s) - 1 }
+#else
+#    define str_lit(s) (memmi_String) { s, ARRAY_COUNT(s) - 1 }
+#endif
 
 memmi_String str_from_c_str(char *str)
 {
@@ -231,8 +239,12 @@ Cut str_cut(memmi_String str, memmi_String pattern)
             memmi_String substr = {str.data + index, pattern.count};
 
             if (str_eq(substr, pattern)) {
-                result.head = (memmi_String) {str.data, index};
-                result.tail = (memmi_String) {str.data + index + pattern.count, str.count - index - pattern.count};
+                result.head.data = str.data;
+                result.head.count = index;
+                
+                result.tail.data = str.data + index + pattern.count;
+                result.tail.count = str.count - index - pattern.count;
+
                 result.ok = true;
 
                 break;
