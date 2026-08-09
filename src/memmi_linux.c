@@ -221,6 +221,7 @@ static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn 
                     // I believe there should never be any non-directory entries in the
                     // task subdirectory, but we'll check just to be sure.
                     if ((stat_result == 0) && S_ISDIR(stat_buf.st_mode)) {
+
                         found_thread_dir = true;
 
                         memmi_String name = str_from_c_str(subdir_entry->d_name);
@@ -470,9 +471,16 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 
                         if (proc_name.ok) {
                             int64_t pid_value = number_opt.value;
-
                             memmi_ProcessInfo proc = {proc_name.value, {pid_value}};
-                            dyn_arr_push(&processes, proc, allocator);
+
+                            DynArray new_processes = dyn_arr_push2(&processes, proc, allocator);
+
+                            if (!new_processes.data) {
+                                result.status = MEMMI_ALLOCATION_FAILED;
+                                break;
+                            } else {
+                                dyn_arr_assign(&processes, new_processes);
+                            }
                         }
                     }
                 }
@@ -671,7 +679,14 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
 
                     while (fgets(buffer, ARRAY_COUNT(buffer), maps_file)) {
                         memmi_MemoryRegion region = parse_memory_region(str_from_c_str(buffer));
-                        dyn_arr_push(&regions, region, allocator);
+                        DynArray new_regions = dyn_arr_push2(&regions, region, allocator);
+
+                        if (!new_regions.data) {
+                            result.status = MEMMI_ALLOCATION_FAILED;
+                            break;
+                        } else {
+                            dyn_arr_assign(&regions, new_regions);
+                        }
                     }
 
                     result.data = regions.data;
@@ -1076,16 +1091,26 @@ memmi_Status memmi_suspend_process(memmi_Process process)
 }
 
 typedef struct {
+    memmi_Status statuses;
     ThreadDynArray thread_list;
     memmi_Allocator allocator;
 } CollectThreadsContext;
 
 static ForEachThreadResult collect_threads(void *user_data, pid_t tid)
 {
-    CollectThreadsContext *context = user_data;
-    dyn_arr_push(&context->thread_list, (memmi_TID){tid}, context->allocator);
+    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
 
-    return FOR_EACH_THREAD_RES_CONTINUE;
+    CollectThreadsContext *context = user_data;
+    DynArray new_thread_list = dyn_arr_push2(&context->thread_list, (memmi_TID){tid}, context->allocator);
+
+    if (!new_thread_list.data) {
+        context->statuses |= MEMMI_ALLOCATION_FAILED;
+        result = FOR_EACH_THREAD_RES_BREAK;
+    } else {
+        dyn_arr_assign(&context->thread_list, new_thread_list);
+    }
+
+    return result;
 }
 
 memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
@@ -1098,7 +1123,9 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
         .allocator = allocator
     };
 
-    result.status = for_each_thread(native_pid, &context, collect_threads);
+    // TODO: handle for_each_thread results similarly elsewhere too
+    memmi_Status for_each_thread_result = for_each_thread(native_pid, &context, collect_threads);
+    result.status = for_each_thread_result | context.statuses;
 
     if (result.status == MEMMI_OK) {
         result.data = context.thread_list.data;
