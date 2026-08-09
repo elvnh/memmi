@@ -1,14 +1,13 @@
 #!/usr/bin/env sh
 
+CC=gcc
 CFLAGS="
     -Werror
     -fsanitize=address,undefined
-    -std=gnu99
+    -std=c99
     -Wall
     -Wextra
     -ggdb
-    -Wall
-    -Wextra
     -Wshadow
     -Wcast-align
     -Wunused
@@ -40,5 +39,5 @@ CFLAGS="
     -Wno-error=unused-but-set-variable
 "
 
-gcc ${CFLAGS} main.c -Iinclude -Isrc src/memmi.c -o memmi;
+${CC} ${CFLAGS} main.c -Iinclude -Isrc src/memmi.c -o memmi;
 g++ -Wall -Wextra -ggdb test.cpp -o test;

@@ -21,8 +21,9 @@ typedef struct {
     memmi_AllocateFn  function;
 } memmi_Allocator;
 
+// TODO: ensure that strings that are returned to user are always null terminated
 typedef struct {
-    char *data;
+    const char *data;
     size_t count;
 } memmi_String;
 
@@ -106,16 +107,18 @@ typedef struct {
 
 // TODO: is both THREAD_SUSPENDED and THREAD_STOPPED needed?
 // TODO: on linux, if the main thread exits, report as PROCESS_EXIT
+typedef enum {
+    MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED,
+    MEMMI_DEBUG_EVENT_BREAKPOINT,
+    MEMMI_DEBUG_EVENT_THREAD_STOPPED,
+    MEMMI_DEBUG_EVENT_THREAD_SUSPENDED,
+    MEMMI_DEBUG_EVENT_THREAD_EXITED,
+    MEMMI_DEBUG_EVENT_THREAD_KILLED,
+    MEMMI_DEBUG_EVENT_THREAD_RESUMED,
+} memmi_DebugEventKind;
+
 typedef struct memmi_DebugEvent {
-    enum {
-        MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED,
-        MEMMI_DEBUG_EVENT_BREAKPOINT,
-        MEMMI_DEBUG_EVENT_THREAD_STOPPED,
-        MEMMI_DEBUG_EVENT_THREAD_SUSPENDED,
-        MEMMI_DEBUG_EVENT_THREAD_EXITED,
-        MEMMI_DEBUG_EVENT_THREAD_KILLED,
-        MEMMI_DEBUG_EVENT_THREAD_RESUMED,
-    } kind;
+    memmi_DebugEventKind kind;
 
     memmi_TID id_of_affected_thread;
 

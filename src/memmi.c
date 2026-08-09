@@ -43,12 +43,24 @@
 /*    General utilities    */
 /***************************/
 #define allocate(a, t, count) (t *)((a).function((a).context, 0, 0, (count), sizeof(t), ALIGNOF(t)))
-#define reallocate(a, ptr, old_count, new_count) (a).function((a).context, (ptr), (old_count), \
-        (new_count), sizeof(*(ptr)), ALIGNOF(TYPEOF(*(ptr))))
+#define reallocate(a, ptr, old_count, new_count) (TYPEOF(ptr))((a).function((a).context, (ptr), (old_count), \
+            (new_count), sizeof(*(ptr)), ALIGNOF(TYPEOF(*(ptr)))))
 #define deallocate(a, ptr, count) (a).function((a).context, (ptr), (count), 0, sizeof(*(ptr)), ALIGNOF(TYPEOF(*(ptr))))
 #define str_from_span(span) (memmi_String) {(span).data, (span).count}
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ARRAY_COUNT(arr) (sizeof((arr)) / sizeof(*(arr)))
+
+#if defined(__cplusplus)
+#    define zero_struct(t) (t){}
+#    define zero_enum(e) (e)0
+#else
+#    define zero_struct(t) (t){0}
+#    define zero_enum(e) 0
+#endif
+
+// Integer semantics for enums to silence C++ warnings/errors
+#define set_flag(lhs, flag) (lhs) = (TYPEOF(lhs))(lhs | flag)
+#define inc_enum(e) (e = (TYPEOF(e))((e) + 1))
 
 #define ASSERT(e) do {                                      \
         if (!(e)) {                                         \
@@ -58,7 +70,6 @@
             DEBUG_BREAK;                                    \
         }                                                   \
     } while (0)
-
 
 #define sl_push_back(list, node)                \
     do {                                        \
@@ -209,7 +220,7 @@ bool str_starts_with(memmi_String str, memmi_String substr)
 
 Cut str_cut(memmi_String str, memmi_String pattern)
 {
-    Cut result = {0};
+    Cut result = zero_struct(Cut);
     result.head = str;
 
     if (pattern.count <= str.count) {
@@ -365,7 +376,7 @@ static bool safe_mul_usize_impl(size_t a, size_t b, size_t *out)
 
 MaybeS64 safe_add_s64(int64_t a, int64_t b)
 {
-    MaybeS64 result = {0};
+    MaybeS64 result = zero_struct(MaybeS64);
 
     result.ok = SAFE_ADD_S64(a, b, &result.value);
 
@@ -374,7 +385,7 @@ MaybeS64 safe_add_s64(int64_t a, int64_t b)
 
 MaybeU64 safe_add_u64(uint64_t a, uint64_t b)
 {
-    MaybeU64 result = {0};
+    MaybeU64 result = zero_struct(MaybeU64);
 
     result.ok = SAFE_ADD_U64(a, b, &result.value);
 
@@ -383,7 +394,7 @@ MaybeU64 safe_add_u64(uint64_t a, uint64_t b)
 
 MaybeS64 safe_mul_s64(int64_t a, int64_t b)
 {
-    MaybeS64 result = {0};
+    MaybeS64 result = zero_struct(MaybeS64);
 
     result.ok = SAFE_MUL_S64(a, b, &result.value);
 
@@ -392,7 +403,7 @@ MaybeS64 safe_mul_s64(int64_t a, int64_t b)
 
 MaybeU64 safe_mul_u64(uint64_t a, uint64_t b)
 {
-    MaybeU64 result = {0};
+    MaybeU64 result = zero_struct(MaybeU64);
 
     result.ok = SAFE_MUL_U64(a, b, &result.value);
 
@@ -401,7 +412,7 @@ MaybeU64 safe_mul_u64(uint64_t a, uint64_t b)
 
 MaybeUsize safe_mul_usize(size_t a, size_t b)
 {
-    MaybeUsize result = {0};
+    MaybeUsize result = zero_struct(MaybeUsize);
 
     result.ok = SAFE_MUL_USIZE(a, b, &result.value);
 
@@ -433,7 +444,7 @@ static uint32_t parse_digit(char c, NumberBase base)
 MaybeS64 str_to_s64(memmi_String str, NumberBase base)
 {
     // TODO: reduce code duplication between this and str_to_u64
-    MaybeS64 result = {0};
+    MaybeS64 result = zero_struct(MaybeS64);
     // negativ hex?
 
     int32_t sign = 1;
@@ -487,7 +498,7 @@ MaybeS64 str_to_s64(memmi_String str, NumberBase base)
 
 MaybeU64 str_to_u64(memmi_String str, NumberBase base)
 {
-    MaybeU64 result = {0};
+    MaybeU64 result = zero_struct(MaybeU64);
 
     if (str_starts_with(str, str_lit("0x")) || str_starts_with(str, str_lit("0X"))) {
         str.data += 2;
@@ -577,7 +588,7 @@ typedef struct {
 static DynArray dyn_arr_push_impl(void *data, size_t count, size_t cap, void *item,
     size_t memb_size, size_t align, memmi_Allocator allocator)
 {
-    DynArray result = {0};
+    DynArray result = zero_struct(DynArray);
     result.data = data;
     result.count = count;
     result.capacity = cap;
@@ -602,7 +613,7 @@ static DynArray dyn_arr_push_impl(void *data, size_t count, size_t cap, void *it
         ASSERT(rhs.count);                      \
         ASSERT(rhs.capacity);                   \
                                                 \
-        (lhs)->data = (rhs).data;               \
+        (lhs)->data = (TYPEOF((lhs)->data))(rhs).data;    \
         (lhs)->count = (rhs).count;             \
         (lhs)->capacity = (rhs).capacity;       \
     } while (0);
