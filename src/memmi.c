@@ -569,6 +569,27 @@ memmi_Allocator memmi_default_allocator()
     return result;
 }
 
+/***************************/
+/*       Common types      */
+/***************************/
+typedef struct {
+    memmi_ProcessInfo *data;
+    size_t count;
+    size_t capacity;
+} ProcessDynArray;
+
+typedef struct {
+    memmi_MemoryRegion *data;
+    size_t count;
+    size_t capacity;
+} RegionDynArray;
+
+typedef struct {
+    memmi_TID *data;
+    size_t count;
+    size_t capacity;
+} ThreadDynArray;
+
 #if defined(MEMMI_X64)
 #    include "memmi_x64.c"
 #endif

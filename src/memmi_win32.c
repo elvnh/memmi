@@ -10,31 +10,6 @@
 
 #include <stdlib.h>
 
-// TODO: some structs are common between windows and linux
-typedef struct {
-    memmi_ProcessInfo *data;
-    size_t count;
-    size_t capacity;
-} ProcessDynArray;
-
-typedef struct {
-    memmi_MemoryRegion *data;
-    size_t count;
-    size_t capacity;
-} MemoryRegionDynArray;
-
-typedef struct {
-    memmi_TID *data;
-    size_t count;
-    size_t capacity;
-} ThreadDynArray;
-
-// TODO: just store PID directly in memmi_Process, and use data field for win32 handle
-typedef struct {
-    HANDLE handle;
-    memmi_PID pid;
-} memmi_ProcessImpl;
-
 /***************************/
 /* Common helper functions */
 /***************************/
