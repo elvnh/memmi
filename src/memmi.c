@@ -14,7 +14,7 @@
 #    error Unsupported compiler
 #endif
 
-#if defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__amd64__)
+#if defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__amd64__) || defined (_M_AMD64)
 #    define MEMMI_X64
 #else
 #    error Unsupported architecture
@@ -45,7 +45,7 @@
 #define allocate(a, t, count) (t *)((a).function((a).context, 0, 0, (count), sizeof(t), ALIGNOF(t)))
 #define reallocate(a, ptr, old_count, new_count) (a).function((a).context, (ptr), (old_count), \
         (new_count), sizeof(*(ptr)), ALIGNOF(TYPEOF(*(ptr))))
-#define deallocate(a, ptr, count) (a).function((a).context, (ptr), (count), 0, sizeof(*(ptr)), ALIGNOF(*(ptr)))
+#define deallocate(a, ptr, count) (a).function((a).context, (ptr), (count), 0, sizeof(*(ptr)), ALIGNOF(TYPEOF(*(ptr))))
 #define str_from_span(span) (memmi_String) {(span).data, (span).count}
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ARRAY_COUNT(arr) (sizeof((arr)) / sizeof(*(arr)))
@@ -54,7 +54,7 @@
         if (!(e)) {                                         \
             fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
                 "Expression: '%s'\nFunction: %s\n%s:%d:\n", \
-                #e, __func__, __FILE_NAME__, __LINE__);     \
+                #e, __func__, __FILE__, __LINE__);     \
             DEBUG_BREAK;                                    \
         }                                                   \
     } while (0)
@@ -359,11 +359,6 @@ static bool safe_mul_usize_impl(size_t a, size_t b, size_t *out)
     return result;
 }
 
-#    define SAFE_ADD_U64(a, b, result_ptr)   safe_add_u64_impl(a, b, result_ptr)
-#    define SAFE_ADD_S64(a, b, result_ptr)   safe_add_s64_impl(a, b, result_ptr)
-#    define SAFE_MUL_S64(a, b, result_ptr)   safe_mul_s64_impl(a, b, result_ptr)
-#    define SAFE_MUL_U64(a, b, result_ptr)   safe_mul_u64_impl(a, b, result_ptr)
-#    define SAFE_MUL_USIZE(a, b, result_ptr) safe_mul_usize_impl(a, b, result_ptr)
 #else
 #    error Unsupported compiler
 #endif
