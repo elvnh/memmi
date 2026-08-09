@@ -31,7 +31,7 @@ typedef struct {
 
 static DebugRegister debug_register_from_index(uint32_t index)
 {
-    DebugRegister result = 0;
+    DebugRegister result = zero_enum(0);
 
     switch (index) {
         case 0: {
