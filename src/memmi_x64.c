@@ -139,3 +139,20 @@ static uint64_t dr7_set_breakpoint_value(uint64_t old_dr7, uint32_t index, memmi
 
     return result;
 }
+
+static int32_t get_dr6_breakpoint_index(uint64_t dr6)
+{
+    int32_t result = -1;
+
+    if (dr6 & 0x1) {
+        result = 0;
+    } else if (dr6 & 0x2) {
+        result = 1;
+    } else if (dr6 & 0x4) {
+        result = 2;
+    } else if (dr6 & 0x8) {
+        result = 3;
+    }
+
+    return result;
+}

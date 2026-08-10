@@ -128,6 +128,11 @@ typedef struct memmi_DebugEvent {
         } new_thread;
 
         struct {
+            uint32_t breakpoint_index;
+            size_t   ip_register;
+        } breakpoint;
+
+        struct {
             int exit_code;
         } thread_exited;
     } as;
