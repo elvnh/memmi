@@ -431,6 +431,63 @@ static int get_signal_from_wait_status(int status)
     return result;
 }
 
+
+static size_t debug_register_user_struct_indices[DEBUG_REG_COUNT] = {
+    [DEBUG_REG_DR0] = 0,
+    [DEBUG_REG_DR1] = 1,
+    [DEBUG_REG_DR2] = 2,
+    [DEBUG_REG_DR3] = 3,
+    [DEBUG_REG_DR6] = 6,
+    [DEBUG_REG_DR7] = 7,
+};
+
+static size_t get_user_struct_debug_register_offset(DebugRegister reg)
+{
+    struct user u = zero_struct(struct user);
+    size_t reg_index = debug_register_user_struct_indices[reg];
+    size_t regs_base = offsetof(struct user, u_debugreg);
+    size_t reg_offset = reg_index * sizeof(*u.u_debugreg);
+
+    size_t result = regs_base + reg_offset;
+
+    return result;
+}
+
+static DebugRegisters get_thread_debug_registers(pid_t tid)
+{
+    DebugRegisters result = zero_struct(DebugRegisters);
+
+    for (DebugRegister reg = zero_enum(DebugRegister); reg < DEBUG_REG_COUNT; inc_enum(reg)) {
+        size_t reg_offset = get_user_struct_debug_register_offset(reg);
+
+        // PTRACE_PEEKUSER does not return -1 on error, so errno must be checked, and therefore also
+        // cleared before each call.
+        errno = 0;
+        long value = ptrace(PTRACE_PEEKUSER, tid, reg_offset, 0);
+
+        if (errno != 0) {
+            result.status = errno_to_memmi_status(errno);
+            break;
+        } else {
+            result.values[reg] = (uint64_t)value;
+        }
+    }
+
+    return result;
+}
+
+static memmi_Status set_thread_debug_register(pid_t tid, DebugRegister reg, uint64_t value)
+{
+    memmi_Status result = MEMMI_OK;
+    size_t debug_reg_offset = get_user_struct_debug_register_offset(reg);
+
+    if (ptrace(PTRACE_POKEUSER, tid, debug_reg_offset, value) == -1) {
+        result = errno_to_memmi_status(errno);
+    }
+
+    return result;
+}
+
 /**********************/
 /* API implementation */
 /**********************/
@@ -1257,6 +1314,26 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
                                     // TODO: report pc register
                                     // TODO: ensure that this works for hardware breakpoints too
                                     result.data->kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
+
+                                    memmi_TID tid = {pid};
+
+                                    memmi_Registers regs = memmi_get_thread_registers(tid);
+                                    DebugRegisters debug_regs = get_thread_debug_registers(pid);
+
+                                    uint64_t dr6_value = debug_regs.values[DEBUG_REG_DR6];
+                                    int32_t breakpoint_index = get_dr6_breakpoint_index(dr6_value);
+
+                                    if (regs.status != MEMMI_OK) {
+                                        result.status = regs.status;
+                                    } else if (debug_regs.status != MEMMI_OK) {
+                                        result.status = debug_regs.status;
+                                    } else if (breakpoint_index == -1) {
+                                        ASSERT(0 && "Should never happen");
+                                        result.status = MEMMI_OTHER_ERROR;
+                                    } else {
+                                        result.data->as.breakpoint.breakpoint_index = (uint32_t)breakpoint_index;
+                                        result.data->as.breakpoint.ip_register = regs.values[MEMMI_REG_RIP];
+                                    }
                                 } else {
                                     result.data->kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
                                 }
@@ -1516,63 +1593,6 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64
 
     return result;
 }
-
-static size_t debug_register_user_struct_indices[DEBUG_REG_COUNT] = {
-    [DEBUG_REG_DR0] = 0,
-    [DEBUG_REG_DR1] = 1,
-    [DEBUG_REG_DR2] = 2,
-    [DEBUG_REG_DR3] = 3,
-    [DEBUG_REG_DR6] = 6,
-    [DEBUG_REG_DR7] = 7,
-};
-
-static size_t get_user_struct_debug_register_offset(DebugRegister reg)
-{
-    struct user u = zero_struct(struct user);
-    size_t reg_index = debug_register_user_struct_indices[reg];
-    size_t regs_base = offsetof(struct user, u_debugreg);
-    size_t reg_offset = reg_index * sizeof(*u.u_debugreg);
-
-    size_t result = regs_base + reg_offset;
-
-    return result;
-}
-
-static DebugRegisters get_thread_debug_registers(pid_t tid)
-{
-    DebugRegisters result = zero_struct(DebugRegisters);
-
-    for (DebugRegister reg = zero_enum(DebugRegister); reg < DEBUG_REG_COUNT; inc_enum(reg)) {
-        size_t reg_offset = get_user_struct_debug_register_offset(reg);
-
-        // PTRACE_PEEKUSER does not return -1 on error, so errno must be checked, and therefore also
-        // cleared before each call.
-        errno = 0;
-        long value = ptrace(PTRACE_PEEKUSER, tid, reg_offset, 0);
-
-        if (errno != 0) {
-            result.status = errno_to_memmi_status(errno);
-            break;
-        } else {
-            result.values[reg] = (uint64_t)value;
-        }
-    }
-
-    return result;
-}
-
-static memmi_Status set_thread_debug_register(pid_t tid, DebugRegister reg, uint64_t value)
-{
-    memmi_Status result = MEMMI_OK;
-    size_t debug_reg_offset = get_user_struct_debug_register_offset(reg);
-
-    if (ptrace(PTRACE_POKEUSER, tid, debug_reg_offset, value) == -1) {
-        result = errno_to_memmi_status(errno);
-    }
-
-    return result;
-}
-
 
 memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintptr_t address,
     memmi_BreakpointCondition cond, memmi_BreakpointLength length)
