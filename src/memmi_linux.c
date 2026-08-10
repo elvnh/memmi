@@ -715,6 +715,8 @@ static memmi_Status resume_thread(pid_t tid)
 
     memmi_Status result = MEMMI_OK;
 
+    // TODO: If the process exists and is traced but isn't in ptrace-stop, this
+    // will report a ESRCH. Can we detect this somehow?
     if (ptrace(PTRACE_CONT, tid, 0, 0) == -1)  {
         result = errno_to_memmi_status(errno);
     }
@@ -1175,7 +1177,9 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
     // handle. Check errno to see which error occurred.
     if (id_of_affected_thread == -1) {
         ASSERT(0 && "TODO: report error");
-    } else if (id_of_affected_thread != 0) {
+    } else if (id_of_affected_thread == 0) {
+        result.status = MEMMI_OTHER_ERROR;
+    } else {
         // waitpid(-1, ...) will wait on any children, not just tracees,
         // including threads of the client process. We'll check that this thread
         // actually belongs to our tracee before reporting any events.
@@ -1194,8 +1198,6 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
 
                 siginfo_t sig_info = zero_struct(siginfo_t);
                 long get_sig_result = ptrace(PTRACE_GETSIGINFO, id_of_affected_thread, 0, &sig_info);
-
-                DEBUG_BREAK;
 
                 if (get_sig_result == -1) {
                     result.status = errno_to_memmi_status(errno);
@@ -1286,28 +1288,56 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
         if (!thread_is_traced_by_us(native_pid)) {
             ASSERT(0 && "Cannot wait for events in a non-traced process");
         } else {
-            // TODO: don't resume here
-            memmi_Status resume_result = memmi_resume_process(process);
+            memmi_resume_process(process);
 
-            if (resume_result != MEMMI_OK) {
-                result.status = resume_result;
-            } else {
-                DebugEventResult event = wait_for_debug_event(process, WAITPID_HANG, allocator);
+            DebugEventResult event = wait_for_debug_event(process, WAITPID_HANG, allocator);
 
-                // Keep checking for debug events without hanging in case any more were queued.
-                while (event.status == MEMMI_OK) {
-                    ASSERT(event.data);
+            // Keep checking for debug events without hanging in case any more were queued.
 
-                    sl_push_back(&result, event.data);
+            // TODO: don't wait in a loop
+            while (event.status == MEMMI_OK) {
+                ASSERT(event.data);
 
-                    event = wait_for_debug_event(process, WAITPID_NO_HANG, allocator);
+                sl_push_back(&result, event.data);
+
+                result.id_of_affected_thread = event.data->id_of_affected_thread;
+
+                memmi_DebugEvent *prev_event = event.data;
+                event = wait_for_debug_event(process, WAITPID_NO_HANG, allocator);
+
+                if (event.data) {
+                    /* ptrace behaves in a kind of weird way when new threads are created. It
+                     * reports both the new thread being created, as well as the new thread
+                     * being suspended (since ptrace causes the new thread to always start in a
+                     * suspended state) as separate events. I believe this is the only instance
+                     * in which ptrace can report multiple events at once. To avoid having to
+                     * report multiple events, if this happens, we'll only report the thread
+                     * creation event.
+                     */
+                    bool is_stopped_new_thread =
+                        ((prev_event->kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
+                            && (event.data->kind == MEMMI_DEBUG_EVENT_THREAD_SUSPENDED))
+                        || ((event.data->kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
+                            && (prev_event->kind == MEMMI_DEBUG_EVENT_THREAD_SUSPENDED));
+
+                    ASSERT(is_stopped_new_thread
+                        && "Checking to see if ptrace can report multiple events except for this case");
                 }
-
-                result.status = event.status;
             }
+
+            result.status = event.status;
         }
 
     }
+
+    return result;
+}
+
+memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_EventList events)
+{
+    (void)events;
+
+    memmi_Status result = memmi_resume_process(process);
 
     return result;
 }
