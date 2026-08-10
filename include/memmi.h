@@ -215,6 +215,8 @@ memmi_Status             memmi_attach_to_process(memmi_Process process);
 memmi_Status             memmi_detach_from_process(memmi_Process process);
 memmi_Status             memmi_resume_process(memmi_Process process);
 memmi_Status             memmi_suspend_process(memmi_Process process);
+
+// NOTE: Will resume process if suspended then wait. A debug event causes all threads in process to be suspended
 memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
 memmi_Status             memmi_continue_after_debug_events(memmi_Process process, memmi_EventList events);
 memmi_Registers          memmi_get_thread_registers(memmi_TID tid);

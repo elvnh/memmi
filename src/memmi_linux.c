@@ -229,7 +229,12 @@ static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn 
                         if (tid_opt.ok) {
                             pid_t tid = (pid_t)tid_opt.value;
 
+                            int saved_errno = errno;
+
                             ForEachThreadResult cb_result = fn(user_data, tid);
+
+                            // We don't want the callback to affect our errno checking after the loop.
+                            errno = saved_errno;
 
                             if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
                                 break;
