@@ -431,17 +431,17 @@ static int get_signal_from_wait_status(int status)
     return result;
 }
 
-
-static size_t debug_register_user_struct_indices[DEBUG_REG_COUNT] = {
-    [DEBUG_REG_DR0] = 0,
-    [DEBUG_REG_DR1] = 1,
-    [DEBUG_REG_DR2] = 2,
-    [DEBUG_REG_DR3] = 3,
-    [DEBUG_REG_DR6] = 6,
-    [DEBUG_REG_DR7] = 7,
+// TODO: I believe using designated array initializers won't work in C++
+static size_t debug_register_user_struct_indices[] = {
+    [MEMMI_REG_DR0] = 0,
+    [MEMMI_REG_DR1] = 1,
+    [MEMMI_REG_DR2] = 2,
+    [MEMMI_REG_DR3] = 3,
+    [MEMMI_REG_DR6] = 6,
+    [MEMMI_REG_DR7] = 7,
 };
 
-static size_t get_user_struct_debug_register_offset(DebugRegister reg)
+static size_t get_user_struct_debug_register_offset(memmi_Register reg)
 {
     struct user u = zero_struct(struct user);
     size_t reg_index = debug_register_user_struct_indices[reg];
@@ -453,11 +453,142 @@ static size_t get_user_struct_debug_register_offset(DebugRegister reg)
     return result;
 }
 
-static DebugRegisters get_thread_debug_registers(pid_t tid)
+static unsigned long long *get_user_regs_member_pointer(struct user_regs_struct *regs, memmi_Register reg)
 {
-    DebugRegisters result = zero_struct(DebugRegisters);
+    unsigned long long *result = 0;
 
-    for (DebugRegister reg = zero_enum(DebugRegister); reg < DEBUG_REG_COUNT; inc_enum(reg)) {
+    switch (reg) {
+        case MEMMI_REG_RAX: {
+            result = &regs->rax;
+        } break;
+
+        case MEMMI_REG_RCX: {
+            result = &regs->rcx;
+        } break;
+
+        case MEMMI_REG_RDX: {
+            result = &regs->rdx;
+        } break;
+
+        case MEMMI_REG_RSI: {
+            result = &regs->rsi;
+        } break;
+
+        case MEMMI_REG_RDI: {
+            result = &regs->rdi;
+        } break;
+
+        case MEMMI_REG_RSP: {
+            result = &regs->rsp;
+        } break;
+
+        case MEMMI_REG_RBP: {
+            result = &regs->rbp;
+        } break;
+
+        case MEMMI_REG_RBX: {
+            result = &regs->rbx;
+        } break;
+
+        case MEMMI_REG_R8: {
+            result = &regs->r8;
+        } break;
+
+        case MEMMI_REG_R9: {
+            result = &regs->r9;
+        } break;
+
+        case MEMMI_REG_R10: {
+            result = &regs->r10;
+        } break;
+
+        case MEMMI_REG_R11: {
+            result = &regs->r11;
+        } break;
+
+        case MEMMI_REG_R12: {
+            result = &regs->r12;
+        } break;
+
+        case MEMMI_REG_R13: {
+            result = &regs->r13;
+        } break;
+
+        case MEMMI_REG_R14: {
+            result = &regs->r14;
+        } break;
+
+        case MEMMI_REG_R15: {
+            result = &regs->r15;
+        } break;
+
+        case MEMMI_REG_RIP: {
+            result = &regs->rip;
+        } break;
+
+        case MEMMI_REG_CS: {
+            result = &regs->cs;
+        } break;
+
+        case MEMMI_REG_RFLAGS: {
+            result = &regs->eflags;
+        } break;
+
+        case MEMMI_REG_SS: {
+            result = &regs->ss;
+        } break;
+
+        case MEMMI_REG_FS_BASE: {
+            result = &regs->fs_base;
+        } break;
+
+        case MEMMI_REG_GS_BASE: {
+            result = &regs->gs_base;
+        } break;
+
+        case MEMMI_REG_DS: {
+            result = &regs->ds;
+        } break;
+
+        case MEMMI_REG_ES: {
+            result = &regs->es;
+        } break;
+
+        case MEMMI_REG_FS: {
+            result = &regs->fs;
+        } break;
+
+        case MEMMI_REG_GS: {
+            result = &regs->gs;
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+}
+
+static void get_thread_user_registers(pid_t tid, memmi_Registers *out)
+{
+    struct user_regs_struct regs = zero_struct(struct user_regs_struct);
+
+    long get_regs_result = ptrace(PTRACE_GETREGS, tid, 0, &regs);
+    int get_regs_errno = errno;
+
+    if (get_regs_result == -1) {
+        set_flag(out->status, errno_to_memmi_status(get_regs_errno));
+    }
+
+    for (memmi_Register reg = zero_enum(memmi_Register); reg < MEMMI_REG_DR0; inc_enum(reg)) {
+        out->values[reg] = *get_user_regs_member_pointer(&regs, reg);
+    }
+}
+
+static void get_thread_debug_registers(pid_t tid, memmi_Registers *out)
+{
+    for (memmi_Register reg = MEMMI_REG_DR0; reg < MEMMI_REG_COUNT; inc_enum(reg)) {
         size_t reg_offset = get_user_struct_debug_register_offset(reg);
 
         // PTRACE_PEEKUSER does not return -1 on error, so errno must be checked, and therefore also
@@ -466,18 +597,40 @@ static DebugRegisters get_thread_debug_registers(pid_t tid)
         long value = ptrace(PTRACE_PEEKUSER, tid, reg_offset, 0);
 
         if (errno != 0) {
-            result.status = errno_to_memmi_status(errno);
+            set_flag(out->status, errno_to_memmi_status(errno));
             break;
         } else {
-            result.values[reg] = (uint64_t)value;
+            out->values[reg] = (uint64_t)value;
+        }
+    }
+}
+
+static memmi_Status set_thread_user_register(pid_t tid, memmi_Register reg, uint64_t value)
+{
+    memmi_Status result = MEMMI_OK;
+
+    struct user_regs_struct regs = zero_struct(struct user_regs_struct);
+    long get_regs_result = ptrace(PTRACE_GETREGS, tid, 0, &regs);
+
+    if (get_regs_result == -1) {
+        result = errno_to_memmi_status(errno);
+    } else {
+        *get_user_regs_member_pointer(&regs, reg) = value;
+
+        long set_regs_result = ptrace(PTRACE_SETREGS, tid, 0, &regs);
+
+        if (set_regs_result == -1) {
+            result = errno_to_memmi_status(errno);
         }
     }
 
     return result;
 }
 
-static memmi_Status set_thread_debug_register(pid_t tid, DebugRegister reg, uint64_t value)
+static memmi_Status set_thread_debug_register(pid_t tid, memmi_Register reg, uint64_t value)
 {
+    ASSERT(reg <= MEMMI_REG_DR0);
+
     memmi_Status result = MEMMI_OK;
     size_t debug_reg_offset = get_user_struct_debug_register_offset(reg);
 
@@ -1293,15 +1446,12 @@ static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int wai
 
                     memmi_TID tid = {id_of_affected_thread};
                     memmi_Registers regs = memmi_get_thread_registers(tid);
-                    DebugRegisters debug_regs = get_thread_debug_registers(id_of_affected_thread);
 
-                    uint64_t dr6_value = debug_regs.values[DEBUG_REG_DR6];
+                    uint64_t dr6_value = regs.values[MEMMI_REG_DR6];
                     int32_t breakpoint_index = get_dr6_breakpoint_index(dr6_value);
 
                     if (regs.status != MEMMI_OK) {
                         result.status = regs.status;
-                    } else if (debug_regs.status != MEMMI_OK) {
-                        result.status = debug_regs.status;
                     } else if (breakpoint_index == -1) {
                         ASSERT(0 && "Should never happen");
                         result.status = MEMMI_OTHER_ERROR;
@@ -1451,142 +1601,18 @@ memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_Even
     return result;
 }
 
-static unsigned long long *get_user_regs_member_pointer(struct user_regs_struct *regs, memmi_Register reg)
-{
-    unsigned long long *result = 0;
-
-    switch (reg) {
-        case MEMMI_REG_RAX: {
-            result = &regs->rax;
-        } break;
-
-        case MEMMI_REG_RCX: {
-            result = &regs->rcx;
-        } break;
-
-        case MEMMI_REG_RDX: {
-            result = &regs->rdx;
-        } break;
-
-        case MEMMI_REG_RSI: {
-            result = &regs->rsi;
-        } break;
-
-        case MEMMI_REG_RDI: {
-            result = &regs->rdi;
-        } break;
-
-        case MEMMI_REG_RSP: {
-            result = &regs->rsp;
-        } break;
-
-        case MEMMI_REG_RBP: {
-            result = &regs->rbp;
-        } break;
-
-        case MEMMI_REG_RBX: {
-            result = &regs->rbx;
-        } break;
-
-        case MEMMI_REG_R8: {
-            result = &regs->r8;
-        } break;
-
-        case MEMMI_REG_R9: {
-            result = &regs->r9;
-        } break;
-
-        case MEMMI_REG_R10: {
-            result = &regs->r10;
-        } break;
-
-        case MEMMI_REG_R11: {
-            result = &regs->r11;
-        } break;
-
-        case MEMMI_REG_R12: {
-            result = &regs->r12;
-        } break;
-
-        case MEMMI_REG_R13: {
-            result = &regs->r13;
-        } break;
-
-        case MEMMI_REG_R14: {
-            result = &regs->r14;
-        } break;
-
-        case MEMMI_REG_R15: {
-            result = &regs->r15;
-        } break;
-
-        case MEMMI_REG_RIP: {
-            result = &regs->rip;
-        } break;
-
-        case MEMMI_REG_CS: {
-            result = &regs->cs;
-        } break;
-
-        case MEMMI_REG_EFLAGS: {
-            result = &regs->eflags;
-        } break;
-
-        case MEMMI_REG_SS: {
-            result = &regs->ss;
-        } break;
-
-        case MEMMI_REG_FS_BASE: {
-            result = &regs->fs_base;
-        } break;
-
-        case MEMMI_REG_GS_BASE: {
-            result = &regs->gs_base;
-        } break;
-
-        case MEMMI_REG_DS: {
-            result = &regs->ds;
-        } break;
-
-        case MEMMI_REG_ES: {
-            result = &regs->es;
-        } break;
-
-        case MEMMI_REG_FS: {
-            result = &regs->fs;
-        } break;
-
-        case MEMMI_REG_GS: {
-            result = &regs->gs;
-        } break;
-
-        default: {
-            ASSERT(0);
-        } break;
-    }
-
-    return result;
-}
-
 memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 {
     memmi_Registers result = zero_struct(memmi_Registers);
 
-    memmi_Status pid_exists_result = pid_exists((pid_t)tid.value);
+    pid_t native_tid = (pid_t)tid.value;
+    memmi_Status pid_exists_result = pid_exists(native_tid);
 
     if (pid_exists_result != MEMMI_OK) {
         result.status = pid_exists_result;
     } else {
-        struct user_regs_struct regs = zero_struct(struct user_regs_struct);
-        long get_regs_result = ptrace(PTRACE_GETREGS, (pid_t)tid.value, 0, &regs);
-
-        if (get_regs_result == -1) {
-            result.status = errno_to_memmi_status(errno);
-        } else {
-            for (memmi_Register r = zero_enum(memmi_Register); r < MEMMI_REG_COUNT; inc_enum(r)) {
-                result.values[r] = *get_user_regs_member_pointer(&regs, r);
-            }
-        }
+        get_thread_user_registers(native_tid, &result);
+        get_thread_debug_registers(native_tid, &result);
     }
 
     return result;
@@ -1595,49 +1621,46 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 // TODO: allow setting all registers at once
 memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value)
 {
+    ASSERT(reg >= zero_enum(memmi_Register));
+    ASSERT(reg < MEMMI_REG_COUNT);
+
     memmi_Status result = MEMMI_OK;
 
+    pid_t native_tid = (pid_t)tid.value;
     memmi_Status pid_exists_result = pid_exists((pid_t)tid.value);
 
     if (pid_exists_result != MEMMI_OK) {
         result = pid_exists_result;
     } else {
-        struct user_regs_struct regs = zero_struct(struct user_regs_struct);
-        long get_regs_result = ptrace(PTRACE_GETREGS, (pid_t)tid.value, 0, &regs);
-
-        if (get_regs_result == -1) {
-            result = errno_to_memmi_status(errno);
+        if (reg < MEMMI_REG_DR0) {
+            result = set_thread_user_register(native_tid, reg, value);
         } else {
-            *get_user_regs_member_pointer(&regs, reg) = value;
-
-            long set_regs_result = ptrace(PTRACE_SETREGS, (pid_t)tid.value, 0, &regs);
-
-            if (set_regs_result == -1) {
-                result = errno_to_memmi_status(errno);
-            }
+            result = set_thread_debug_register(native_tid, reg, value);
         }
     }
 
     return result;
 }
 
-memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintptr_t address,
+static memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintptr_t address,
     memmi_BreakpointCondition cond, memmi_BreakpointLength length)
 {
     memmi_Status result = MEMMI_OK;
 
-    DebugRegister reg = debug_register_from_index(index);
-    DebugRegisters debug_regs = get_thread_debug_registers(tid);
-    result = debug_regs.status;
+    memmi_TID memmi_tid = {tid};
+
+    memmi_Register reg = debug_register_from_index(index);
+    memmi_Registers regs = memmi_get_thread_registers(memmi_tid);
+    result = regs.status;
 
     if (result == MEMMI_OK) {
-        uint64_t old_dr7_value = debug_regs.values[DEBUG_REG_DR7];
+        uint64_t old_dr7_value = regs.values[MEMMI_REG_DR7];
 
         uint64_t new_dr_value = address;
         uint64_t new_dr7_value = dr7_set_breakpoint_value(old_dr7_value, index, cond, length);
 
-        memmi_Status set_addr_result = set_thread_debug_register(tid, reg, new_dr_value);
-        memmi_Status set_dr7_result = set_thread_debug_register(tid, DEBUG_REG_DR7, new_dr7_value);
+        memmi_Status set_addr_result = memmi_set_thread_register(memmi_tid, reg, new_dr_value);
+        memmi_Status set_dr7_result = memmi_set_thread_register(memmi_tid, MEMMI_REG_DR7, new_dr7_value);
 
         set_flag(result, set_addr_result | set_dr7_result);
     }
@@ -1654,7 +1677,7 @@ typedef struct {
     memmi_Status statuses;
 } HardwareBreakpointContext;
 
-ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data, pid_t tid)
+static ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data, pid_t tid)
 {
     HardwareBreakpointContext *context = (HardwareBreakpointContext *)user_data;
 

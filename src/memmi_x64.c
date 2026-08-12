@@ -19,28 +19,28 @@
 
 static memmi_Register debug_register_from_index(uint32_t index)
 {
-    DebugRegister result = zero_enum(DebugRegister);
+    memmi_Register result = zero_enum(DebugRegister);
 
     switch (index) {
         case 0: {
-            result = DEBUG_REG_DR0;
+            result = MEMMI_REG_DR0;
         } break;
 
         case 1: {
-            result = DEBUG_REG_DR1;
+            result = MEMMI_REG_DR1;
         } break;
 
         case 2: {
-            result = DEBUG_REG_DR2;
+            result = MEMMI_REG_DR2;
         } break;
 
         case 3: {
-            result = DEBUG_REG_DR3;
+            result = MEMMI_REG_DR3;
         } break;
 
         default: {
             ASSERT(0);
-            result = DEBUG_REG_DR0;
+            result = MEMMI_REG_DR0;
         } break;
     }
 
