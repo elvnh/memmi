@@ -1027,14 +1027,13 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event, memm
         } break;
 
         case EXIT_THREAD_DEBUG_EVENT: {
-            // thread exit
             result.event.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-            result.event.as.thread_exited.exit_code = win32_event.u.ExitThread.dwExitCode;
+            result.event.as.exit_code = win32_event.u.ExitThread.dwExitCode;
         } break;
 
         case EXIT_PROCESS_DEBUG_EVENT: {
-            // process exit
-            ASSERT(0 && "TODO: we'll need to extend the public API to also include PROCESS_EXIT_PROCESS_DEBUG_EVENT");
+            result.event.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
+            result.event.as.exit_code = win32_event.u.ExitProcess.dwExitCode;
         } break;
 
         // TODO: Investigate if we can implement SO loading events for Linux. If so,
