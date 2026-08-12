@@ -687,7 +687,16 @@ typedef struct {
         MEMMI_REGISTER(RBX, rbx)                                \
         MEMMI_REGISTER(RIP, rip)
 #elif defined(MEMMI_X86)
-#    error x86 not yet supported!
+#    define MEMMI_VARIABLE_WIDTH_REGISTER_LIST_EXCLUDING_FLAGS  \
+        MEMMI_REGISTER(EAX, eax)                                \
+        MEMMI_REGISTER(ECX, ecx)                                \
+        MEMMI_REGISTER(EDX, edx)                                \
+        MEMMI_REGISTER(ESI, esi)                                \
+        MEMMI_REGISTER(EDI, edi)                                \
+        MEMMI_REGISTER(ESP, esp)                                \
+        MEMMI_REGISTER(EBP, ebp)                                \
+        MEMMI_REGISTER(EBX, ebx)                                \
+        MEMMI_REGISTER(EIP, eip)
 #endif
 
 #define MEMMI_X64_ONLY_REGISTER_LIST         \
@@ -705,9 +714,8 @@ typedef struct {
 /***************************/
 /* Platform implementation */
 /***************************/
-#if defined(MEMMI_X64)
-#    include "memmi_x64.c"
-#endif
+// TODO: move this into this file
+#include "memmi_x64.c"
 
 #if defined(MEMMI_LINUX)
 #    include "memmi_linux.c"

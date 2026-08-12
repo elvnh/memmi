@@ -453,9 +453,15 @@ static size_t get_user_struct_debug_register_offset(memmi_Register reg)
     return result;
 }
 
-static unsigned long long *get_user_regs_member_pointer(struct user_regs_struct *regs, memmi_Register reg)
+#if defined(MEMMI_X64)
+typedef unsigned long long memmi_UserRegsStructMember;
+#elif defined(MEMMI_X86)
+typedef long memmi_UserRegsStructMember;
+#endif
+
+static memmi_UserRegsStructMember *get_user_regs_member_pointer(struct user_regs_struct *regs, memmi_Register reg)
 {
-    unsigned long long *result = 0;
+    memmi_UserRegsStructMember *result = 0;
 
     switch (reg) {
 #define MEMMI_REGISTER(upper, lower) case MEMMI_REG_##upper: { result = &regs->lower; } break;
@@ -468,40 +474,57 @@ static unsigned long long *get_user_regs_member_pointer(struct user_regs_struct 
 
 #undef MEMMI_VARIABLE_WIDTH_REGISTER
 
-        case MEMMI_REG_CS: {
-            result = &regs->cs;
-        } break;
-
         case MEMMI_16_BIT_TO_32_64_BIT_REGISTER_ENUM(FLAGS): {
             result = &regs->eflags;
         } break;
 
+        // TODO: is it worth it to create a macro for these segment registers?
+        case MEMMI_REG_CS: {
+            #if defined(MEMMI_X64)
+            result = &regs->cs;
+            #elif defined(MEMMI_X64)
+            result = &regs->xcs;
+            #endif
+        } break;
+
         case MEMMI_REG_SS: {
+            #if defined(MEMMI_X64)
             result = &regs->ss;
-        } break;
-
-        case MEMMI_REG_FS_BASE: {
-            result = &regs->fs_base;
-        } break;
-
-        case MEMMI_REG_GS_BASE: {
-            result = &regs->gs_base;
+            #elif defined(MEMMI_X64)
+            result = &regs->xss;
+            #endif
         } break;
 
         case MEMMI_REG_DS: {
+            #if defined(MEMMI_X64)
             result = &regs->ds;
+            #elif defined(MEMMI_X64)
+            result = &regs->xds;
+            #endif
         } break;
 
         case MEMMI_REG_ES: {
+            #if defined(MEMMI_X64)
             result = &regs->es;
+            #elif defined(MEMMI_X64)
+            result = &regs->xes;
+            #endif
         } break;
 
         case MEMMI_REG_FS: {
+            #if defined(MEMMI_X64)
             result = &regs->fs;
+            #elif defined(MEMMI_X64)
+            result = &regs->xfs;
+            #endif
         } break;
 
         case MEMMI_REG_GS: {
+            #if defined(MEMMI_X64)
             result = &regs->gs;
+            #elif defined(MEMMI_X64)
+            result = &regs->xgs;
+            #endif
         } break;
 
         default: {
@@ -524,7 +547,7 @@ static void get_thread_user_registers(pid_t tid, memmi_Registers *out)
     }
 
     for (memmi_Register reg = zero_enum(memmi_Register); reg < MEMMI_REG_DR0; inc_enum(reg)) {
-        out->values[reg] = *get_user_regs_member_pointer(&regs, reg);
+        out->values[reg] = (memmi_RegisterValue)*get_user_regs_member_pointer(&regs, reg);
     }
 }
 
@@ -557,7 +580,7 @@ static memmi_Status set_thread_user_register(pid_t tid, memmi_Register reg, memm
     if (get_regs_result == -1) {
         result = errno_to_memmi_status(errno);
     } else {
-        *get_user_regs_member_pointer(&regs, reg) = value;
+        *get_user_regs_member_pointer(&regs, reg) = (memmi_UserRegsStructMember)value;
 
         long set_regs_result = ptrace(PTRACE_SETREGS, tid, 0, &regs);
 
@@ -777,8 +800,8 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
     ASSERT(base_address_opt.ok);
     ASSERT(end_address_opt.ok);
 
-    uintptr_t base_address = base_address_opt.value;
-    uintptr_t end_address = end_address_opt.value;
+    uintptr_t base_address = (uintptr_t)base_address_opt.value;
+    uintptr_t end_address = (uintptr_t)end_address_opt.value;
 
     memmi_MemoryRegionPermission permissions = zero_enum(memmi_MemoryRegionPermission);
 
@@ -1400,7 +1423,9 @@ static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int wai
                         result.status = MEMMI_OTHER_ERROR;
                     } else {
                         result.data.as.breakpoint.breakpoint_index = (uint32_t)breakpoint_index;
-                        result.data.as.breakpoint.ip_register = regs.values[MEMMI_REG_RIP];
+
+                        memmi_Register instr_pointer_reg = MEMMI_16_BIT_TO_32_64_BIT_REGISTER_ENUM(IP);
+                        result.data.as.breakpoint.ip_register = regs.values[instr_pointer_reg];
                     }
                 } else {
                     // This is some other kind of stopping signal.

@@ -7,7 +7,6 @@
 #    define MEMMI_X64
 #elif defined(i386) || defined(__i386) || defined(__i386__) || defined(_M_IX86)
 #    define MEMMI_X86
-#    error x86 not yet supported!
 #else
 #    error Unsupported architecture
 #endif
@@ -197,8 +196,6 @@ typedef enum {
     // Segment registers
     MEMMI_REG_CS,
     MEMMI_REG_SS,
-    MEMMI_REG_FS_BASE, // TODO: not needed?
-    MEMMI_REG_GS_BASE, // TODO: not needed?
     MEMMI_REG_DS,
     MEMMI_REG_ES,
     MEMMI_REG_FS,
