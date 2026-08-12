@@ -458,79 +458,21 @@ static unsigned long long *get_user_regs_member_pointer(struct user_regs_struct 
     unsigned long long *result = 0;
 
     switch (reg) {
-        case MEMMI_REG_RAX: {
-            result = &regs->rax;
-        } break;
+#define MEMMI_REGISTER(upper, lower) case MEMMI_REG_##upper: { result = &regs->lower; } break;
 
-        case MEMMI_REG_RCX: {
-            result = &regs->rcx;
-        } break;
+        MEMMI_VARIABLE_WIDTH_REGISTER_LIST_EXCLUDING_FLAGS
 
-        case MEMMI_REG_RDX: {
-            result = &regs->rdx;
-        } break;
+#    if defined(MEMMI_X64)
+            MEMMI_X64_ONLY_REGISTER_LIST
+#    endif
 
-        case MEMMI_REG_RSI: {
-            result = &regs->rsi;
-        } break;
-
-        case MEMMI_REG_RDI: {
-            result = &regs->rdi;
-        } break;
-
-        case MEMMI_REG_RSP: {
-            result = &regs->rsp;
-        } break;
-
-        case MEMMI_REG_RBP: {
-            result = &regs->rbp;
-        } break;
-
-        case MEMMI_REG_RBX: {
-            result = &regs->rbx;
-        } break;
-
-        case MEMMI_REG_R8: {
-            result = &regs->r8;
-        } break;
-
-        case MEMMI_REG_R9: {
-            result = &regs->r9;
-        } break;
-
-        case MEMMI_REG_R10: {
-            result = &regs->r10;
-        } break;
-
-        case MEMMI_REG_R11: {
-            result = &regs->r11;
-        } break;
-
-        case MEMMI_REG_R12: {
-            result = &regs->r12;
-        } break;
-
-        case MEMMI_REG_R13: {
-            result = &regs->r13;
-        } break;
-
-        case MEMMI_REG_R14: {
-            result = &regs->r14;
-        } break;
-
-        case MEMMI_REG_R15: {
-            result = &regs->r15;
-        } break;
-
-        case MEMMI_REG_RIP: {
-            result = &regs->rip;
-        } break;
+#undef MEMMI_VARIABLE_WIDTH_REGISTER
 
         case MEMMI_REG_CS: {
             result = &regs->cs;
         } break;
 
-        case MEMMI_REG_RFLAGS: {
+        case MEMMI_16_BIT_TO_32_64_BIT_REGISTER_ENUM(FLAGS): {
             result = &regs->eflags;
         } break;
 
@@ -1101,6 +1043,7 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
                         result = cb_context.statuses;
                         ASSERT(result != MEMMI_OK);
                     } else {
+                        // TODO: no reason to cast this to uint32_t
                         uint32_t statuses_excluding_no_such_process =
                             (uint32_t)cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
 

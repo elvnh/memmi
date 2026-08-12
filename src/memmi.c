@@ -46,6 +46,9 @@
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ARRAY_COUNT(arr) (sizeof((arr)) / sizeof(*(arr)))
 
+#define MEMMI_PP_CONCAT_(a, b) a ## b
+#define MEMMI_PP_CONCAT(a, b) MEMMI_PP_CONCAT_(a, b)
+
 #if defined(__cplusplus)
 #    define zero_struct(t) {}
 #    define zero_enum(e) (e)0
@@ -657,6 +660,51 @@ typedef struct {
     size_t capacity;
 } ThreadDynArray;
 
+/***************************/
+/*      Architecture       */
+/***************************/
+#if defined(MEMMI_X64)
+#    define MEMMI_REGISTER_PREFIX_LETTER_UPPER  R
+#    define MEMMI_REGISTER_PREFIX_LETTER_LOWER  r
+#elif defined(MEMMI_X86)
+#    define MEMMI_REGISTER_PREFIX_LETTER_UPPER  E
+#    define MEMMI_REGISTER_PREFIX_LETTER_LOWER  e
+#endif
+
+// TODO: keeping this macro around probably isn't worth it
+#define MEMMI_16_BIT_TO_32_64_BIT_REGISTER_ENUM(name)                                     \
+    MEMMI_PP_CONCAT(MEMMI_REG_, MEMMI_PP_CONCAT(MEMMI_REGISTER_PREFIX_LETTER_UPPER, name))
+
+#if defined(MEMMI_X64)
+#    define MEMMI_VARIABLE_WIDTH_REGISTER_LIST_EXCLUDING_FLAGS  \
+        MEMMI_REGISTER(RAX, rax)                                \
+        MEMMI_REGISTER(RCX, rcx)                                \
+        MEMMI_REGISTER(RDX, rdx)                                \
+        MEMMI_REGISTER(RSI, rsi)                                \
+        MEMMI_REGISTER(RDI, rdi)                                \
+        MEMMI_REGISTER(RSP, rsp)                                \
+        MEMMI_REGISTER(RBP, rbp)                                \
+        MEMMI_REGISTER(RBX, rbx)                                \
+        MEMMI_REGISTER(RIP, rip)
+#elif defined(MEMMI_X86)
+#    error x86 not yet supported!
+#endif
+
+#define MEMMI_X64_ONLY_REGISTER_LIST         \
+    MEMMI_REGISTER(R8,  r8)                  \
+    MEMMI_REGISTER(R9,  r9)                  \
+    MEMMI_REGISTER(R10, r10)                 \
+    MEMMI_REGISTER(R11, r11)                 \
+    MEMMI_REGISTER(R12, r12)                 \
+    MEMMI_REGISTER(R13, r13)                 \
+    MEMMI_REGISTER(R14, r14)                 \
+    MEMMI_REGISTER(R15, r15)
+
+#define MEMMI_REGISTER_ENUM(reg) MEMMI_REG_##reg
+
+/***************************/
+/* Platform implementation */
+/***************************/
 #if defined(MEMMI_X64)
 #    include "memmi_x64.c"
 #endif
