@@ -113,7 +113,6 @@ typedef enum {
     MEMMI_DEBUG_EVENT_THREAD_STOPPED,
     MEMMI_DEBUG_EVENT_THREAD_EXITED,
     MEMMI_DEBUG_EVENT_THREAD_KILLED,
-    MEMMI_DEBUG_EVENT_THREAD_RESUMED,
 } memmi_DebugEventKind;
 
 typedef struct memmi_DebugEvent {
