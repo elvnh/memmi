@@ -152,8 +152,6 @@ static bool process_exists(DWORD pid)
     return result;
 }
 
-
-
 typedef struct {
     void *address;
     size_t size;
@@ -398,6 +396,8 @@ static DebugRegisters win32_get_thread_debug_registers(DWORD tid)
             }
         }
     }
+    
+    CloseHandle(handle.data);
 
     return result;   
 }
@@ -995,8 +995,7 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event, memm
                 } break;
 
                 case DBG_CONTROL_C: {
-                    // TODO: how to report?
-                    ASSERT(0 && "Unimplemented");
+                    result.event.kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
                 } break;
 
                 default: {
@@ -1144,6 +1143,8 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
             }
         }
     }
+    
+    CloseHandle(handle.data);
 
     return result;
 }
@@ -1176,6 +1177,8 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64
             }
         }
     }
+
+    CloseHandle(handle.data);
 
     return result;
 }
