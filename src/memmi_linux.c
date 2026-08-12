@@ -1221,9 +1221,12 @@ typedef struct {
 
 #define ptrace_event_code(e) (SIGTRAP | ((unsigned int)(e)) << 8)
 
-static DebugEventResult linux_siginfo_to_memmi_event(int waitpid_status, siginfo_t sig_info, pid_t id_of_affected_thread)
+static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int waitpid_status,
+    siginfo_t sig_info, pid_t id_of_affected_thread)
 {
     DebugEventResult result = {0};
+
+    pid_t native_pid = get_native_pid(proc);
 
     switch (sig_info.si_code) {
         // ptrace events
@@ -1254,8 +1257,14 @@ static DebugEventResult linux_siginfo_to_memmi_event(int waitpid_status, siginfo
             if (get_msg_result == -1) {
                 result.status = errno_to_memmi_status(errno);
             } else {
-                result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                result.data.as.thread_exited.exit_code = (int)(exit_code >> 8);
+                if (id_of_affected_thread == native_pid) {
+                    // The main thread exited, we'll count that as the process exiting.
+                    result.data.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
+                } else {
+                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+                }
+
+                result.data.as.exit_code = (int)(exit_code >> 8);
             }
         } break;
 
@@ -1264,8 +1273,14 @@ static DebugEventResult linux_siginfo_to_memmi_event(int waitpid_status, siginfo
             if (WIFEXITED(waitpid_status)) {
                 ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_EXIT.");
 
-                result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                result.data.as.thread_exited.exit_code = WEXITSTATUS(waitpid_status);
+                if (id_of_affected_thread == native_pid) {
+                    // The main thread exited, we'll count that as the process exiting.
+                    result.data.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
+                } else {
+                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+                }
+
+                result.data.as.exit_code = WEXITSTATUS(waitpid_status);
             } else if (WIFSIGNALED(waitpid_status)) {
                 result.data.kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
             } else if (WIFSTOPPED(waitpid_status)) {
@@ -1351,7 +1366,7 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
                 if (get_sig_result == -1) {
                     result.status = errno_to_memmi_status(errno);
                 } else {
-                    result = linux_siginfo_to_memmi_event(status, sig_info, id_of_affected_thread);
+                    result = linux_siginfo_to_memmi_event(proc, status, sig_info, id_of_affected_thread);
                 }
             }
         }
