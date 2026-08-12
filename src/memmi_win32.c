@@ -152,69 +152,6 @@ static bool process_exists(DWORD pid)
     return result;
 }
 
-typedef struct {
-    void *address;
-    size_t size;
-} Win32ContextMember;
-
-static Win32ContextMember win32_context_member_ptr_from_register(CONTEXT *context, memmi_Register reg)
-{
-    #define CONTEXT_MEMBER(memmi_name, member_name)         \
-        case memmi_name: {                                  \
-            result.address = &context->member_name;         \
-            result.size = sizeof(context->member_name);     \
-        } break
-
-    Win32ContextMember result = zero_struct(Win32ContextMember);
-
-    switch (reg) {
-        CONTEXT_MEMBER(MEMMI_REG_RAX, Rax);
-        CONTEXT_MEMBER(MEMMI_REG_RCX, Rcx);
-        CONTEXT_MEMBER(MEMMI_REG_RDX, Rdx);
-        CONTEXT_MEMBER(MEMMI_REG_RSI, Rsi);
-        CONTEXT_MEMBER(MEMMI_REG_RDI, Rdi);
-        CONTEXT_MEMBER(MEMMI_REG_RSP, Rsp);
-        CONTEXT_MEMBER(MEMMI_REG_RBP, Rbp);
-        CONTEXT_MEMBER(MEMMI_REG_RBX, Rbx);
-
-        CONTEXT_MEMBER(MEMMI_REG_R8,  R8);
-        CONTEXT_MEMBER(MEMMI_REG_R9,  R9);
-        CONTEXT_MEMBER(MEMMI_REG_R10, R10);
-        CONTEXT_MEMBER(MEMMI_REG_R11, R11);
-        CONTEXT_MEMBER(MEMMI_REG_R12, R12);
-        CONTEXT_MEMBER(MEMMI_REG_R13, R13);
-        CONTEXT_MEMBER(MEMMI_REG_R14, R14);
-        CONTEXT_MEMBER(MEMMI_REG_R15, R15);
-
-        CONTEXT_MEMBER(MEMMI_REG_RIP, Rip);
-
-        CONTEXT_MEMBER(MEMMI_REG_CS,     SegCs);
-        CONTEXT_MEMBER(MEMMI_REG_EFLAGS, EFlags);
-
-        CONTEXT_MEMBER(MEMMI_REG_SS, SegSs);
-        CONTEXT_MEMBER(MEMMI_REG_DS, SegDs);
-        CONTEXT_MEMBER(MEMMI_REG_ES, SegEs);
-        CONTEXT_MEMBER(MEMMI_REG_FS, SegFs);
-        CONTEXT_MEMBER(MEMMI_REG_GS, SegGs);
-
-        case MEMMI_REG_FS_BASE: {
-
-        } break;
-
-        case MEMMI_REG_GS_BASE: {
-
-        } break;
-
-        default: {
-            ASSERT(0);
-        } break;
-    }
-
-    return result;
-
-    #undef CONTEXT_MEMBER
-}
-
 // NOTE: The reason for doing this is that the different members of CONTEXT
 // have different types/sizes, so simply returning a pointer won't work.
 #define WIN32_CONTEXT_MEMBER_LIST                       \
@@ -236,13 +173,19 @@ static Win32ContextMember win32_context_member_ptr_from_register(CONTEXT *contex
     WIN32_CONTEXT_MEMBER(MEMMI_REG_R15,    R15)         \
     WIN32_CONTEXT_MEMBER(MEMMI_REG_RIP,    Rip)         \
     WIN32_CONTEXT_MEMBER(MEMMI_REG_CS,     SegCs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_EFLAGS, EFlags)      \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RFLAGS, EFlags)      \
     WIN32_CONTEXT_MEMBER(MEMMI_REG_SS,     SegSs)       \
     WIN32_CONTEXT_MEMBER(MEMMI_REG_DS,     SegDs)       \
     WIN32_CONTEXT_MEMBER(MEMMI_REG_ES,     SegEs)       \
     WIN32_CONTEXT_MEMBER(MEMMI_REG_FS,     SegFs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_GS,     SegGs)
-
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_GS,     SegGs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR0,    Dr0)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR1,    Dr1)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR2,    Dr2)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR3,    Dr3)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR6,    Dr6)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR7,    Dr7)         
+    
 
 static uint64_t win32_load_context_struct_register_value(CONTEXT *context, memmi_Register reg)
 {
@@ -256,6 +199,11 @@ static uint64_t win32_load_context_struct_register_value(CONTEXT *context, memmi
         WIN32_CONTEXT_MEMBER_LIST
 
 #undef WIN32_CONTEXT_MEMBER
+
+        // TODO: not needed, remove?
+        case MEMMI_REG_FS_BASE: 
+        case MEMMI_REG_GS_BASE: {
+        } break;
 
         default: {
             ASSERT(0);
@@ -276,75 +224,9 @@ static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Regi
 
 #undef WIN32_CONTEXT_MEMBER
 
-        default: {
-            ASSERT(0);
-        } break;
-    }
-}
-
-// TODO: just include debug registers in normal register enum so we don't have to have two separate functions
-static uint64_t win32_load_context_struct_debug_register_value(CONTEXT *context, DebugRegister reg)
-{
-    uint64_t result = 0;
-
-    switch (reg) {
-        case DEBUG_REG_DR0: {
-            result = context->Dr0;
-        } break;
-
-        case DEBUG_REG_DR1: {
-            result = context->Dr1;
-        } break;
-
-        case DEBUG_REG_DR2: {
-            result = context->Dr2;
-        } break;
-
-        case DEBUG_REG_DR3: {
-            result = context->Dr3;
-        } break;
-
-        case DEBUG_REG_DR6: {
-            result = context->Dr6;
-        } break;
-
-        case DEBUG_REG_DR7: {
-            result = context->Dr7;
-        } break;
-
-        default: {
-            ASSERT(0);
-        } break;
-    }
-
-    return result;
-}
-
-static void win32_set_context_struct_debug_register_value(CONTEXT *context, DebugRegister reg, uint64_t value)
-{
-    switch (reg) {
-        case DEBUG_REG_DR0: {
-            context->Dr0 = value;
-        } break;
-
-        case DEBUG_REG_DR1: {
-            context->Dr1 = value;
-        } break;
-
-        case DEBUG_REG_DR2: {
-            context->Dr2 = value;
-        } break;
-
-        case DEBUG_REG_DR3: {
-            context->Dr3 = value;
-        } break;
-
-        case DEBUG_REG_DR6: {
-            context->Dr6 = value;
-        } break;
-
-        case DEBUG_REG_DR7: {
-            context->Dr7 = value;
+        // TODO: not needed, remove?
+        case MEMMI_REG_FS_BASE: 
+        case MEMMI_REG_GS_BASE: {
         } break;
 
         default: {
@@ -376,31 +258,6 @@ static Win32Context win32_get_thread_context(HANDLE handle)
     return result;
 }
 
-// TODO: store debug registers in normal registers struct
-static DebugRegisters win32_get_thread_debug_registers(DWORD tid)
-{
-    DebugRegisters result = zero_struct(DebugRegisters);
-
-    Win32Handle handle = win32_open_thread_handle(tid);
-
-    if (handle.status != MEMMI_OK) {
-        result.status = handle.status;
-    } else {
-        Win32Context context = win32_get_thread_context(handle.data);
-
-        if (!context.status != MEMMI_OK) {
-            result.status = windows_error_to_memmi_status(GetLastError());
-        } else {
-            for (DebugRegister reg = zero_enum(DebugRegister); reg < DEBUG_REG_COUNT; inc_enum(reg)) {
-                result.values[reg] = win32_load_context_struct_debug_register_value(&context.data, reg);
-            }
-        }
-    }
-    
-    CloseHandle(handle.data);
-
-    return result;   
-}
 
 /**********************/
 /* API implementation */
@@ -968,15 +825,13 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event, memm
                     memmi_TID tid = {win32_event.dwThreadId};
                     
                     memmi_Registers regs = memmi_get_thread_registers(tid);
-                    DebugRegisters debug_regs = win32_get_thread_debug_registers(win32_event.dwThreadId);
                     
-                    int32_t breakpoint_index = get_dr6_breakpoint_index(debug_regs.values[DEBUG_REG_DR6]);
+                    int32_t breakpoint_index = get_dr6_breakpoint_index(regs.values[MEMMI_REG_DR6]);
  
                     if (regs.status != MEMMI_OK) {
                         result.status = regs.status;
-                    } else if (debug_regs.status != MEMMI_OK) {
-                        result.status = debug_regs.status;
                     } else if (breakpoint_index == -1) {
+                        ASSERT(0 && "Should never happen");
                         result.status  = MEMMI_OTHER_ERROR;
                     } else {
                         result.event.as.breakpoint.breakpoint_index = breakpoint_index;
@@ -1122,7 +977,6 @@ memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_Even
     return result;
 }
 
-// TODO: take tid as argument
 memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 {
     memmi_Registers result = zero_struct(memmi_Registers);
@@ -1135,7 +989,7 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
     } else {
         Win32Context context = win32_get_thread_context(handle.data);
 
-        if (!context.status != MEMMI_OK) {
+        if (context.status != MEMMI_OK) {
             result.status = windows_error_to_memmi_status(GetLastError());
         } else {
             for (memmi_Register reg = zero_enum(memmi_Register); reg < MEMMI_REG_COUNT; inc_enum(reg)) {
@@ -1155,7 +1009,6 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64
 
     DWORD native_tid = (DWORD)tid.value;
 
-    ASSERT(0 && "TODO: Remember to close handles!");
     Win32Handle handle = win32_open_thread_handle(native_tid);
 
     if (handle.status != MEMMI_OK) {
@@ -1163,7 +1016,7 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64
     } else {
         Win32Context context = win32_get_thread_context(handle.data);
 
-        if (!context.status != MEMMI_OK) {
+        if (context.status != MEMMI_OK) {
             result = windows_error_to_memmi_status(GetLastError());
         } else {
             win32_set_context_struct_register_value(&context.data, reg, value);
@@ -1208,13 +1061,13 @@ static ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data,
         memmi_BreakpointCondition cond = cb_context->cond;
         memmi_BreakpointLength length = cb_context->length;
 
-        DebugRegister debug_reg = debug_register_from_index(index);
+        memmi_Register debug_reg = debug_register_from_index(index);
 
-        uint64_t old_dr7_value = win32_load_context_struct_debug_register_value(&context.data, DEBUG_REG_DR7);
+        uint64_t old_dr7_value = win32_load_context_struct_register_value(&context.data, MEMMI_REG_DR7);
         uint64_t new_dr7_value = dr7_set_breakpoint_value(old_dr7_value, index, cond, length);
 
-        win32_set_context_struct_debug_register_value(&context.data, debug_reg, address);
-        win32_set_context_struct_debug_register_value(&context.data, DEBUG_REG_DR7, new_dr7_value);
+        win32_set_context_struct_register_value(&context.data, debug_reg, address);
+        win32_set_context_struct_register_value(&context.data, MEMMI_REG_DR7, new_dr7_value);
 
         BOOL set_context_result = SetThreadContext(handle.data, &context.data);
 
