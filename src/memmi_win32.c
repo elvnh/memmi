@@ -152,6 +152,256 @@ static bool process_exists(DWORD pid)
     return result;
 }
 
+
+
+typedef struct {
+    void *address;
+    size_t size;
+} Win32ContextMember;
+
+static Win32ContextMember win32_context_member_ptr_from_register(CONTEXT *context, memmi_Register reg)
+{
+    #define CONTEXT_MEMBER(memmi_name, member_name)         \
+        case memmi_name: {                                  \
+            result.address = &context->member_name;         \
+            result.size = sizeof(context->member_name);     \
+        } break
+
+    Win32ContextMember result = zero_struct(Win32ContextMember);
+
+    switch (reg) {
+        CONTEXT_MEMBER(MEMMI_REG_RAX, Rax);
+        CONTEXT_MEMBER(MEMMI_REG_RCX, Rcx);
+        CONTEXT_MEMBER(MEMMI_REG_RDX, Rdx);
+        CONTEXT_MEMBER(MEMMI_REG_RSI, Rsi);
+        CONTEXT_MEMBER(MEMMI_REG_RDI, Rdi);
+        CONTEXT_MEMBER(MEMMI_REG_RSP, Rsp);
+        CONTEXT_MEMBER(MEMMI_REG_RBP, Rbp);
+        CONTEXT_MEMBER(MEMMI_REG_RBX, Rbx);
+
+        CONTEXT_MEMBER(MEMMI_REG_R8,  R8);
+        CONTEXT_MEMBER(MEMMI_REG_R9,  R9);
+        CONTEXT_MEMBER(MEMMI_REG_R10, R10);
+        CONTEXT_MEMBER(MEMMI_REG_R11, R11);
+        CONTEXT_MEMBER(MEMMI_REG_R12, R12);
+        CONTEXT_MEMBER(MEMMI_REG_R13, R13);
+        CONTEXT_MEMBER(MEMMI_REG_R14, R14);
+        CONTEXT_MEMBER(MEMMI_REG_R15, R15);
+
+        CONTEXT_MEMBER(MEMMI_REG_RIP, Rip);
+
+        CONTEXT_MEMBER(MEMMI_REG_CS,     SegCs);
+        CONTEXT_MEMBER(MEMMI_REG_EFLAGS, EFlags);
+
+        CONTEXT_MEMBER(MEMMI_REG_SS, SegSs);
+        CONTEXT_MEMBER(MEMMI_REG_DS, SegDs);
+        CONTEXT_MEMBER(MEMMI_REG_ES, SegEs);
+        CONTEXT_MEMBER(MEMMI_REG_FS, SegFs);
+        CONTEXT_MEMBER(MEMMI_REG_GS, SegGs);
+
+        case MEMMI_REG_FS_BASE: {
+
+        } break;
+
+        case MEMMI_REG_GS_BASE: {
+
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+
+    #undef CONTEXT_MEMBER
+}
+
+// NOTE: The reason for doing this is that the different members of CONTEXT
+// have different types/sizes, so simply returning a pointer won't work.
+#define WIN32_CONTEXT_MEMBER_LIST                       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RAX,    Rax)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RCX,    Rcx)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RDX,    Rdx)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RSI,    Rsi)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RDI,    Rdi)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RSP,    Rsp)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RBP,    Rbp)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RBX,    Rbx)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R8,     R8)          \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R9,     R9)          \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R10,    R10)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R11,    R11)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R12,    R12)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R13,    R13)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R14,    R14)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_R15,    R15)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_RIP,    Rip)         \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_CS,     SegCs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_EFLAGS, EFlags)      \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_SS,     SegSs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_DS,     SegDs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_ES,     SegEs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_FS,     SegFs)       \
+    WIN32_CONTEXT_MEMBER(MEMMI_REG_GS,     SegGs)
+
+
+static uint64_t win32_load_context_struct_register_value(CONTEXT *context, memmi_Register reg)
+{
+    uint64_t result = 0;
+
+    switch (reg) {
+
+#define WIN32_CONTEXT_MEMBER(memmi_name, win32_name)                    \
+        case memmi_name: { result = context->win32_name; } break;
+
+        WIN32_CONTEXT_MEMBER_LIST
+
+#undef WIN32_CONTEXT_MEMBER
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+}
+
+static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Register reg, uint64_t value)
+{
+    switch (reg) {
+
+#define WIN32_CONTEXT_MEMBER(memmi_name, win32_name)                    \
+        case memmi_name: { context->win32_name = (TYPEOF(context->win32_name))value; } break;
+
+        WIN32_CONTEXT_MEMBER_LIST
+
+#undef WIN32_CONTEXT_MEMBER
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+}
+
+// TODO: just include debug registers in normal register enum so we don't have to have two separate functions
+static uint64_t win32_load_context_struct_debug_register_value(CONTEXT *context, DebugRegister reg)
+{
+    uint64_t result = 0;
+
+    switch (reg) {
+        case DEBUG_REG_DR0: {
+            result = context->Dr0;
+        } break;
+
+        case DEBUG_REG_DR1: {
+            result = context->Dr1;
+        } break;
+
+        case DEBUG_REG_DR2: {
+            result = context->Dr2;
+        } break;
+
+        case DEBUG_REG_DR3: {
+            result = context->Dr3;
+        } break;
+
+        case DEBUG_REG_DR6: {
+            result = context->Dr6;
+        } break;
+
+        case DEBUG_REG_DR7: {
+            result = context->Dr7;
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+
+    return result;
+}
+
+static void win32_set_context_struct_debug_register_value(CONTEXT *context, DebugRegister reg, uint64_t value)
+{
+    switch (reg) {
+        case DEBUG_REG_DR0: {
+            context->Dr0 = value;
+        } break;
+
+        case DEBUG_REG_DR1: {
+            context->Dr1 = value;
+        } break;
+
+        case DEBUG_REG_DR2: {
+            context->Dr2 = value;
+        } break;
+
+        case DEBUG_REG_DR3: {
+            context->Dr3 = value;
+        } break;
+
+        case DEBUG_REG_DR6: {
+            context->Dr6 = value;
+        } break;
+
+        case DEBUG_REG_DR7: {
+            context->Dr7 = value;
+        } break;
+
+        default: {
+            ASSERT(0);
+        } break;
+    }
+}
+
+typedef struct {
+    memmi_Status status;
+    CONTEXT data;
+} Win32Context;
+
+static Win32Context win32_get_thread_context(HANDLE handle)
+{
+    Win32Context result = zero_struct(Win32Context);
+
+    CONTEXT context = zero_struct(CONTEXT);
+    context.ContextFlags = CONTEXT_FULL;
+
+    BOOL get_context_result = GetThreadContext(handle, &context);
+
+    if (!get_context_result) {
+        result.status = windows_error_to_memmi_status(GetLastError());
+    } else {
+        result.data = context;
+    }
+
+    return result;
+}
+
+// TODO: store debug registers in normal registers struct
+static DebugRegisters win32_get_thread_debug_registers(DWORD tid)
+{
+    DebugRegisters result = zero_struct(DebugRegisters);
+
+    Win32Handle handle = win32_open_thread_handle(tid);
+
+    if (handle.status != MEMMI_OK) {
+        result.status = handle.status;
+    } else {
+        Win32Context context = win32_get_thread_context(handle.data);
+
+        if (!context.status != MEMMI_OK) {
+            result.status = windows_error_to_memmi_status(GetLastError());
+        } else {
+            for (DebugRegister reg = zero_enum(DebugRegister); reg < DEBUG_REG_COUNT; inc_enum(reg)) {
+                result.values[reg] = win32_load_context_struct_debug_register_value(&context.data, reg);
+            }
+        }
+    }
+
+    return result;   
+}
+
 /**********************/
 /* API implementation */
 /**********************/
@@ -693,16 +943,16 @@ memmi_Status memmi_suspend_process(memmi_Process process)
 
 }
 
+typedef struct {
+    memmi_Status status;
+    bool should_ignore;
+    memmi_DebugEvent event;
+} Win32EventResult;
+
 // TODO: we may want to pass the event via pointer in case the struct is very large
-static memmi_DebugEvent *win32_event_to_memmi_event(DEBUG_EVENT win32_event, memmi_Allocator allocator)
+static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event, memmi_Allocator allocator)
 {
-    // TODO: make allocate macro zero initialize. Don't put that functionality in
-    // the allocator function itself.
-
-    memmi_DebugEvent *result = allocate(allocator, memmi_DebugEvent, 1);
-    *result = zero_struct(memmi_DebugEvent);
-
-    bool should_ignore = false;
+    Win32EventResult result = zero_struct(Win32EventResult);
 
     switch (win32_event.dwDebugEventCode) {
         case EXCEPTION_DEBUG_EVENT: {
@@ -713,8 +963,25 @@ static memmi_DebugEvent *win32_event_to_memmi_event(DEBUG_EVENT win32_event, mem
                 } break;
 
                 case EXCEPTION_BREAKPOINT: {
-                    // TODO: report rip register
-                    result->kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
+                    result.event.kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
+                    
+                    memmi_TID tid = {win32_event.dwThreadId};
+                    
+                    memmi_Registers regs = memmi_get_thread_registers(tid);
+                    DebugRegisters debug_regs = win32_get_thread_debug_registers(win32_event.dwThreadId);
+                    
+                    int32_t breakpoint_index = get_dr6_breakpoint_index(debug_regs.values[DEBUG_REG_DR6]);
+ 
+                    if (regs.status != MEMMI_OK) {
+                        result.status = regs.status;
+                    } else if (debug_regs.status != MEMMI_OK) {
+                        result.status = debug_regs.status;
+                    } else if (breakpoint_index == -1) {
+                        result.status  = MEMMI_OTHER_ERROR;
+                    } else {
+                        result.event.as.breakpoint.breakpoint_index = breakpoint_index;
+                        result.event.as.breakpoint.ip_register = regs.values[MEMMI_REG_RIP];
+                    }
                 } break;
 
                 case EXCEPTION_DATATYPE_MISALIGNMENT: {
@@ -734,7 +1001,7 @@ static memmi_DebugEvent *win32_event_to_memmi_event(DEBUG_EVENT win32_event, mem
 
                 default: {
                     ASSERT(0);
-                    should_ignore = true;
+                    result.should_ignore = true;
                 } break;
             }
         } break;
@@ -742,27 +1009,27 @@ static memmi_DebugEvent *win32_event_to_memmi_event(DEBUG_EVENT win32_event, mem
         case CREATE_THREAD_DEBUG_EVENT: {
             // created thread
             // TODO: should we close the handles we receive?
-            result->kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
+            result.event.kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
 
             HANDLE thread_handle = win32_event.u.CreateThread.hThread;
             ASSERT(thread_handle);
             DWORD tid = GetThreadId(thread_handle);
             ASSERT(tid != 0);
 
-            result->as.new_thread.id.value = (uint64_t)tid;
+            result.event.as.new_thread.id.value = (uint64_t)tid;
 
             CloseHandle(thread_handle);
         } break;
 
         case CREATE_PROCESS_DEBUG_EVENT: {
             // is this only created when first attaching? do we even need to handle it?
-            should_ignore = true;
+            result.should_ignore = true;
         } break;
 
         case EXIT_THREAD_DEBUG_EVENT: {
             // thread exit
-            result->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-            result->as.thread_exited.exit_code = win32_event.u.ExitThread.dwExitCode;
+            result.event.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+            result.event.as.thread_exited.exit_code = win32_event.u.ExitThread.dwExitCode;
         } break;
 
         case EXIT_PROCESS_DEBUG_EVENT: {
@@ -773,31 +1040,26 @@ static memmi_DebugEvent *win32_event_to_memmi_event(DEBUG_EVENT win32_event, mem
         // TODO: Investigate if we can implement SO loading events for Linux. If so,
         // make these part of the librarys event types.
         case LOAD_DLL_DEBUG_EVENT: {
-            should_ignore = true;
+            result.should_ignore = true;
         } break;
 
         case UNLOAD_DLL_DEBUG_EVENT: {
-            should_ignore = true;
+            result.should_ignore = true;
         } break;
 
         case OUTPUT_DEBUG_STRING_EVENT: {
-            should_ignore = true;
+            result.should_ignore = true;
         } break;
 
         case RIP_EVENT: {
             // ???
-            should_ignore = true;
+            result.should_ignore = true;
         } break;
 
         default: {
             ASSERT(0);
-            should_ignore = true;
+            result.should_ignore = true;
         } break;
-    }
-
-    if (should_ignore) {
-        deallocate(allocator, result, 1);
-        result = 0;
     }
 
     return result;
@@ -827,10 +1089,15 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
             if (pid == win32_event.dwProcessId) {
                 result.id_of_affected_thread.value = win32_event.dwThreadId;
 
-                memmi_DebugEvent *event = win32_event_to_memmi_event(win32_event, allocator);
+                Win32EventResult event_result = win32_event_to_memmi_event(win32_event, allocator);
 
-                if (event) {
-                    sl_push_back(&result, event);
+                if (event_result.status != MEMMI_OK) {
+                    result.status = event_result.status;
+                } else if (!event_result.should_ignore) {
+                    memmi_DebugEvent *event_node = allocate(allocator, memmi_DebugEvent, 1);
+                    *event_node = event_result.event;
+                    
+                    sl_push_back(&result, event_node);
                 }
             } else {
                 ASSERT(0 && "Can this happen?");
@@ -857,231 +1124,7 @@ memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_Even
     return result;
 }
 
-typedef struct {
-    void *address;
-    size_t size;
-} Win32ContextMember;
-
-static Win32ContextMember win32_context_member_ptr_from_register(CONTEXT *context, memmi_Register reg)
-{
-    #define CONTEXT_MEMBER(memmi_name, member_name)         \
-        case memmi_name: {                                  \
-            result.address = &context->member_name;         \
-            result.size = sizeof(context->member_name);     \
-        } break
-
-    Win32ContextMember result = zero_struct(Win32ContextMember);
-
-    switch (reg) {
-        CONTEXT_MEMBER(MEMMI_REG_RAX, Rax);
-        CONTEXT_MEMBER(MEMMI_REG_RCX, Rcx);
-        CONTEXT_MEMBER(MEMMI_REG_RDX, Rdx);
-        CONTEXT_MEMBER(MEMMI_REG_RSI, Rsi);
-        CONTEXT_MEMBER(MEMMI_REG_RDI, Rdi);
-        CONTEXT_MEMBER(MEMMI_REG_RSP, Rsp);
-        CONTEXT_MEMBER(MEMMI_REG_RBP, Rbp);
-        CONTEXT_MEMBER(MEMMI_REG_RBX, Rbx);
-
-        CONTEXT_MEMBER(MEMMI_REG_R8,  R8);
-        CONTEXT_MEMBER(MEMMI_REG_R9,  R9);
-        CONTEXT_MEMBER(MEMMI_REG_R10, R10);
-        CONTEXT_MEMBER(MEMMI_REG_R11, R11);
-        CONTEXT_MEMBER(MEMMI_REG_R12, R12);
-        CONTEXT_MEMBER(MEMMI_REG_R13, R13);
-        CONTEXT_MEMBER(MEMMI_REG_R14, R14);
-        CONTEXT_MEMBER(MEMMI_REG_R15, R15);
-
-        CONTEXT_MEMBER(MEMMI_REG_RIP, Rip);
-
-        CONTEXT_MEMBER(MEMMI_REG_CS,     SegCs);
-        CONTEXT_MEMBER(MEMMI_REG_EFLAGS, EFlags);
-
-        CONTEXT_MEMBER(MEMMI_REG_SS, SegSs);
-        CONTEXT_MEMBER(MEMMI_REG_DS, SegDs);
-        CONTEXT_MEMBER(MEMMI_REG_ES, SegEs);
-        CONTEXT_MEMBER(MEMMI_REG_FS, SegFs);
-        CONTEXT_MEMBER(MEMMI_REG_GS, SegGs);
-
-        case MEMMI_REG_FS_BASE: {
-
-        } break;
-
-        case MEMMI_REG_GS_BASE: {
-
-        } break;
-
-        default: {
-            ASSERT(0);
-        } break;
-    }
-
-    return result;
-
-    #undef CONTEXT_MEMBER
-}
-
-// NOTE: The reason for doing this is that the different members of CONTEXT
-// have different types/sizes, so simply returning a pointer won't work.
-#define WIN32_CONTEXT_MEMBER_LIST                       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RAX,    Rax)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RCX,    Rcx)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RDX,    Rdx)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RSI,    Rsi)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RDI,    Rdi)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RSP,    Rsp)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RBP,    Rbp)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RBX,    Rbx)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R8,     R8)          \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R9,     R9)          \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R10,    R10)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R11,    R11)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R12,    R12)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R13,    R13)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R14,    R14)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R15,    R15)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RIP,    Rip)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_CS,     SegCs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_EFLAGS, EFlags)      \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_SS,     SegSs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_DS,     SegDs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_ES,     SegEs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_FS,     SegFs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_GS,     SegGs)
-
-
-static uint64_t win32_load_context_struct_register_value(CONTEXT *context, memmi_Register reg)
-{
-    uint64_t result = 0;
-
-    switch (reg) {
-
-#define WIN32_CONTEXT_MEMBER(memmi_name, win32_name)                    \
-        case memmi_name: { result = context->win32_name; } break;
-
-        WIN32_CONTEXT_MEMBER_LIST
-
-#undef WIN32_CONTEXT_MEMBER
-
-        default: {
-            ASSERT(0);
-        } break;
-    }
-
-    return result;
-}
-
-static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Register reg, uint64_t value)
-{
-    switch (reg) {
-
-#define WIN32_CONTEXT_MEMBER(memmi_name, win32_name)                    \
-        case memmi_name: { context->win32_name = (TYPEOF(context->win32_name))value; } break;
-
-        WIN32_CONTEXT_MEMBER_LIST
-
-#undef WIN32_CONTEXT_MEMBER
-
-        default: {
-            ASSERT(0);
-        } break;
-    }
-}
-
-// TODO: just include debug registers in normal register enum so we don't have to have two separate functions
-static uint64_t win32_load_context_struct_debug_register_value(CONTEXT *context, DebugRegister reg)
-{
-    uint64_t result = 0;
-
-    switch (reg) {
-        case DEBUG_REG_DR0: {
-            result = context->Dr0;
-        } break;
-
-        case DEBUG_REG_DR1: {
-            result = context->Dr1;
-        } break;
-
-        case DEBUG_REG_DR2: {
-            result = context->Dr2;
-        } break;
-
-        case DEBUG_REG_DR3: {
-            result = context->Dr3;
-        } break;
-
-        case DEBUG_REG_DR6: {
-            result = context->Dr6;
-        } break;
-
-        case DEBUG_REG_DR7: {
-            result = context->Dr7;
-        } break;
-
-        default: {
-            ASSERT(0);
-        } break;
-    }
-
-    return result;
-}
-
-static void win32_set_context_struct_debug_register_value(CONTEXT *context, DebugRegister reg, uint64_t value)
-{
-    switch (reg) {
-        case DEBUG_REG_DR0: {
-            context->Dr0 = value;
-        } break;
-
-        case DEBUG_REG_DR1: {
-            context->Dr1 = value;
-        } break;
-
-        case DEBUG_REG_DR2: {
-            context->Dr2 = value;
-        } break;
-
-        case DEBUG_REG_DR3: {
-            context->Dr3 = value;
-        } break;
-
-        case DEBUG_REG_DR6: {
-            context->Dr6 = value;
-        } break;
-
-        case DEBUG_REG_DR7: {
-            context->Dr7 = value;
-        } break;
-
-        default: {
-            ASSERT(0);
-        } break;
-    }
-}
-
-
-typedef struct {
-    memmi_Status status;
-    CONTEXT data;
-} Win32Context;
-
-static Win32Context win32_get_thread_context(HANDLE handle)
-{
-    Win32Context result = zero_struct(Win32Context);
-
-    CONTEXT context = zero_struct(CONTEXT);
-    context.ContextFlags = CONTEXT_FULL;
-
-    BOOL get_context_result = GetThreadContext(handle, &context);
-
-    if (!get_context_result) {
-        result.status = windows_error_to_memmi_status(GetLastError());
-    } else {
-        result.data = context;
-    }
-
-    return result;
-}
-
+// TODO: take tid as argument
 memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 {
     memmi_Registers result = zero_struct(memmi_Registers);
@@ -1104,7 +1147,6 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
     }
 
     return result;
-
 }
 
 memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value)
