@@ -1213,14 +1213,103 @@ typedef enum {
     WAITPID_NO_HANG,
 } WaitpidHang;
 
-#define ptrace_event_code(e) (SIGTRAP | ((unsigned int)(e)) << 8)
-
 typedef struct {
     memmi_Status status;
-    memmi_DebugEvent *data;
+    bool should_ignore;
+    memmi_DebugEvent data;
 } DebugEventResult;
 
-static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang hang, memmi_Allocator allocator)
+#define ptrace_event_code(e) (SIGTRAP | ((unsigned int)(e)) << 8)
+
+static DebugEventResult linux_siginfo_to_memmi_event(int waitpid_status, siginfo_t sig_info, pid_t id_of_affected_thread)
+{
+    DebugEventResult result = {0};
+
+    switch (sig_info.si_code) {
+        // ptrace events
+        case ptrace_event_code(PTRACE_EVENT_STOP): {
+            result.data.kind = MEMMI_DEBUG_EVENT_THREAD_SUSPENDED;
+        } break;
+
+        case ptrace_event_code(PTRACE_EVENT_CLONE): {
+            long new_thread_id = 0;
+            long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &new_thread_id);
+
+            if (get_msg_result == -1) {
+                result.status = errno_to_memmi_status(errno);
+            } else {
+                result.data.kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
+                result.data.as.new_thread.id = (memmi_TID){(int64_t)new_thread_id};
+            }
+        } break;
+
+        case ptrace_event_code(PTRACE_EVENT_EXIT): {
+            /* There's a bug in the kernel that causes SIGKILL to generate a
+               PTRACE_EVENT_EXIT. As far as I can tell there's no way to differentiate
+               this from a normal exit, so we'll have to simply report it as a normal
+               exit with code 0. Thanks ptrace! */
+            long exit_code = 0;
+            long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &exit_code);
+
+            if (get_msg_result == -1) {
+                result.status = errno_to_memmi_status(errno);
+            } else {
+                result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+                result.data.as.thread_exited.exit_code = (int)(exit_code >> 8);
+            }
+        } break;
+
+        default: {
+            // Normal signals
+            if (WIFEXITED(waitpid_status)) {
+                ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_EXIT.");
+
+                result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+                result.data.as.thread_exited.exit_code = WEXITSTATUS(waitpid_status);
+            } else if (WIFSIGNALED(waitpid_status)) {
+                result.data.kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
+            } else if (WIFSTOPPED(waitpid_status)) {
+                int signal = WSTOPSIG(waitpid_status);
+
+                if (signal == SIGTRAP) {
+                    // TODO: report pc register
+                    // TODO: ensure that this works for hardware breakpoints too
+                    result.data.kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
+
+                    memmi_TID tid = {id_of_affected_thread};
+                    memmi_Registers regs = memmi_get_thread_registers(tid);
+                    DebugRegisters debug_regs = get_thread_debug_registers(id_of_affected_thread);
+
+                    uint64_t dr6_value = debug_regs.values[DEBUG_REG_DR6];
+                    int32_t breakpoint_index = get_dr6_breakpoint_index(dr6_value);
+
+                    if (regs.status != MEMMI_OK) {
+                        result.status = regs.status;
+                    } else if (debug_regs.status != MEMMI_OK) {
+                        result.status = debug_regs.status;
+                    } else if (breakpoint_index == -1) {
+                        ASSERT(0 && "Should never happen");
+                        result.status = MEMMI_OTHER_ERROR;
+                    } else {
+                        result.data.as.breakpoint.breakpoint_index = (uint32_t)breakpoint_index;
+                        result.data.as.breakpoint.ip_register = regs.values[MEMMI_REG_RIP];
+                    }
+                } else {
+                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
+                }
+            } else if (WIFCONTINUED(waitpid_status)) {
+                result.should_ignore = true;
+            } else {
+                ASSERT(0 && "Unreachable");
+                result.should_ignore = true;
+            }
+        } break;
+    }
+
+    return result;
+}
+
+static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang hang)
 {
     DebugEventResult result = zero_struct(DebugEventResult);
 
@@ -1253,10 +1342,7 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
             bool thread_belongs_to_traced_process = thread_group_id.pid == pid;
 
             if (thread_belongs_to_traced_process) {
-                result.data = allocate(allocator, memmi_DebugEvent, 1);
-                memset(result.data, 0, sizeof(*result.data));
-
-                result.data->id_of_affected_thread = (memmi_TID){id_of_affected_thread};
+                result.data.id_of_affected_thread.value = id_of_affected_thread;
 
                 siginfo_t sig_info = zero_struct(siginfo_t);
                 long get_sig_result = ptrace(PTRACE_GETSIGINFO, id_of_affected_thread, 0, &sig_info);
@@ -1264,86 +1350,7 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
                 if (get_sig_result == -1) {
                     result.status = errno_to_memmi_status(errno);
                 } else {
-                    switch (sig_info.si_code) {
-                        // ptrace events
-                        case ptrace_event_code(PTRACE_EVENT_STOP): {
-                            result.data->kind = MEMMI_DEBUG_EVENT_THREAD_SUSPENDED;
-                        } break;
-
-                        case ptrace_event_code(PTRACE_EVENT_CLONE): {
-                            long new_thread_id = 0;
-                            long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &new_thread_id);
-
-                            if (get_msg_result == -1) {
-                                result.status = errno_to_memmi_status(errno);
-                            } else {
-                                result.data->kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
-                                result.data->as.new_thread.id = (memmi_TID){(int64_t)new_thread_id};
-                            }
-                        } break;
-
-                        case ptrace_event_code(PTRACE_EVENT_EXIT): {
-                            /* There's a bug in the kernel that causes SIGKILL to generate a
-                               PTRACE_EVENT_EXIT. As far as I can tell there's no way to differentiate
-                               this from a normal exit, so we'll have to simply report it as a normal
-                               exit with code 0. Thanks ptrace! */
-                            long exit_code = 0;
-                            long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &exit_code);
-
-                            if (get_msg_result == -1) {
-                                result.status = errno_to_memmi_status(errno);
-                            } else {
-                                result.data->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                                result.data->as.thread_exited.exit_code = (int)(exit_code >> 8);
-                            }
-                        } break;
-
-                        default: {
-                            // Normal signals
-                            if (WIFEXITED(status)) {
-                                ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_EXIT.");
-
-                                result.data->kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                                result.data->as.thread_exited.exit_code = WEXITSTATUS(status);
-                            } else if (WIFSIGNALED(status)) {
-                                result.data->kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
-                            } else if (WIFSTOPPED(status)) {
-                                int signal = WSTOPSIG(status);
-
-                                if (signal == SIGTRAP) {
-                                    // TODO: report pc register
-                                    // TODO: ensure that this works for hardware breakpoints too
-                                    result.data->kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
-
-                                    memmi_TID tid = {pid};
-
-                                    memmi_Registers regs = memmi_get_thread_registers(tid);
-                                    DebugRegisters debug_regs = get_thread_debug_registers(pid);
-
-                                    uint64_t dr6_value = debug_regs.values[DEBUG_REG_DR6];
-                                    int32_t breakpoint_index = get_dr6_breakpoint_index(dr6_value);
-
-                                    if (regs.status != MEMMI_OK) {
-                                        result.status = regs.status;
-                                    } else if (debug_regs.status != MEMMI_OK) {
-                                        result.status = debug_regs.status;
-                                    } else if (breakpoint_index == -1) {
-                                        ASSERT(0 && "Should never happen");
-                                        result.status = MEMMI_OTHER_ERROR;
-                                    } else {
-                                        result.data->as.breakpoint.breakpoint_index = (uint32_t)breakpoint_index;
-                                        result.data->as.breakpoint.ip_register = regs.values[MEMMI_REG_RIP];
-                                    }
-                                } else {
-                                    result.data->kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
-                                }
-                            } else if (WIFCONTINUED(status)) {
-                                ASSERT(0 && "Unimplemented, how should this be handled?");
-                            } else {
-                                ASSERT(0 && "Unreachable");
-                            }
-                        } break;
-                    }
+                    result = linux_siginfo_to_memmi_event(status, sig_info, id_of_affected_thread);
                 }
             }
         }
@@ -1355,6 +1362,7 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
 
 // TODO: allow waiting for events in specific thread
 // TODO: allowing users to pass on events to tracee
+// TODO: get rid of need for returning a list
 memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator)
 {
     memmi_EventList result = zero_struct(memmi_EventList);
@@ -1372,44 +1380,47 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
         } else {
             memmi_resume_process(process);
 
-            DebugEventResult event = wait_for_debug_event(process, WAITPID_HANG, allocator);
+            DebugEventResult event_result = wait_for_debug_event(process, WAITPID_HANG);
 
             // Keep checking for debug events without hanging in case any more were queued.
 
-            // TODO: don't wait in a loop
-            while (event.status == MEMMI_OK) {
-                ASSERT(event.data);
+            while (event_result.status == MEMMI_OK) {
+                result.id_of_affected_thread = event_result.data.id_of_affected_thread;
 
-                sl_push_back(&result, event.data);
+                if (event_result.status != MEMMI_OK) {
+                    result.status = event_result.status;
+                } else if (!event_result.should_ignore) {
+                    memmi_DebugEvent *event_node = allocate(allocator, memmi_DebugEvent, 1);
+                    *event_node = event_result.data;
 
-                result.id_of_affected_thread = event.data->id_of_affected_thread;
+                    sl_push_back(&result, event_node);
+                }
 
-                memmi_DebugEvent *prev_event = event.data;
-                event = wait_for_debug_event(process, WAITPID_NO_HANG, allocator);
+                if (event_result.status == MEMMI_OK) {
+                    memmi_DebugEvent prev_event = event_result.data;
+                    event_result = wait_for_debug_event(process, WAITPID_NO_HANG);
 
-                if (event.data) {
-                    /* ptrace behaves in a kind of weird way when new threads are created. It
-                     * reports both the new thread being created, as well as the new thread
-                     * being suspended (since ptrace causes the new thread to always start in a
-                     * suspended state) as separate events. I believe this is the only instance
-                     * in which ptrace can report multiple events at once. To avoid having to
-                     * report multiple events, if this happens, we'll only report the thread
-                     * creation event.
-                     */
-                    bool is_stopped_new_thread =
-                        ((prev_event->kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
-                            && (event.data->kind == MEMMI_DEBUG_EVENT_THREAD_SUSPENDED))
-                        || ((event.data->kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
-                            && (prev_event->kind == MEMMI_DEBUG_EVENT_THREAD_SUSPENDED));
+                    if (event_result.status == MEMMI_OK) {
+                        /* ptrace behaves in a kind of weird way when new threads are created. It
+                         * reports both the new thread being created, as well as the new thread
+                         * being suspended (since ptrace causes the new thread to always start in a
+                         * suspended state) as separate events. I believe this is the only instance
+                         * in which ptrace can report multiple events at once. To avoid having to
+                         * report multiple events, if this happens, we'll only report the thread
+                         * creation event.
+                         */
+                        bool is_stopped_new_thread =
+                            ((prev_event.kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
+                                && (event_result.data.kind == MEMMI_DEBUG_EVENT_THREAD_SUSPENDED))
+                            || ((event_result.data.kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
+                                && (prev_event.kind == MEMMI_DEBUG_EVENT_THREAD_SUSPENDED));
 
-                    ASSERT(is_stopped_new_thread
-                        && "Checking to see if ptrace can report multiple events except for this case");
+                        ASSERT(is_stopped_new_thread
+                            && "Checking to see if ptrace can report multiple events except for this case");
+                    }
                 }
             }
-
-            result.status = event.status;
         }
-
     }
 
     return result;
