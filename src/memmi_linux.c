@@ -1228,7 +1228,7 @@ static DebugEventResult linux_siginfo_to_memmi_event(int waitpid_status, siginfo
     switch (sig_info.si_code) {
         // ptrace events
         case ptrace_event_code(PTRACE_EVENT_STOP): {
-            result.data.kind = MEMMI_DEBUG_EVENT_THREAD_SUSPENDED;
+            result.data.kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
         } break;
 
         case ptrace_event_code(PTRACE_EVENT_CLONE): {
@@ -1272,7 +1272,7 @@ static DebugEventResult linux_siginfo_to_memmi_event(int waitpid_status, siginfo
                 int signal = WSTOPSIG(waitpid_status);
 
                 if (signal == SIGTRAP) {
-                    // TODO: report pc register
+                    // This is a breakpoint.
                     // TODO: ensure that this works for hardware breakpoints too
                     result.data.kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
 
@@ -1295,6 +1295,7 @@ static DebugEventResult linux_siginfo_to_memmi_event(int waitpid_status, siginfo
                         result.data.as.breakpoint.ip_register = regs.values[MEMMI_REG_RIP];
                     }
                 } else {
+                    // This is some other kind of stopping signal.
                     result.data.kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
                 }
             } else if (WIFCONTINUED(waitpid_status)) {
@@ -1411,9 +1412,9 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
                          */
                         bool is_stopped_new_thread =
                             ((prev_event.kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
-                                && (event_result.data.kind == MEMMI_DEBUG_EVENT_THREAD_SUSPENDED))
+                                && (event_result.data.kind == MEMMI_DEBUG_EVENT_THREAD_STOPPED))
                             || ((event_result.data.kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
-                                && (prev_event.kind == MEMMI_DEBUG_EVENT_THREAD_SUSPENDED));
+                                && (prev_event.kind == MEMMI_DEBUG_EVENT_THREAD_STOPPED));
 
                         ASSERT(is_stopped_new_thread
                             && "Checking to see if ptrace can report multiple events except for this case");
