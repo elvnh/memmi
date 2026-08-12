@@ -14,12 +14,6 @@
 #    error Unsupported compiler
 #endif
 
-#if defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__amd64__) || defined (_M_AMD64)
-#    define MEMMI_X64
-#else
-#    error Unsupported architecture
-#endif
-
 #if defined(MEMMI_LINUX)
 #    ifndef _GNU_SOURCE
 #        define _GNU_SOURCE

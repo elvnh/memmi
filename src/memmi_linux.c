@@ -600,12 +600,12 @@ static void get_thread_debug_registers(pid_t tid, memmi_Registers *out)
             set_flag(out->status, errno_to_memmi_status(errno));
             break;
         } else {
-            out->values[reg] = (uint64_t)value;
+            out->values[reg] = (memmi_RegisterValue)value;
         }
     }
 }
 
-static memmi_Status set_thread_user_register(pid_t tid, memmi_Register reg, uint64_t value)
+static memmi_Status set_thread_user_register(pid_t tid, memmi_Register reg, memmi_RegisterValue value)
 {
     memmi_Status result = MEMMI_OK;
 
@@ -627,7 +627,7 @@ static memmi_Status set_thread_user_register(pid_t tid, memmi_Register reg, uint
     return result;
 }
 
-static memmi_Status set_thread_debug_register(pid_t tid, memmi_Register reg, uint64_t value)
+static memmi_Status set_thread_debug_register(pid_t tid, memmi_Register reg, memmi_RegisterValue value)
 {
     ASSERT(reg <= MEMMI_REG_DR0);
 
@@ -1447,7 +1447,7 @@ static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int wai
                     memmi_TID tid = {id_of_affected_thread};
                     memmi_Registers regs = memmi_get_thread_registers(tid);
 
-                    uint64_t dr6_value = regs.values[MEMMI_REG_DR6];
+                    memmi_RegisterValue dr6_value = regs.values[MEMMI_REG_DR6];
                     int32_t breakpoint_index = get_dr6_breakpoint_index(dr6_value);
 
                     if (regs.status != MEMMI_OK) {
@@ -1619,7 +1619,7 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 }
 
 // TODO: allow setting all registers at once
-memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value)
+memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_RegisterValue value)
 {
     ASSERT(reg >= zero_enum(memmi_Register));
     ASSERT(reg < MEMMI_REG_COUNT);
@@ -1654,10 +1654,10 @@ static memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index,
     result = regs.status;
 
     if (result == MEMMI_OK) {
-        uint64_t old_dr7_value = regs.values[MEMMI_REG_DR7];
+        memmi_RegisterValue old_dr7_value = regs.values[MEMMI_REG_DR7];
 
-        uint64_t new_dr_value = address;
-        uint64_t new_dr7_value = dr7_set_breakpoint_value(old_dr7_value, index, cond, length);
+        memmi_RegisterValue new_dr_value = address;
+        memmi_RegisterValue new_dr7_value = dr7_set_breakpoint_value(old_dr7_value, index, cond, length);
 
         memmi_Status set_addr_result = memmi_set_thread_register(memmi_tid, reg, new_dr_value);
         memmi_Status set_dr7_result = memmi_set_thread_register(memmi_tid, MEMMI_REG_DR7, new_dr7_value);

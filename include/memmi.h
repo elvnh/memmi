@@ -3,6 +3,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#if defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__amd64__) || defined (_M_AMD64)
+#    define MEMMI_X64
+#elif defined(i386) || defined(__i386) || defined(__i386__) || defined(_M_IX86)
+#    define MEMMI_X86
+#    error x86 not yet supported!
+#else
+#    error Unsupported architecture
+#endif
+
 /* Type definitions */
 typedef enum {
     MEMMI_OK                       =  0u,
@@ -145,10 +154,9 @@ typedef struct {
 } memmi_EventList;
 
 // TODO: floating point registers
-// TODO: include debug registers in these?
-// TODO: define 32 bit equivalents
 typedef enum {
     // General purpose registers
+#if defined(MEMMI_X64)
     MEMMI_REG_RAX,
     MEMMI_REG_RCX,
     MEMMI_REG_RDX,
@@ -157,6 +165,16 @@ typedef enum {
     MEMMI_REG_RSP,
     MEMMI_REG_RBP,
     MEMMI_REG_RBX,
+#elif defined(MEMMI_X86)
+    MEMMI_REG_EAX,
+    MEMMI_REG_ECX,
+    MEMMI_REG_EDX,
+    MEMMI_REG_ESI,
+    MEMMI_REG_EDI,
+    MEMMI_REG_ESP,
+    MEMMI_REG_EBP,
+    MEMMI_REG_EBX,
+#endif
 
     MEMMI_REG_R8,
     MEMMI_REG_R9,
@@ -167,11 +185,14 @@ typedef enum {
     MEMMI_REG_R14,
     MEMMI_REG_R15,
 
-    // Instruction pointer
+    // Instruction pointer and flags
+#if defined(MEMMI_X64)
     MEMMI_REG_RIP,
-
-    // Flags
     MEMMI_REG_RFLAGS,
+#elif defined(MEMMI_X86)
+    MEMMI_REG_EIP,
+    MEMMI_REG_EFLAGS,
+#endif
 
     // Segment registers
     MEMMI_REG_CS,
@@ -191,13 +212,20 @@ typedef enum {
     MEMMI_REG_DR6,
     MEMMI_REG_DR7,
 
+    // Number of registers present
     MEMMI_REG_COUNT
 } memmi_Register;
 
+#if defined(MEMMI_X64)
+    typedef uint64_t memmi_RegisterValue;
+#elif defined(MEMMI_X86)
+    typedef uint32_t memmi_RegisterValue;
+#endif
+
 // TODO: include debug registers in this
 typedef struct {
-    memmi_Status status;
-    uint64_t     values[MEMMI_REG_COUNT]; // TODO: typedef register values to make porting to other arch easier
+    memmi_Status        status;
+    memmi_RegisterValue values[MEMMI_REG_COUNT];
 } memmi_Registers;
 
 typedef enum {
@@ -233,7 +261,7 @@ memmi_Status             memmi_suspend_process(memmi_Process process);
 memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
 memmi_Status             memmi_continue_after_debug_events(memmi_Process process, memmi_EventList events);
 memmi_Registers          memmi_get_thread_registers(memmi_TID tid);
-memmi_Status             memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value);
+memmi_Status             memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_RegisterValue value);
 memmi_Status             memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
                                                        memmi_BreakpointCondition condition, uint32_t index,
                                                        memmi_BreakpointLength length);

@@ -1,6 +1,5 @@
 // TODO: is this file compatible with 32 bit x86?
 // TODO: undefine these macros at end of file
-// TODO: add x86_* prefix
 // TODO: move this file into memmi.c, no need to split before supporting other archs
 
 #define DR7_ENABLE_BIT_BASE_INDEX   16u
@@ -10,6 +9,7 @@
 #define DR7_LENGTH_BITS_BASE_INDEX  18u
 #define DR7_LENGTH_BITS_STRIDE      4u
 
+// TODO: don't use binary constants
 #define DR7_READ_WRITE_COND         0b11u
 #define DR7_WRITE_COND              0b01u
 #define DR7_SIZE_1_BYTES            0b00
@@ -47,7 +47,7 @@ static memmi_Register debug_register_from_index(uint32_t index)
     return result;
 }
 
-static uint64_t dr7_breakpoint_mask(uint32_t breakpoint_index)
+static memmi_RegisterValue dr7_breakpoint_mask(uint32_t breakpoint_index)
 {
     uint32_t result =
           (0b01u << (DR7_ENABLE_BIT_BASE_INDEX  + breakpoint_index * DR7_ENABLE_BIT_STRIDE))
@@ -57,16 +57,18 @@ static uint64_t dr7_breakpoint_mask(uint32_t breakpoint_index)
     return result;
 }
 
-static uint64_t dr7_local_enable_bit(uint32_t reg_index)
+static memmi_RegisterValue dr7_local_enable_bit(uint32_t reg_index)
 {
-    uint64_t result = (uint64_t)((uint64_t)0x1u << ((uint64_t)reg_index * (uint64_t)DR7_ENABLE_BIT_STRIDE));
+    // TODO: get rid of these casts
+    memmi_RegisterValue result = (memmi_RegisterValue)((memmi_RegisterValue)0x1u
+        << ((memmi_RegisterValue)reg_index * (memmi_RegisterValue)DR7_ENABLE_BIT_STRIDE));
 
     return result;
 }
 
-static uint64_t dr7_condition_bits(uint32_t reg_index, memmi_BreakpointCondition condition)
+static memmi_RegisterValue dr7_condition_bits(uint32_t reg_index, memmi_BreakpointCondition condition)
 {
-    uint64_t bits = 0;
+    memmi_RegisterValue bits = 0;
 
     switch (condition) {
         case MEMMI_BREAKPOINT_READ_WRITE: {
@@ -83,14 +85,14 @@ static uint64_t dr7_condition_bits(uint32_t reg_index, memmi_BreakpointCondition
         } break;
     }
 
-    uint64_t result = bits << (DR7_COND_BITS_BASE_INDEX + reg_index * DR7_COND_BITS_STRIDE);
+    memmi_RegisterValue result = bits << (DR7_COND_BITS_BASE_INDEX + reg_index * DR7_COND_BITS_STRIDE);
 
     return result;
 }
 
-static uint64_t dr7_length_bits(uint32_t reg_index, memmi_BreakpointLength length)
+static memmi_RegisterValue dr7_length_bits(uint32_t reg_index, memmi_BreakpointLength length)
 {
-    uint64_t bits = 0;
+    memmi_RegisterValue bits = 0;
 
     switch (length) {
         case MEMMI_BREAKPOINT_1_BYTES: {
@@ -110,16 +112,17 @@ static uint64_t dr7_length_bits(uint32_t reg_index, memmi_BreakpointLength lengt
         } break;
     }
 
-    uint64_t result = bits << (DR7_LENGTH_BITS_BASE_INDEX + reg_index * DR7_LENGTH_BITS_STRIDE);
+    memmi_RegisterValue result = bits << (DR7_LENGTH_BITS_BASE_INDEX + reg_index * DR7_LENGTH_BITS_STRIDE);
 
     return result;
 }
 
-static uint64_t dr7_set_breakpoint_value(uint64_t old_dr7, uint32_t index, memmi_BreakpointCondition cond, memmi_BreakpointLength length)
+static memmi_RegisterValue dr7_set_breakpoint_value(memmi_RegisterValue old_dr7, uint32_t index,
+    memmi_BreakpointCondition cond, memmi_BreakpointLength length)
 {
     ASSERT(index <= 3);
 
-    uint64_t result =
+    memmi_RegisterValue result =
         (old_dr7 & ~dr7_breakpoint_mask(index))
         | dr7_local_enable_bit(index)
         | dr7_condition_bits(index, cond)
@@ -128,7 +131,7 @@ static uint64_t dr7_set_breakpoint_value(uint64_t old_dr7, uint32_t index, memmi
     return result;
 }
 
-static int32_t get_dr6_breakpoint_index(uint64_t dr6)
+static int32_t get_dr6_breakpoint_index(memmi_RegisterValue dr6)
 {
     int32_t result = -1;
 
