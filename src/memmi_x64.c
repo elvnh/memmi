@@ -1,5 +1,8 @@
 // TODO: is this file compatible with 32 bit x86?
 // TODO: undefine these macros at end of file
+// TODO: add x86_* prefix
+// TODO: move this file into memmi.c, no need to split before supporting other archs
+
 #define DR7_ENABLE_BIT_BASE_INDEX   16u
 #define DR7_ENABLE_BIT_STRIDE       2u
 #define DR7_COND_BITS_BASE_INDEX    16u
@@ -14,22 +17,7 @@
 #define DR7_SIZE_4_BYTES            0b11
 #define DR7_SIZE_8_BYTES            0b10
 
-typedef enum {
-    DEBUG_REG_DR0,
-    DEBUG_REG_DR1,
-    DEBUG_REG_DR2,
-    DEBUG_REG_DR3,
-    DEBUG_REG_DR6,
-    DEBUG_REG_DR7,
-    DEBUG_REG_COUNT,
-} DebugRegister;
-
-typedef struct {
-    memmi_Status status;
-    uint64_t     values[DEBUG_REG_COUNT];
-} DebugRegisters;
-
-static DebugRegister debug_register_from_index(uint32_t index)
+static memmi_Register debug_register_from_index(uint32_t index)
 {
     DebugRegister result = zero_enum(DebugRegister);
 

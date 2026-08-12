@@ -146,7 +146,9 @@ typedef struct {
 
 // TODO: floating point registers
 // TODO: include debug registers in these?
+// TODO: define 32 bit equivalents
 typedef enum {
+    // General purpose registers
     MEMMI_REG_RAX,
     MEMMI_REG_RCX,
     MEMMI_REG_RDX,
@@ -165,11 +167,14 @@ typedef enum {
     MEMMI_REG_R14,
     MEMMI_REG_R15,
 
+    // Instruction pointer
     MEMMI_REG_RIP,
 
-    MEMMI_REG_CS,
-    MEMMI_REG_EFLAGS,
+    // Flags
+    MEMMI_REG_RFLAGS,
 
+    // Segment registers
+    MEMMI_REG_CS,
     MEMMI_REG_SS,
     MEMMI_REG_FS_BASE, // TODO: not needed?
     MEMMI_REG_GS_BASE, // TODO: not needed?
@@ -177,6 +182,14 @@ typedef enum {
     MEMMI_REG_ES,
     MEMMI_REG_FS,
     MEMMI_REG_GS,
+
+    // Debug registers
+    MEMMI_REG_DR0,
+    MEMMI_REG_DR1,
+    MEMMI_REG_DR2,
+    MEMMI_REG_DR3,
+    MEMMI_REG_DR6,
+    MEMMI_REG_DR7,
 
     MEMMI_REG_COUNT
 } memmi_Register;
