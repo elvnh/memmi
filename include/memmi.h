@@ -105,14 +105,13 @@ typedef struct {
     size_t         count;
 } memmi_ThreadList;
 
-// TODO: is both THREAD_SUSPENDED and THREAD_STOPPED needed?
-// TODO: on linux, if the main thread exits, report as PROCESS_EXIT
 typedef enum {
     MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED,
     MEMMI_DEBUG_EVENT_BREAKPOINT,
     MEMMI_DEBUG_EVENT_THREAD_STOPPED,
     MEMMI_DEBUG_EVENT_THREAD_EXITED,
     MEMMI_DEBUG_EVENT_THREAD_KILLED,
+    MEMMI_DEBUG_EVENT_PROCESS_EXITED,
 } memmi_DebugEventKind;
 
 typedef struct memmi_DebugEvent {
@@ -130,9 +129,7 @@ typedef struct memmi_DebugEvent {
             size_t   ip_register;
         } breakpoint;
 
-        struct {
-            int exit_code;
-        } thread_exited;
+        int exit_code; // Used by both THREAD_EXITED and PROCESS_EXITED.
     } as;
 
     struct memmi_DebugEvent *next;
