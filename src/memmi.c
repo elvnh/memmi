@@ -210,7 +210,7 @@ typedef struct {
 #    define str_lit(s) (memmi_String) { s, ARRAY_COUNT(s) - 1 }
 #endif
 
-memmi_String str_from_c_str(char *str)
+static memmi_String str_from_c_str(char *str)
 {
     ASSERT(str);
     size_t length = strlen(str);
@@ -220,7 +220,7 @@ memmi_String str_from_c_str(char *str)
     return result;
 }
 
-bool str_eq(memmi_String a, memmi_String b)
+static bool str_eq(memmi_String a, memmi_String b)
 {
     bool result = false;
 
@@ -231,7 +231,7 @@ bool str_eq(memmi_String a, memmi_String b)
     return result;
 }
 
-bool str_starts_with(memmi_String str, memmi_String substr)
+static bool str_starts_with(memmi_String str, memmi_String substr)
 {
     bool result = false;
 
@@ -243,7 +243,7 @@ bool str_starts_with(memmi_String str, memmi_String substr)
     return result;
 }
 
-Cut str_cut(memmi_String str, memmi_String pattern)
+static Cut str_cut(memmi_String str, memmi_String pattern)
 {
     Cut result = zero_struct(Cut);
     result.head = str;
@@ -272,7 +272,7 @@ Cut str_cut(memmi_String str, memmi_String pattern)
     return result;
 }
 
-memmi_String str_trim_leading_whitespace(memmi_String str)
+static memmi_String str_trim_leading_whitespace(memmi_String str)
 {
     memmi_String result = str;
 
@@ -284,7 +284,7 @@ memmi_String str_trim_leading_whitespace(memmi_String str)
     return result;
 }
 
-memmi_String str_trim_trailing_whitespace(memmi_String str)
+static memmi_String str_trim_trailing_whitespace(memmi_String str)
 {
     memmi_String result = str;
 
@@ -295,7 +295,7 @@ memmi_String str_trim_trailing_whitespace(memmi_String str)
     return result;
 }
 
-memmi_String str_trim_whitespace(memmi_String str)
+static memmi_String str_trim_whitespace(memmi_String str)
 {
     memmi_String result = str;
     result = str_trim_leading_whitespace(result);
@@ -403,7 +403,7 @@ static bool safe_mul_usize_impl(size_t a, size_t b, size_t *out)
 #    error Unsupported compiler
 #endif
 
-MaybeS64 safe_add_s64(int64_t a, int64_t b)
+static MaybeS64 safe_add_s64(int64_t a, int64_t b)
 {
     MaybeS64 result = zero_struct(MaybeS64);
 
@@ -412,7 +412,7 @@ MaybeS64 safe_add_s64(int64_t a, int64_t b)
     return result;
 }
 
-MaybeU64 safe_add_u64(uint64_t a, uint64_t b)
+static MaybeU64 safe_add_u64(uint64_t a, uint64_t b)
 {
     MaybeU64 result = zero_struct(MaybeU64);
 
@@ -421,7 +421,7 @@ MaybeU64 safe_add_u64(uint64_t a, uint64_t b)
     return result;
 }
 
-MaybeS64 safe_mul_s64(int64_t a, int64_t b)
+static MaybeS64 safe_mul_s64(int64_t a, int64_t b)
 {
     MaybeS64 result = zero_struct(MaybeS64);
 
@@ -430,7 +430,7 @@ MaybeS64 safe_mul_s64(int64_t a, int64_t b)
     return result;
 }
 
-MaybeU64 safe_mul_u64(uint64_t a, uint64_t b)
+static MaybeU64 safe_mul_u64(uint64_t a, uint64_t b)
 {
     MaybeU64 result = zero_struct(MaybeU64);
 
@@ -439,7 +439,7 @@ MaybeU64 safe_mul_u64(uint64_t a, uint64_t b)
     return result;
 }
 
-MaybeUsize safe_mul_usize(size_t a, size_t b)
+static MaybeUsize safe_mul_usize(size_t a, size_t b)
 {
     MaybeUsize result = zero_struct(MaybeUsize);
 
@@ -471,7 +471,7 @@ static uint32_t parse_digit(char c, NumberBase base)
 }
 
 // TODO: These number parsing functions are bad
-MaybeS64 str_to_s64(memmi_String str, NumberBase base)
+static MaybeS64 str_to_s64(memmi_String str, NumberBase base)
 {
     // TODO: reduce code duplication between this and str_to_u64
     MaybeS64 result = zero_struct(MaybeS64);
@@ -531,7 +531,7 @@ MaybeS64 str_to_s64(memmi_String str, NumberBase base)
     return result;
 }
 
-MaybeU64 str_to_u64(memmi_String str, NumberBase base)
+static MaybeU64 str_to_u64(memmi_String str, NumberBase base)
 {
     MaybeU64 result = zero_struct(MaybeU64);
 
