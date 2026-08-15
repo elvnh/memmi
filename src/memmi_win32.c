@@ -152,58 +152,63 @@ static bool process_exists(DWORD pid)
     return result;
 }
 
-// NOTE: The reason for doing this is that the different members of CONTEXT
-// have different types/sizes, so simply returning a pointer won't work.
-#define WIN32_CONTEXT_MEMBER_LIST                       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RAX,    Rax)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RCX,    Rcx)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RDX,    Rdx)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RSI,    Rsi)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RDI,    Rdi)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RSP,    Rsp)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RBP,    Rbp)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RBX,    Rbx)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R8,     R8)          \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R9,     R9)          \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R10,    R10)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R11,    R11)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R12,    R12)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R13,    R13)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R14,    R14)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_R15,    R15)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RIP,    Rip)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_CS,     SegCs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_RFLAGS, EFlags)      \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_SS,     SegSs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_DS,     SegDs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_ES,     SegEs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_FS,     SegFs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_GS,     SegGs)       \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR0,    Dr0)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR1,    Dr1)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR2,    Dr2)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR3,    Dr3)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR6,    Dr6)         \
-    WIN32_CONTEXT_MEMBER(MEMMI_REG_DR7,    Dr7)         
-    
-
-static uint64_t win32_load_context_struct_register_value(CONTEXT *context, memmi_Register reg)
+static memmi_RegisterValue win32_load_context_struct_register_value(CONTEXT *context, memmi_Register reg)
 {
-    uint64_t result = 0;
+    memmi_RegisterValue result = 0;
 
     switch (reg) {
+        #if defined(MEMMI_X64)
+        case MEMMI_REG_RAX: { result = context->Rax; } break;                                
+        case MEMMI_REG_RCX: { result = context->Rcx; } break;                                
+        case MEMMI_REG_RDX: { result = context->Rdx; } break;                                
+        case MEMMI_REG_RSI: { result = context->Rsi; } break;                                
+        case MEMMI_REG_RDI: { result = context->Rdi; } break;                                
+        case MEMMI_REG_RSP: { result = context->Rsp; } break;                                
+        case MEMMI_REG_RBP: { result = context->Rbp; } break;                                
+        case MEMMI_REG_RBX: { result = context->Rbx; } break;                                
+        case MEMMI_REG_RIP: { result = context->Rip; } break;
+        #elif defined(MEMMI_X86)
+        case MEMMI_REG_EAX: { result = context->Eax; } break;                                
+        case MEMMI_REG_ECX: { result = context->Ecx; } break;                                
+        case MEMMI_REG_EDX: { result = context->Edx; } break;                                
+        case MEMMI_REG_ESI: { result = context->Esi; } break;                                
+        case MEMMI_REG_EDI: { result = context->Edi; } break;                                
+        case MEMMI_REG_ESP: { result = context->Esp; } break;                                
+        case MEMMI_REG_EBP: { result = context->Ebp; } break;                                
+        case MEMMI_REG_EBX: { result = context->Ebx; } break;                                
+        case MEMMI_REG_EIP: { result = context->Eip; } break;
+        #endif
+        
+        #if defined(MEMMI_X64)
+        case MEMMI_REG_R8: { result   = context->R8; } break;                  
+        case MEMMI_REG_R9: { result   = context->R9; } break;                  
+        case MEMMI_REG_R10: { result  = context->R10; } break;                 
+        case MEMMI_REG_R11: { result  = context->R11; } break;                 
+        case MEMMI_REG_R12: { result  = context->R12; } break;                 
+        case MEMMI_REG_R13: { result  = context->R13; } break;                 
+        case MEMMI_REG_R14: { result  = context->R14; } break;                 
+        case MEMMI_REG_R15: { result  = context->R15; } break;
+        #endif
 
-#define WIN32_CONTEXT_MEMBER(memmi_name, win32_name)                    \
-        case memmi_name: { result = context->win32_name; } break;
-
-        WIN32_CONTEXT_MEMBER_LIST
-
-#undef WIN32_CONTEXT_MEMBER
-
-        // TODO: not needed, remove?
-        case MEMMI_REG_FS_BASE: 
-        case MEMMI_REG_GS_BASE: {
-        } break;
+        case MEMMI_REG_CS: { result = context->SegCs; } break;                  
+        case MEMMI_REG_SS: { result = context->SegSs; } break;                  
+        case MEMMI_REG_DS: { result = context->SegDs; } break;                  
+        case MEMMI_REG_ES: { result = context->SegEs; } break;                  
+        case MEMMI_REG_FS: { result = context->SegFs; } break;                  
+        case MEMMI_REG_GS: { result = context->SegGs; } break;                  
+        
+        case MEMMI_REG_DR0: { result = context->Dr0; } break;                  
+        case MEMMI_REG_DR1: { result = context->Dr1; } break;                  
+        case MEMMI_REG_DR2: { result = context->Dr2; } break;                  
+        case MEMMI_REG_DR3: { result = context->Dr3; } break;                  
+        case MEMMI_REG_DR6: { result = context->Dr6; } break;                  
+        case MEMMI_REG_DR7: { result = context->Dr7; } break;                  
+       
+        #if defined(MEMMI_X64)
+        case MEMMI_REG_RFLAGS: { result = context->EFlags; } break;                         
+        #elif defined(MEMMI_X86)
+        case MEMMI_REG_EFLAGS: { result = context->EFlags; } break;                  
+        #endif
 
         default: {
             ASSERT(0);
@@ -213,21 +218,61 @@ static uint64_t win32_load_context_struct_register_value(CONTEXT *context, memmi
     return result;
 }
 
-static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Register reg, uint64_t value)
+static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Register reg, memmi_RegisterValue value)
 {
     switch (reg) {
+        #if defined(MEMMI_X64)
+        case MEMMI_REG_RAX: { context->Rax = value; } break;                                
+        case MEMMI_REG_RCX: { context->Rcx = value; } break;                                
+        case MEMMI_REG_RDX: { context->Rdx = value; } break;                                
+        case MEMMI_REG_RSI: { context->Rsi = value; } break;                                
+        case MEMMI_REG_RDI: { context->Rdi = value; } break;                                
+        case MEMMI_REG_RSP: { context->Rsp = value; } break;                                
+        case MEMMI_REG_RBP: { context->Rbp = value; } break;                                
+        case MEMMI_REG_RBX: { context->Rbx = value; } break;                                
+        case MEMMI_REG_RIP: { context->Rip = value; } break;
+        #elif defined(MEMMI_X86)
+        case MEMMI_REG_EAX: { context->Eax = value; } break;                                
+        case MEMMI_REG_ECX: { context->Ecx = value; } break;                                
+        case MEMMI_REG_EDX: { context->Edx = value; } break;                                
+        case MEMMI_REG_ESI: { context->Esi = value; } break;                                
+        case MEMMI_REG_EDI: { context->Edi = value; } break;                                
+        case MEMMI_REG_ESP: { context->Esp = value; } break;                                
+        case MEMMI_REG_EBP: { context->Ebp = value; } break;                                
+        case MEMMI_REG_EBX: { context->Ebx = value; } break;                                
+        case MEMMI_REG_EIP: { context->Eip = value; } break;
+        #endif
+        
+        #if defined(MEMMI_X64)
+        case MEMMI_REG_R8:  { context->R8 = value; } break;                  
+        case MEMMI_REG_R9:  { context->R9 = value; } break;                  
+        case MEMMI_REG_R10: { context->R10 = value; } break;                 
+        case MEMMI_REG_R11: { context->R11 = value; } break;                 
+        case MEMMI_REG_R12: { context->R12 = value; } break;                 
+        case MEMMI_REG_R13: { context->R13 = value; } break;                 
+        case MEMMI_REG_R14: { context->R14 = value; } break;                 
+        case MEMMI_REG_R15: { context->R15 = value; } break;
+        #endif
+        
+        case MEMMI_REG_CS:  { context->SegCs = value; } break;                  
+        case MEMMI_REG_SS:  { context->SegSs = value; } break;                  
+        case MEMMI_REG_DS:  { context->SegDs = value; } break;                  
+        case MEMMI_REG_ES:  { context->SegEs = value; } break;                  
+        case MEMMI_REG_FS:  { context->SegFs = value; } break;                  
+        case MEMMI_REG_GS:  { context->SegGs = value; } break;                  
+        
+        case MEMMI_REG_DR0: { context->Dr0 = value; } break;                  
+        case MEMMI_REG_DR1: { context->Dr1 = value; } break;                  
+        case MEMMI_REG_DR2: { context->Dr2 = value; } break;                  
+        case MEMMI_REG_DR3: { context->Dr3 = value; } break;                  
+        case MEMMI_REG_DR6: { context->Dr6 = value; } break;                  
+        case MEMMI_REG_DR7: { context->Dr7 = value; } break;  
 
-#define WIN32_CONTEXT_MEMBER(memmi_name, win32_name)                    \
-        case memmi_name: { context->win32_name = (TYPEOF(context->win32_name))value; } break;
-
-        WIN32_CONTEXT_MEMBER_LIST
-
-#undef WIN32_CONTEXT_MEMBER
-
-        // TODO: not needed, remove?
-        case MEMMI_REG_FS_BASE: 
-        case MEMMI_REG_GS_BASE: {
-        } break;
+        #if defined(MEMMI_X64)
+        case MEMMI_REG_RFLAGS: { context->EFlags = value; } break;                         
+        #elif defined(MEMMI_X86)
+        case MEMMI_REG_EFLAGS: { context->EFlags = value; } break;                  
+        #endif
 
         default: {
             ASSERT(0);
@@ -257,7 +302,6 @@ static Win32Context win32_get_thread_context(HANDLE handle)
 
     return result;
 }
-
 
 /**********************/
 /* API implementation */
@@ -834,8 +878,15 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event, memm
                         ASSERT(0 && "Should never happen");
                         result.status  = MEMMI_OTHER_ERROR;
                     } else {
+                        memmi_Register ip_register = 
+                            #if defined(MEMMI_X64)
+                                MEMMI_REG_RIP
+                            #elif defined(MEMMI_X86)
+                                MEMMI_REG_EIP
+                            #endif
+                        ;
                         result.event.as.breakpoint.breakpoint_index = breakpoint_index;
-                        result.event.as.breakpoint.ip_register = regs.values[MEMMI_REG_RIP];
+                        result.event.as.breakpoint.ip_register = regs.values[ip_register];
                     }
                 } break;
 
@@ -1003,7 +1054,7 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
     return result;
 }
 
-memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, uint64_t value)
+memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_RegisterValue value)
 {
     memmi_Status result = zero_enum(memmi_Status);
 
@@ -1063,8 +1114,8 @@ static ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data,
 
         memmi_Register debug_reg = debug_register_from_index(index);
 
-        uint64_t old_dr7_value = win32_load_context_struct_register_value(&context.data, MEMMI_REG_DR7);
-        uint64_t new_dr7_value = dr7_set_breakpoint_value(old_dr7_value, index, cond, length);
+        memmi_RegisterValue old_dr7_value = win32_load_context_struct_register_value(&context.data, MEMMI_REG_DR7);
+        memmi_RegisterValue new_dr7_value = dr7_set_breakpoint_value(old_dr7_value, index, cond, length);
 
         win32_set_context_struct_register_value(&context.data, debug_reg, address);
         win32_set_context_struct_register_value(&context.data, MEMMI_REG_DR7, new_dr7_value);
