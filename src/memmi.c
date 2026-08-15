@@ -79,14 +79,18 @@
 #define set_flag(lhs, flag) (lhs) = (TYPEOF(lhs))(lhs | flag)
 #define inc_enum(e) (e = (TYPEOF(e))((e) + 1))
 
-#define ASSERT(e) do {                                      \
-        if (!(e)) {                                         \
-            fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
-                "Expression: '%s'\nFunction: %s\n%s:%d:\n", \
-                #e, __func__, __FILE__, __LINE__);     \
-            DEBUG_BREAK;                                    \
-        }                                                   \
-    } while (0)
+#if MEMMI_DEBUG
+#    define ASSERT(e) do {                                      \
+            if (!(e)) {                                         \
+                fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
+                    "Expression: '%s'\nFunction: %s\n%s:%d:\n", \
+                    #e, __func__, __FILE__, __LINE__);     \
+                DEBUG_BREAK;                                    \
+            }                                                   \
+        } while (0)
+#else
+#    define ASSERT(e)
+#endif
 
 #define sl_push_back(list, node)                \
     do {                                        \
