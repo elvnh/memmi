@@ -1,15 +1,16 @@
+// Define compiler/OS context definitions.
 #if defined(__linux__)
-#    define MEMMI_LINUX
+#    define MEMMI_LINUX 1
 #elif defined(_WIN32)
-#    define MEMMI_WIN32
+#    define MEMMI_WIN32 1
 #else
 #    error Unsupported operating system
 #endif
 
 #if defined(__GNUC__)
-#    define MEMMI_GCC
+#    define MEMMI_GCC 1
 #elif defined(_MSC_VER)
-#    define MEMMI_MSVC
+#    define MEMMI_MSVC 1
 #else
 #    error Unsupported compiler
 #endif
@@ -18,6 +19,23 @@
 #    ifndef _GNU_SOURCE
 #        define _GNU_SOURCE
 #    endif
+#endif
+
+// Define all undefined context definitions to 0.
+#if !defined(MEMMI_LINUX)
+#    define MEMMI_LINUX 0
+#endif
+
+#if !defined(MEMMI_WIN32)
+#    define MEMMI_WIN32 0
+#endif
+
+#if !defined(MEMMI_GCC)
+#    define MEMMI_GCC 0
+#endif
+
+#if !defined(MEMMI_MSVC)
+#    define MEMMI_MSVC 0
 #endif
 
 #include "memmi.h"
@@ -61,14 +79,18 @@
 #define set_flag(lhs, flag) (lhs) = (TYPEOF(lhs))(lhs | flag)
 #define inc_enum(e) (e = (TYPEOF(e))((e) + 1))
 
-#define ASSERT(e) do {                                      \
-        if (!(e)) {                                         \
-            fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
-                "Expression: '%s'\nFunction: %s\n%s:%d:\n", \
-                #e, __func__, __FILE__, __LINE__);     \
-            DEBUG_BREAK;                                    \
-        }                                                   \
-    } while (0)
+#if MEMMI_DEBUG
+#    define ASSERT(e) do {                                      \
+            if (!(e)) {                                         \
+                fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
+                    "Expression: '%s'\nFunction: %s\n%s:%d:\n", \
+                    #e, __func__, __FILE__, __LINE__);     \
+                DEBUG_BREAK;                                    \
+            }                                                   \
+        } while (0)
+#else
+#    define ASSERT(e)
+#endif
 
 #define sl_push_back(list, node)                \
     do {                                        \
@@ -84,25 +106,25 @@
     } while (0)
 
 // TODO: collapse all these into one ifdef
-#if defined(MEMMI_GCC)
+#if MEMMI_GCC
 #    define DEBUG_BREAK __builtin_trap()
-#elif defined(MEMMI_MSVC)
+#elif MEMMI_MSVC
 #    define DEBUG_BREAK __debugbreak()
 #else
 #    error DEBUG_BREAK not defined for this compiler
 #endif
 
-#if defined(MEMMI_GCC)
+#if MEMMI_GCC
 #    define ALIGNOF(t) __alignof__(t)
-#elif defined(MEMMI_MSVC)
+#elif MEMMI_MSVC
 #    define ALIGNOF(t) __alignof(t)
 #else
 #    error ALIGNOF not defined for this compiler
 #endif
 
-#if defined(MEMMI_GCC)
+#if MEMMI_GCC
 #    define TYPEOF(t) __typeof__(t)
-#elif defined(MEMMI_MSVC)
+#elif MEMMI_MSVC
 #    if defined(__cplusplus)
 #        define TYPEOF(t) decltype(t)
 #    else
@@ -192,7 +214,7 @@ typedef struct {
 #    define str_lit(s) (memmi_String) { s, ARRAY_COUNT(s) - 1 }
 #endif
 
-memmi_String str_from_c_str(char *str)
+static memmi_String str_from_c_str(char *str)
 {
     ASSERT(str);
     size_t length = strlen(str);
@@ -202,7 +224,7 @@ memmi_String str_from_c_str(char *str)
     return result;
 }
 
-bool str_eq(memmi_String a, memmi_String b)
+static bool str_eq(memmi_String a, memmi_String b)
 {
     bool result = false;
 
@@ -213,7 +235,7 @@ bool str_eq(memmi_String a, memmi_String b)
     return result;
 }
 
-bool str_starts_with(memmi_String str, memmi_String substr)
+static bool str_starts_with(memmi_String str, memmi_String substr)
 {
     bool result = false;
 
@@ -225,7 +247,7 @@ bool str_starts_with(memmi_String str, memmi_String substr)
     return result;
 }
 
-Cut str_cut(memmi_String str, memmi_String pattern)
+static Cut str_cut(memmi_String str, memmi_String pattern)
 {
     Cut result = zero_struct(Cut);
     result.head = str;
@@ -254,7 +276,7 @@ Cut str_cut(memmi_String str, memmi_String pattern)
     return result;
 }
 
-memmi_String str_trim_leading_whitespace(memmi_String str)
+static memmi_String str_trim_leading_whitespace(memmi_String str)
 {
     memmi_String result = str;
 
@@ -266,7 +288,7 @@ memmi_String str_trim_leading_whitespace(memmi_String str)
     return result;
 }
 
-memmi_String str_trim_trailing_whitespace(memmi_String str)
+static memmi_String str_trim_trailing_whitespace(memmi_String str)
 {
     memmi_String result = str;
 
@@ -277,7 +299,7 @@ memmi_String str_trim_trailing_whitespace(memmi_String str)
     return result;
 }
 
-memmi_String str_trim_whitespace(memmi_String str)
+static memmi_String str_trim_whitespace(memmi_String str)
 {
     memmi_String result = str;
     result = str_trim_leading_whitespace(result);
@@ -290,13 +312,13 @@ memmi_String str_trim_whitespace(memmi_String str)
 /*      Safe arithmetic    */
 /***************************/
 // TODO: define these for other compilers
-#if defined(MEMMI_GCC)
+#if MEMMI_GCC
 #    define SAFE_ADD_S64(a, b, result_ptr)   !__builtin_add_overflow((a), (b), (result_ptr))
 #    define SAFE_ADD_U64(a, b, result_ptr)   !__builtin_add_overflow((a), (b), (result_ptr))
 #    define SAFE_MUL_S64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
 #    define SAFE_MUL_U64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
 #    define SAFE_MUL_USIZE(a, b, result_ptr) !__builtin_mul_overflow((a), (b), (result_ptr))
-#elif defined(MEMMI_MSVC)
+#elif MEMMI_MSVC
 // TODO: these can be simplified
 // TODO: are these even needed for win32?
 #    define SAFE_ADD_S64(a, b, result_ptr)   safe_add_s64_impl((a), (b), (result_ptr))
@@ -385,7 +407,7 @@ static bool safe_mul_usize_impl(size_t a, size_t b, size_t *out)
 #    error Unsupported compiler
 #endif
 
-MaybeS64 safe_add_s64(int64_t a, int64_t b)
+static MaybeS64 safe_add_s64(int64_t a, int64_t b)
 {
     MaybeS64 result = zero_struct(MaybeS64);
 
@@ -394,7 +416,7 @@ MaybeS64 safe_add_s64(int64_t a, int64_t b)
     return result;
 }
 
-MaybeU64 safe_add_u64(uint64_t a, uint64_t b)
+static MaybeU64 safe_add_u64(uint64_t a, uint64_t b)
 {
     MaybeU64 result = zero_struct(MaybeU64);
 
@@ -403,7 +425,7 @@ MaybeU64 safe_add_u64(uint64_t a, uint64_t b)
     return result;
 }
 
-MaybeS64 safe_mul_s64(int64_t a, int64_t b)
+static MaybeS64 safe_mul_s64(int64_t a, int64_t b)
 {
     MaybeS64 result = zero_struct(MaybeS64);
 
@@ -412,7 +434,7 @@ MaybeS64 safe_mul_s64(int64_t a, int64_t b)
     return result;
 }
 
-MaybeU64 safe_mul_u64(uint64_t a, uint64_t b)
+static MaybeU64 safe_mul_u64(uint64_t a, uint64_t b)
 {
     MaybeU64 result = zero_struct(MaybeU64);
 
@@ -421,7 +443,7 @@ MaybeU64 safe_mul_u64(uint64_t a, uint64_t b)
     return result;
 }
 
-MaybeUsize safe_mul_usize(size_t a, size_t b)
+static MaybeUsize safe_mul_usize(size_t a, size_t b)
 {
     MaybeUsize result = zero_struct(MaybeUsize);
 
@@ -453,7 +475,7 @@ static uint32_t parse_digit(char c, NumberBase base)
 }
 
 // TODO: These number parsing functions are bad
-MaybeS64 str_to_s64(memmi_String str, NumberBase base)
+static MaybeS64 str_to_s64(memmi_String str, NumberBase base)
 {
     // TODO: reduce code duplication between this and str_to_u64
     MaybeS64 result = zero_struct(MaybeS64);
@@ -513,7 +535,7 @@ MaybeS64 str_to_s64(memmi_String str, NumberBase base)
     return result;
 }
 
-MaybeU64 str_to_u64(memmi_String str, NumberBase base)
+static MaybeU64 str_to_u64(memmi_String str, NumberBase base)
 {
     MaybeU64 result = zero_struct(MaybeU64);
 
@@ -663,10 +685,11 @@ typedef struct {
 /***************************/
 /*      Architecture       */
 /***************************/
-#if defined(MEMMI_X64)
+// TODO: get rid of these macros, not worth it
+#if MEMMI_X64
 #    define MEMMI_REGISTER_PREFIX_LETTER_UPPER  R
 #    define MEMMI_REGISTER_PREFIX_LETTER_LOWER  r
-#elif defined(MEMMI_X86)
+#elif MEMMI_X86
 #    define MEMMI_REGISTER_PREFIX_LETTER_UPPER  E
 #    define MEMMI_REGISTER_PREFIX_LETTER_LOWER  e
 #endif
@@ -675,7 +698,7 @@ typedef struct {
 #define MEMMI_16_BIT_TO_32_64_BIT_REGISTER_ENUM(name)                                     \
     MEMMI_PP_CONCAT(MEMMI_REG_, MEMMI_PP_CONCAT(MEMMI_REGISTER_PREFIX_LETTER_UPPER, name))
 
-#if defined(MEMMI_X64)
+#if MEMMI_X64
 #    define MEMMI_VARIABLE_WIDTH_REGISTER_LIST_EXCLUDING_FLAGS  \
         MEMMI_REGISTER(RAX, rax)                                \
         MEMMI_REGISTER(RCX, rcx)                                \
@@ -686,7 +709,7 @@ typedef struct {
         MEMMI_REGISTER(RBP, rbp)                                \
         MEMMI_REGISTER(RBX, rbx)                                \
         MEMMI_REGISTER(RIP, rip)
-#elif defined(MEMMI_X86)
+#elif MEMMI_X86
 #    define MEMMI_VARIABLE_WIDTH_REGISTER_LIST_EXCLUDING_FLAGS  \
         MEMMI_REGISTER(EAX, eax)                                \
         MEMMI_REGISTER(ECX, ecx)                                \
@@ -718,13 +741,12 @@ typedef struct {
 #define DR7_LENGTH_BITS_BASE_INDEX  18u
 #define DR7_LENGTH_BITS_STRIDE      4u
 
-// TODO: don't use binary constants
-#define DR7_READ_WRITE_COND         0b11u
-#define DR7_WRITE_COND              0b01u
-#define DR7_SIZE_1_BYTES            0b00
-#define DR7_SIZE_2_BYTES            0b01
-#define DR7_SIZE_4_BYTES            0b11
-#define DR7_SIZE_8_BYTES            0b10
+#define DR7_READ_WRITE_COND         0x3u
+#define DR7_WRITE_COND              0x1u
+#define DR7_SIZE_1_BYTES            0x0u
+#define DR7_SIZE_2_BYTES            0x1u
+#define DR7_SIZE_4_BYTES            0x3u
+#define DR7_SIZE_8_BYTES            0x2u
 
 static memmi_Register debug_register_from_index(uint32_t index)
 {
@@ -759,9 +781,9 @@ static memmi_Register debug_register_from_index(uint32_t index)
 static memmi_RegisterValue dr7_breakpoint_mask(uint32_t breakpoint_index)
 {
     uint32_t result =
-          (0b01u << (DR7_ENABLE_BIT_BASE_INDEX  + breakpoint_index * DR7_ENABLE_BIT_STRIDE))
-        | (0b11u << (DR7_COND_BITS_BASE_INDEX   + breakpoint_index * DR7_COND_BITS_STRIDE))
-        | (0b11u << (DR7_LENGTH_BITS_BASE_INDEX + breakpoint_index * DR7_LENGTH_BITS_STRIDE));
+          (0x1u << (DR7_ENABLE_BIT_BASE_INDEX  + breakpoint_index * DR7_ENABLE_BIT_STRIDE))
+        | (0x3u << (DR7_COND_BITS_BASE_INDEX   + breakpoint_index * DR7_COND_BITS_STRIDE))
+        | (0x3u << (DR7_LENGTH_BITS_BASE_INDEX + breakpoint_index * DR7_LENGTH_BITS_STRIDE));
 
     return result;
 }
@@ -860,8 +882,8 @@ static int32_t get_dr6_breakpoint_index(memmi_RegisterValue dr6)
 /***************************/
 /* Platform implementation */
 /***************************/
-#if defined(MEMMI_LINUX)
+#if MEMMI_LINUX
 #    include "memmi_linux.c"
-#elif defined(MEMMI_WIN32)
+#elif MEMMI_WIN32
 #    include "memmi_win32.c"
 #endif
