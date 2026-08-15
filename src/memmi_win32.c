@@ -254,12 +254,12 @@ static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Regi
         case MEMMI_REG_R15: { context->R15 = value; } break;
         #endif
         
-        case MEMMI_REG_CS:  { context->SegCs = value; } break;                  
-        case MEMMI_REG_SS:  { context->SegSs = value; } break;                  
-        case MEMMI_REG_DS:  { context->SegDs = value; } break;                  
-        case MEMMI_REG_ES:  { context->SegEs = value; } break;                  
-        case MEMMI_REG_FS:  { context->SegFs = value; } break;                  
-        case MEMMI_REG_GS:  { context->SegGs = value; } break;                  
+        case MEMMI_REG_CS:  { context->SegCs = (WORD)value; } break;                  
+        case MEMMI_REG_SS:  { context->SegSs = (WORD)value; } break;                  
+        case MEMMI_REG_DS:  { context->SegDs = (WORD)value; } break;                  
+        case MEMMI_REG_ES:  { context->SegEs = (WORD)value; } break;                  
+        case MEMMI_REG_FS:  { context->SegFs = (WORD)value; } break;                  
+        case MEMMI_REG_GS:  { context->SegGs = (WORD)value; } break;                  
         
         case MEMMI_REG_DR0: { context->Dr0 = value; } break;                  
         case MEMMI_REG_DR1: { context->Dr1 = value; } break;                  
@@ -269,7 +269,7 @@ static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Regi
         case MEMMI_REG_DR7: { context->Dr7 = value; } break;  
 
         #if defined(MEMMI_X64)
-        case MEMMI_REG_RFLAGS: { context->EFlags = value; } break;                         
+        case MEMMI_REG_RFLAGS: { context->EFlags = (DWORD)value; } break;                         
         #elif defined(MEMMI_X86)
         case MEMMI_REG_EFLAGS: { context->EFlags = value; } break;                  
         #endif

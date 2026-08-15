@@ -3,6 +3,7 @@ a.out
 
 .cache/
 .vs/
+build/
 
 *.obj
 *.exe
