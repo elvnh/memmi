@@ -737,13 +737,12 @@ typedef struct {
 #define DR7_LENGTH_BITS_BASE_INDEX  18u
 #define DR7_LENGTH_BITS_STRIDE      4u
 
-// TODO: don't use binary constants
-#define DR7_READ_WRITE_COND         0b11u
-#define DR7_WRITE_COND              0b01u
-#define DR7_SIZE_1_BYTES            0b00
-#define DR7_SIZE_2_BYTES            0b01
-#define DR7_SIZE_4_BYTES            0b11
-#define DR7_SIZE_8_BYTES            0b10
+#define DR7_READ_WRITE_COND         0x3u
+#define DR7_WRITE_COND              0x1u
+#define DR7_SIZE_1_BYTES            0x0u
+#define DR7_SIZE_2_BYTES            0x1u
+#define DR7_SIZE_4_BYTES            0x3u
+#define DR7_SIZE_8_BYTES            0x2u
 
 static memmi_Register debug_register_from_index(uint32_t index)
 {
@@ -778,9 +777,9 @@ static memmi_Register debug_register_from_index(uint32_t index)
 static memmi_RegisterValue dr7_breakpoint_mask(uint32_t breakpoint_index)
 {
     uint32_t result =
-          (0b01u << (DR7_ENABLE_BIT_BASE_INDEX  + breakpoint_index * DR7_ENABLE_BIT_STRIDE))
-        | (0b11u << (DR7_COND_BITS_BASE_INDEX   + breakpoint_index * DR7_COND_BITS_STRIDE))
-        | (0b11u << (DR7_LENGTH_BITS_BASE_INDEX + breakpoint_index * DR7_LENGTH_BITS_STRIDE));
+          (0x1u << (DR7_ENABLE_BIT_BASE_INDEX  + breakpoint_index * DR7_ENABLE_BIT_STRIDE))
+        | (0x3u << (DR7_COND_BITS_BASE_INDEX   + breakpoint_index * DR7_COND_BITS_STRIDE))
+        | (0x3u << (DR7_LENGTH_BITS_BASE_INDEX + breakpoint_index * DR7_LENGTH_BITS_STRIDE));
 
     return result;
 }
