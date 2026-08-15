@@ -24,8 +24,6 @@ if "%release%"=="1" set debug=0&& echo [mode: release]
 if "%shared%"=="1" set static=0&& echo [target: shared]
 if "%static%"=="1" set shared=0&& echo [target: static]
 
-call vcvarsall %arch% > nul 2>&1
-
 :: Compiler flags
 set sources=src/memmi.c
 set build_dir=build
@@ -51,18 +49,25 @@ if %msvc%==1 set cflags=%msvc_cflags%
 if %clang%==1 set cflags=%clang_cflags%
 
 :: Compilation
-if not exist %build_dir% mkdir %build_dir%
-
-
 set extension=
 if %static%==1 set extension=lib
 if %shared%==1 set extension=dll
 
-echo [compiling...]
-%compiler% %cflags% %sources%
+if not exist %build_dir% mkdir %build_dir% ||goto error
 
-if %static%==1 lib %bin%.obj /OUT:%bin%.%extension% /NOLOGO
-if %shared%==1 link %bin%.obj /OUT:%bin%.%extension% /DLL /NOLOGO
+:: TODO: check that running this script succeeds
+call vcvarsall %arch% > nul 2>&1 || goto error
+
+echo [compiling...]
+%compiler% %cflags% %sources% || goto error
+
+if %static%==1 lib %bin%.obj /OUT:%bin%.%extension% /NOLOGO || goto error
+if %shared%==1 link %bin%.obj /OUT:%bin%.%extension% /DLL /NOLOGO || goto error
 
 :: TODO: check if we actually succeeded
 echo [successfully built '%bin%.%extension%']
+exit /b 0
+
+:error
+echo [error: failed to build '%bin%.%extension%']
+exit /b 1
