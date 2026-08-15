@@ -38,6 +38,10 @@
 #    define MEMMI_MSVC 0
 #endif
 
+#if !defined(MEMMI_DEBUG)
+#    define MEMMI_DEBUG 0
+#endif
+
 #include "memmi.h"
 
 #include <stdlib.h>

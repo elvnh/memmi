@@ -4,7 +4,7 @@
 CC="${CC:-gcc}"
 
 CFLAGS_DEBUG="-ggdb -fsanitize=address,undefined -DMEMMI_DEBUG=1"
-CFLAGS_RELEASE="-DMEMMI_DEBUG=0"
+CFLAGS_RELEASE=""
 
 CFLAGS_SHARED="-fPIC -shared"
 CFLAGS_STATIC="-c"
@@ -31,6 +31,7 @@ CFLAGS_COMMON="
     -Wenum-conversion
     -Wnull-dereference
     -Wdouble-promotion
+    -Wlogical-not-parentheses
     -Wformat=2
     -Wcast-align
     -Werror=return-type
