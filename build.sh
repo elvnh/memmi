@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
 
-# TODO: allow building as shared library
-
-# Options
-CC="${CC:-gcc}"
-DEBUG="${DEBUG:-0}"
-ARCH="${ARCH:-""}"
-SHARED="${SHARED:-0}"
-
 # Compiler flags
+CC="${CC:-gcc}"
+
 CFLAGS_DEBUG="-ggdb -fsanitize=address,undefined -DMEMMI_DEBUG=1"
 CFLAGS_RELEASE="-DMEMMI_DEBUG=0"
 
@@ -58,53 +52,38 @@ CFLAGS_COMMON="
 
 CFLAGS="${CFLAGS_COMMON}"
 
+# Options
+for arg in "$@"; do
+    declare "$arg"="1";
+done
+
+if   [[ "${clang:-0}" == "1" ]]; then echo "[compiler: clang]"; CFLAGS="${CFLAGS} ${CFLAGS_CLANG}";
+elif [[ "${gcc:-1}" == "1" ]];   then echo "[compiler: gcc]";   CFLAGS="${CFLAGS} ${CFLAGS_GCC}";
+fi
+
+if   [[ "${debug:-0}" == "1" ]];   then echo "[mode: debug]"; CFLAGS="${CFLAGS} ${CFLAGS_DEBUG}";
+elif [[ "${release:-1}" == "1" ]]; then echo "[mode: release]"; CFLAGS="${CFLAGS} ${CFLAGS_RELEASE}";
+fi
+
+if   [[ "${x86:-0}" == "1" ]]; then echo "[architecture: x86]"; CFLAGS="${CFLAGS} ${CFLAGS_X86}";
+elif [[ "${x64:-1}" == "1" ]]; then echo "[architecture: x64]"; CFLAGS="${CFLAGS} ${CFLAGS_X64}";
+fi
+
+if [[ "${shared:-0}" == "1" ]]; then
+    echo "[target: shared]";
+    CFLAGS="${CFLAGS} ${CFLAGS_SHARED}";
+    EXTENSION=".so"
+elif [[ "${static:-1}" == "1" ]]; then
+    echo "[target: static]";
+    CFLAGS="${CFLAGS} ${CFLAGS_STATIC}";
+    EXTENSION=".a"
+fi
+
 # Compilation
 SOURCES=src/memmi.c
 BUILD_DIR="build"
 BIN="${BUILD_DIR}/memmi"
 EXTENSION=""
-
-echo "[compiler: ${CC}]";
-if   [[ "${CC}" == "gcc" ]];   then CFLAGS="${CFLAGS} ${CFLAGS_GCC}";
-elif [[ "${CC}" == "clang" ]]; then CFLAGS="${CFLAGS} ${CFLAGS_CLANG}";
-fi
-
-if   [[ "${DEBUG}" == "1" ]]; then echo "[mode: debug]"; CFLAGS="${CFLAGS} ${CFLAGS_DEBUG}";
-elif [[ "${DEBUG}" == "0" ]]; then echo "[mode: release]"; CFLAGS="${CFLAGS} ${CFLAGS_RELEASE}";
-else
-    echo "[error: Invalid argument for option DEBUG.]";
-    exit 1
-fi
-
-if [[ "${ARCH}" == "" ]]; then
-    bits=$(getconf LONG_BIT)
-    if   [[ "${bits}" == "64" ]]; then ARCH="x64";
-    elif [[ "${bits}" == "32" ]]; then ARCH="x86";
-    else
-        echo "[error: Could not get platform architecture, please provide manually]";
-        exit 1;
-    fi
-fi
-
-if   [[ "${ARCH}" == "x64" ]]; then echo "[architecture: x64]"; CFLAGS="${CFLAGS} ${CFLAGS_X64}";
-elif [[ "${ARCH}" == "x86" ]]; then echo "[architecture: x86]"; CFLAGS="${CFLAGS} ${CFLAGS_X86}";
-else
-    echo "[error: Invalid argument for option ARCH.]";
-    exit 1
-fi
-
-if   [[ "${SHARED}" == "1" ]]; then
-    echo "[target: shared]";
-    CFLAGS="${CFLAGS} ${CFLAGS_SHARED}";
-    EXTENSION=".so"
-elif [[ "${SHARED}" == "0" ]]; then
-    echo "[target: static]";
-    CFLAGS="${CFLAGS} ${CFLAGS_STATIC}";
-    EXTENSION=".a"
-else
-    echo "[error: Invalid argument for option ARCH.]";
-    exit 1
-fi
 
 BIN="${BIN}${EXTENSION}"
 
