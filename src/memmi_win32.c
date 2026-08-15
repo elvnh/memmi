@@ -518,9 +518,8 @@ static memmi_MemoryRegionPermission page_protection_to_memmi_permissions(DWORD p
 
     // Mask out modifiers in the region protection.
     // TODO: should we handle any of these in a special way?
-    DWORD protection_without_modifiers = protect
-        & ~(PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE);
-
+    DWORD protection_without_modifiers = protect & (DWORD)(~(PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE));
+    
     switch (protection_without_modifiers) {
         case PAGE_EXECUTE: {
             result = MEMMI_REGION_PERMISSION_EXECUTE;
@@ -732,7 +731,7 @@ static ForEachThreadResult resume_thread_cb(void *user_data, DWORD pid)
             prev_suspend_count = ResumeThread(handle.data);
         } while (prev_suspend_count > 0);
 
-        if (prev_suspend_count == -1) {
+        if (prev_suspend_count == (DWORD)-1) {
             set_flag(context->statuses, windows_error_to_memmi_status(GetLastError()));
         }
     }
@@ -833,7 +832,7 @@ memmi_Status memmi_suspend_process(memmi_Process process)
                 ASSERT(result != MEMMI_OK);
             } else {
                 uint32_t statuses_excluding_no_such_process =
-                    cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+                    (uint32_t)((uint32_t)cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS);
 
                 result = (memmi_Status)statuses_excluding_no_such_process;
             }
@@ -851,7 +850,7 @@ typedef struct {
 } Win32EventResult;
 
 // TODO: we may want to pass the event via pointer in case the struct is very large
-static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event, memmi_Allocator allocator)
+static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event)
 {
     Win32EventResult result = zero_struct(Win32EventResult);
 
@@ -885,7 +884,7 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event, memm
                                 MEMMI_REG_EIP
                             #endif
                         ;
-                        result.event.as.breakpoint.breakpoint_index = breakpoint_index;
+                        result.event.as.breakpoint.breakpoint_index = (uint32_t)breakpoint_index;
                         result.event.as.breakpoint.ip_register = regs.values[ip_register];
                     }
                 } break;
@@ -921,7 +920,7 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event, memm
             DWORD tid = GetThreadId(thread_handle);
             ASSERT(tid != 0);
 
-            result.event.as.new_thread.id.value = (uint64_t)tid;
+            result.event.as.new_thread.id.value = (int64_t)tid;
 
             CloseHandle(thread_handle);
         } break;
@@ -933,12 +932,12 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event, memm
 
         case EXIT_THREAD_DEBUG_EVENT: {
             result.event.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-            result.event.as.exit_code = win32_event.u.ExitThread.dwExitCode;
+            result.event.as.exit_code = (int)win32_event.u.ExitThread.dwExitCode;
         } break;
 
         case EXIT_PROCESS_DEBUG_EVENT: {
             result.event.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
-            result.event.as.exit_code = win32_event.u.ExitProcess.dwExitCode;
+            result.event.as.exit_code = (int)win32_event.u.ExitProcess.dwExitCode;
         } break;
 
         // TODO: Investigate if we can implement SO loading events for Linux. If so,
@@ -993,7 +992,7 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
             if (pid == win32_event.dwProcessId) {
                 result.id_of_affected_thread.value = win32_event.dwThreadId;
 
-                Win32EventResult event_result = win32_event_to_memmi_event(win32_event, allocator);
+                Win32EventResult event_result = win32_event_to_memmi_event(win32_event);
 
                 if (event_result.status != MEMMI_OK) {
                     result.status = event_result.status;
@@ -1076,7 +1075,7 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_
 
             BOOL set_context_result = SetThreadContext(handle.data, &context.data);
 
-            if (!set_context_result != MEMMI_OK) {
+            if (set_context_result != MEMMI_OK) {
                 result = windows_error_to_memmi_status(GetLastError());
             }
         }
@@ -1122,7 +1121,7 @@ static ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data,
 
         BOOL set_context_result = SetThreadContext(handle.data, &context.data);
 
-        if (!set_context_result != MEMMI_OK) {
+        if (set_context_result != MEMMI_OK) {
             status = windows_error_to_memmi_status(GetLastError());
         }
     }

@@ -37,12 +37,15 @@ set msvc_cflags=/Iinclude /W4 /wd4100 /wd4702 /wd4127 /nologo /Fo:%bin% /c
 set msvc_cflags_debug=-Zi /DMEMMI_DEBUG=1 /fsanitize=address
 set msvc_cflags_release=
 
-set clang_cflags=-Iinclude -Werror -std=c99 -Wall -Wextra -Wshadow -Wcast-align -Wunused -Wconversion -Wstrict-prototypes -Wsign-conversion -Wsign-compare -Wenum-compare -Wenum-conversion -Wnull-dereference -Wdouble-promotion -Wformat=2 -Wcast-align -Werror=return-type -Werror=incompatible-pointer-types -Werror=int-conversion -Werror=implicit-function-declaration -Werror=overflow -Werror=implicit-int -Wsign-conversion -Werror=missing-braces -Werror=ignored-qualifiers -Wno-error=unused-parameter -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=unused-but-set-variable
+set clang_cflags=-Iinclude -c -o%bin%.obj -Werror -std=c99 -Wall -Wextra -Wshadow -Wcast-align -Wunused -Wconversion -Wstrict-prototypes -Wsign-conversion -Wsign-compare -Wenum-compare -Wenum-conversion -Wnull-dereference -Wdouble-promotion -Wformat=2 -Wcast-align -Werror=return-type -Werror=incompatible-pointer-types -Werror=int-conversion -Werror=implicit-function-declaration -Werror=overflow -Werror=implicit-int -Wsign-conversion -Werror=missing-braces -Werror=ignored-qualifiers -Wno-error=unused-parameter -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-unused-function
 set clang_cflags_debug=-g -fsanitize=address,undefined
 set clang_cflags_release=
 
 if %debug%==1 set msvc_cflags=%msvc_cflags% %msvc_cflags_debug%&& set clang_flags=%clang_cflags% %clang_cflags_debug%
 if %release%==1 set msvc_cflags=%msvc_cflags% %msvc_cflags_release%&& set clang_cflags=%clang_cflags% %clang_cflags_release%
+
+if %x64%==1 set clang_cflags=%clang_cflags% -m64
+if %x86%==1 set clang_cflags=%clang_cflags% -m32
 
 if %msvc%==1 set cflags=%msvc_cflags%
 if %clang%==1 set cflags=%clang_cflags%
@@ -50,9 +53,16 @@ if %clang%==1 set cflags=%clang_cflags%
 :: Compilation
 if not exist %build_dir% mkdir %build_dir%
 
+
+set extension=
+if %static%==1 set extension=lib
+if %shared%==1 set extension=dll
+
 echo [compiling...]
 %compiler% %cflags% %sources%
 
-:: TODO: check if ok
-if %static%==1 lib %bin%.obj /OUT:%bin%.a /NOLOGO
-if %shared%==1 link %bin%.obj /OUT:%bin%.dll /DLL /NOLOGO
+if %static%==1 lib %bin%.obj /OUT:%bin%.%extension% /NOLOGO
+if %shared%==1 link %bin%.obj /OUT:%bin%.%extension% /DLL /NOLOGO
+
+:: TODO: check if we actually succeeded
+echo [successfully built '%bin%.%extension%']

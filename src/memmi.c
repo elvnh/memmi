@@ -557,7 +557,7 @@ static MaybeU64 str_to_u64(memmi_String str, NumberBase base)
             result.ok = false;
             break;
         } else {
-            MaybeU64 factor = safe_mul_u64(result.value, base);
+            MaybeU64 factor = safe_mul_u64(result.value, (uint64_t)base);
 
             if (factor.ok) {
                 result.value = factor.value;
@@ -603,7 +603,7 @@ static void *memmi_default_allocate(void *ctx, void *ptr, size_t old_count, size
     return result;
 }
 
-memmi_Allocator memmi_default_allocator()
+memmi_Allocator memmi_default_allocator(void)
 {
     memmi_Allocator result = {0, memmi_default_allocate};
 
