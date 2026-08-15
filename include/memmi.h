@@ -4,11 +4,19 @@
 #include <stdint.h>
 
 #if defined(__x86_64) || defined(__x86_64__) || defined(__amd64) || defined(__amd64__) || defined (_M_AMD64)
-#    define MEMMI_X64
+#    define MEMMI_X64 1
 #elif defined(i386) || defined(__i386) || defined(__i386__) || defined(_M_IX86)
-#    define MEMMI_X86
+#    define MEMMI_X86 1
 #else
 #    error Unsupported architecture
+#endif
+
+#if !defined(MEMMI_X64)
+#    define MEMMI_X64 0
+#endif
+
+#if !defined(MEMMI_X86)
+#    define MEMMI_X86 0
 #endif
 
 /* Type definitions */

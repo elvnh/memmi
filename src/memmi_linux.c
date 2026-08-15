@@ -453,9 +453,9 @@ static size_t get_user_struct_debug_register_offset(memmi_Register reg)
     return result;
 }
 
-#if defined(MEMMI_X64)
+#if MEMMI_X64
 typedef unsigned long long memmi_UserRegsStructMember;
-#elif defined(MEMMI_X86)
+#elif MEMMI_X86
 typedef long memmi_UserRegsStructMember;
 #endif
 
@@ -468,9 +468,9 @@ static memmi_UserRegsStructMember *get_user_regs_member_pointer(struct user_regs
 
         MEMMI_VARIABLE_WIDTH_REGISTER_LIST_EXCLUDING_FLAGS
 
-#    if defined(MEMMI_X64)
+        #if MEMMI_X64
             MEMMI_X64_ONLY_REGISTER_LIST
-#    endif
+        #endif
 
 #undef MEMMI_VARIABLE_WIDTH_REGISTER
 
@@ -480,49 +480,49 @@ static memmi_UserRegsStructMember *get_user_regs_member_pointer(struct user_regs
 
         // TODO: is it worth it to create a macro for these segment registers?
         case MEMMI_REG_CS: {
-            #if defined(MEMMI_X64)
+            #if MEMMI_X64
             result = &regs->cs;
-            #elif defined(MEMMI_X64)
+            #elif MEMMI_X86
             result = &regs->xcs;
             #endif
         } break;
 
         case MEMMI_REG_SS: {
-            #if defined(MEMMI_X64)
+            #if MEMMI_X64
             result = &regs->ss;
-            #elif defined(MEMMI_X64)
+            #elif MEMMI_X86
             result = &regs->xss;
             #endif
         } break;
 
         case MEMMI_REG_DS: {
-            #if defined(MEMMI_X64)
+            #if MEMMI_X64
             result = &regs->ds;
-            #elif defined(MEMMI_X64)
+            #elif MEMMI_X86
             result = &regs->xds;
             #endif
         } break;
 
         case MEMMI_REG_ES: {
-            #if defined(MEMMI_X64)
+            #if MEMMI_X64
             result = &regs->es;
-            #elif defined(MEMMI_X64)
+            #elif MEMMI_X86
             result = &regs->xes;
             #endif
         } break;
 
         case MEMMI_REG_FS: {
-            #if defined(MEMMI_X64)
+            #if MEMMI_X64
             result = &regs->fs;
-            #elif defined(MEMMI_X64)
+            #elif MEMMI_X86
             result = &regs->xfs;
             #endif
         } break;
 
         case MEMMI_REG_GS: {
-            #if defined(MEMMI_X64)
+            #if MEMMI_X64
             result = &regs->gs;
-            #elif defined(MEMMI_X64)
+            #elif MEMMI_X86
             result = &regs->xgs;
             #endif
         } break;
