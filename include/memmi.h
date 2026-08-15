@@ -11,6 +11,7 @@
 #    error Unsupported architecture
 #endif
 
+// Define all undefined context definitions to 0.
 #if !defined(MEMMI_X64)
 #    define MEMMI_X64 0
 #endif
@@ -54,7 +55,6 @@ typedef struct {
   - Separate architecture-specific things into separate file
   - Unit test breakpoints
   - Letting user spawn a new process as a debuggee rather than just attaching
-
  */
 
 typedef struct {
@@ -163,7 +163,7 @@ typedef struct {
 // TODO: floating point registers
 typedef enum {
     // General purpose registers
-#if defined(MEMMI_X64)
+#if MEMMI_X64
     MEMMI_REG_RAX,
     MEMMI_REG_RCX,
     MEMMI_REG_RDX,
@@ -172,7 +172,7 @@ typedef enum {
     MEMMI_REG_RSP,
     MEMMI_REG_RBP,
     MEMMI_REG_RBX,
-#elif defined(MEMMI_X86)
+#elif MEMMI_X86
     MEMMI_REG_EAX,
     MEMMI_REG_ECX,
     MEMMI_REG_EDX,
@@ -193,10 +193,10 @@ typedef enum {
     MEMMI_REG_R15,
 
     // Instruction pointer and flags
-#if defined(MEMMI_X64)
+#if MEMMI_X64
     MEMMI_REG_RIP,
     MEMMI_REG_RFLAGS,
-#elif defined(MEMMI_X86)
+#elif MEMMI_X86
     MEMMI_REG_EIP,
     MEMMI_REG_EFLAGS,
 #endif
@@ -221,9 +221,9 @@ typedef enum {
     MEMMI_REG_COUNT
 } memmi_Register;
 
-#if defined(MEMMI_X64)
+#if MEMMI_X64
     typedef uint64_t memmi_RegisterValue;
-#elif defined(MEMMI_X86)
+#elif MEMMI_X86
     typedef uint32_t memmi_RegisterValue;
 #endif
 
