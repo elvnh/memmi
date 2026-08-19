@@ -15,7 +15,7 @@ CFLAGS_X86="-m32"
 CFLAGS_CLANG=""
 CFLAGS_GCC=""
 CFLAGS_COMMON="
-    -Iinclude
+    -Iinclude/memmi
     -Werror
     -std=c99
     -Wall

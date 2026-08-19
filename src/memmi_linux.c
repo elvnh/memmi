@@ -53,7 +53,7 @@ static ProcessName get_process_name(int proc_dir_fd, memmi_Allocator allocator)
     } else {
         name_buffer[bytes_written] = '\0';
         result.value.data = name_buffer;
-        result.value.count = (size_t)bytes_written};
+        result.value.count = (size_t)bytes_written;
 
         result.ok = true;
     }
@@ -1432,10 +1432,8 @@ static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int wai
                     // This is some other kind of stopping signal.
                     result.data.kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
                 }
-            } else if (WIFCONTINUED(waitpid_status)) {
-                result.should_ignore = true;
             } else {
-                ASSERT(0 && "Unreachable");
+                ASSERT(WIFCONTINUED(waitpid_status));
                 result.should_ignore = true;
             }
         } break;
