@@ -52,7 +52,8 @@ static ProcessName get_process_name(int proc_dir_fd, memmi_Allocator allocator)
         deallocate(allocator, name_buffer, name_buffer_size);
     } else {
         name_buffer[bytes_written] = '\0';
-        result.value = (memmi_String) {name_buffer, (size_t)bytes_written};
+        result.value.data = name_buffer;
+        result.value.count = (size_t)bytes_written};
 
         result.ok = true;
     }

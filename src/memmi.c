@@ -754,7 +754,7 @@ typedef struct {
 
 static memmi_Register debug_register_from_index(uint32_t index)
 {
-    memmi_Register result = zero_enum(DebugRegister);
+    memmi_Register result = zero_enum(memmi_Register);
 
     switch (index) {
         case 0: {
