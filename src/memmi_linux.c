@@ -690,6 +690,13 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     result.data = processes.data;
     result.count = processes.count;
 
+    #if MEMMI_DEBUG
+    for (size_t i = 0; i < result.count; ++i) {
+        ASSERT(result.data[i].name.count > 0);
+        ASSERT(result.data[i].name.data);
+    }
+    #endif
+
     return result;
 }
 
