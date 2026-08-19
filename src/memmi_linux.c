@@ -432,20 +432,27 @@ static int get_signal_from_wait_status(int status)
     return result;
 }
 
-// TODO: I believe using designated array initializers won't work in C++
-static size_t debug_register_user_struct_indices[] = {
-    [MEMMI_REG_DR0] = 0,
-    [MEMMI_REG_DR1] = 1,
-    [MEMMI_REG_DR2] = 2,
-    [MEMMI_REG_DR3] = 3,
-    [MEMMI_REG_DR6] = 6,
-    [MEMMI_REG_DR7] = 7,
-};
+static size_t get_debug_register_user_struct_index(memmi_Register reg)
+{
+    size_t result = 0;
+
+    switch (reg) {
+        case MEMMI_REG_DR0: { result = 0; } break;
+        case MEMMI_REG_DR1: { result = 1; } break;
+        case MEMMI_REG_DR2: { result = 2; } break;
+        case MEMMI_REG_DR3: { result = 3; } break;
+        case MEMMI_REG_DR6: { result = 6; } break;
+        case MEMMI_REG_DR7: { result = 7; } break;
+        default: { ASSERT(false); } break;
+    }
+
+    return result;
+}
 
 static size_t get_user_struct_debug_register_offset(memmi_Register reg)
 {
     struct user u = zero_struct(struct user);
-    size_t reg_index = debug_register_user_struct_indices[reg];
+    size_t reg_index = get_debug_register_user_struct_index(reg);
     size_t regs_base = offsetof(struct user, u_debugreg);
     size_t reg_offset = reg_index * sizeof(*u.u_debugreg);
 
@@ -703,15 +710,13 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, siz
         if (!result.memory) {
             result.status = MEMMI_ALLOCATION_FAILED;
         } else {
-            struct iovec local_iov = {
-                .iov_base = result.memory,
-                .iov_len = size
-            };
+            struct iovec local_iov = zero_struct(struct iovec);
+            local_iov.iov_base = result.memory;
+            local_iov.iov_len = size;
 
-            struct iovec remote_iov = {
-                .iov_base = (void *)address,
-                .iov_len = size
-            };
+            struct iovec remote_iov = zero_struct(struct iovec);
+            remote_iov.iov_base = (void *)address;
+            remote_iov.iov_len = size;
 
             ssize_t bytes_read = process_vm_readv(pid, &local_iov, 1, &remote_iov, 1, 0);
 
@@ -738,15 +743,13 @@ memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void 
     if (src_size > (size_t)SSIZE_MAX) {
         result.status = MEMMI_INVALID_ARGUMENTS;
     } else {
-        struct iovec local_iov = {
-            .iov_base = src,
-            .iov_len = src_size
-        };
+        struct iovec local_iov = zero_struct(struct iovec);
+        local_iov.iov_base = src;
+        local_iov.iov_len = src_size;
 
-        struct iovec remote_iov = {
-            .iov_base = (void *)dst,
-            .iov_len = src_size
-        };
+        struct iovec remote_iov = zero_struct(struct iovec);;
+        remote_iov.iov_base = (void *)dst;
+        remote_iov.iov_len = src_size;
 
         ssize_t bytes_written = process_vm_writev(pid, &local_iov, 1, &remote_iov, 1, 0);
 
@@ -820,11 +823,10 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
 
     size_t region_size = end_address - base_address;
 
-    memmi_MemoryRegion result = {
-        .base_address = base_address,
-        .size = region_size,
-        .permissions = permissions
-    };
+    memmi_MemoryRegion result = zero_struct(memmi_MemoryRegion);
+    result.base_address = base_address;
+    result.size = region_size;
+    result.permissions = permissions;
 
     return result;
 }
@@ -1344,7 +1346,7 @@ typedef struct {
 static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int waitpid_status,
     siginfo_t sig_info, pid_t id_of_affected_thread)
 {
-    DebugEventResult result = {0};
+    DebugEventResult result = zero_struct(DebugEventResult);
 
     pid_t native_pid = get_native_pid(proc);
 
@@ -1362,7 +1364,7 @@ static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int wai
                 result.status = errno_to_memmi_status(errno);
             } else {
                 result.data.kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
-                result.data.as.new_thread.id = (memmi_TID){(int64_t)new_thread_id};
+                result.data.as.new_thread.id.value = (int64_t)new_thread_id;
             }
         } break;
 

@@ -64,9 +64,14 @@
 #define reallocate(a, ptr, old_count, new_count) (TYPEOF(ptr))((a).function((a).context, (ptr), (old_count), \
             (new_count), sizeof(*(ptr)), ALIGNOF(TYPEOF(*(ptr)))))
 #define deallocate(a, ptr, count) (a).function((a).context, (ptr), (count), 0, sizeof(*(ptr)), ALIGNOF(TYPEOF(*(ptr))))
-#define str_from_span(span) (memmi_String) {(span).data, (span).count}
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ARRAY_COUNT(arr) (sizeof((arr)) / sizeof(*(arr)))
+
+#ifdef __cplusplus
+#    define str_from_span(span) {(span).data, (span).count}
+#else
+#    define str_from_span(span) (memmi_String) {(span).data, (span).count}
+#endif
 
 #define MEMMI_PP_CONCAT_(a, b) a ## b
 #define MEMMI_PP_CONCAT(a, b) MEMMI_PP_CONCAT_(a, b)
