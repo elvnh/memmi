@@ -662,6 +662,8 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                         ProcessName proc_name = get_process_name(subdir_fd, allocator);
 
                         if (proc_name.ok) {
+                            ASSERT(proc_name.data.count > 0);
+
                             int64_t pid_value = number_opt.value;
                             memmi_ProcessInfo proc = {proc_name.value, {pid_value}};
 
