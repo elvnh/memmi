@@ -888,6 +888,16 @@ static int32_t get_dr6_breakpoint_index(memmi_RegisterValue dr6)
     return result;
 }
 
+/*******************************************/
+/* Platform-independent API implementation */
+/*******************************************/
+int memmi_process_is_null(memmi_Process process)
+{
+    int result = process.pid.value == 0;
+
+    return result;
+}
+
 /***************************/
 /* Platform implementation */
 /***************************/
