@@ -835,11 +835,7 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
         char buffer[256];
 
         while (fgets(buffer, ARRAY_COUNT(buffer), maps_file.libc_file_handle)) {
-            // Replace the trailing newline with a null byte so that we can provide the
-            // pathname to fopen.
-            // TODO: do this in a less cursed way.
             size_t line_length = strlen(buffer);
-
             memmi_lnx_Region lnx_region = parse_memory_region(buffer, line_length);
 
             bool should_begin_new_object =
@@ -1069,6 +1065,10 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
             size_t line_length = strlen(buffer);
 
             memmi_lnx_Region lnx_region = parse_memory_region(buffer, line_length);
+
+            if (lnx_region.region_info.kind == MEMMI_REGION_MAPPED_FILE) {
+                lnx_region.region_info.backing_file_name = str_copy(lnx_region.pathname_view, allocator);
+            }
 
             DynArray new_regions = dyn_arr_push(&regions, lnx_region.region_info, allocator);
 
