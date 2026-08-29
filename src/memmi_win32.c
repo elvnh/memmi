@@ -602,6 +602,31 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
                 region.size = info.RegionSize;
                 region.permissions = page_protection_to_memmi_permissions(info.Protect);
 
+                if (info.Type == MEM_MAPPED) {
+                    region.kind = MEMMI_REGION_MAPPED_FILE;
+                    
+                    // TODO: verify that this works
+                    char filename[MAX_PATH];
+                    
+                    DWORD get_filename_result = GetMappedFileNameA(
+                        handle,
+                        (void *)region.base_address,
+                        filename,
+                        ARRAY_COUNT(filename)
+                    );
+                    
+                    ASSERT(get_filename_result > 0);
+                    
+                    if (get_filename_result == 0) {
+                        result.status = windows_error_to_memmi_status(GetLastError());
+                    } else {
+                        memmi_String filename_str = {filename, get_filename_result};
+                        region.backing_file_name = str_copy(filename_str, allocator);
+                    }
+                } else {
+                    region.kind = MEMMI_REGION_NORMAL;
+                }
+
                 // TODO: check that dyn_arr_push doesn't fail
                 DynArray new_regions = dyn_arr_push(&regions, region, allocator);
                 

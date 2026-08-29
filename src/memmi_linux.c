@@ -680,18 +680,51 @@ static memmi_Status set_thread_debug_register(pid_t tid, memmi_Register reg, mem
     return result;
 }
 
+static bool memmi_lnx_file_is_so_or_executable(memmi_String path)
+{
+    bool result = false;
+
+    // TODO: make sure that this is null terminated
+    FILE *file = fopen(path.data, "rb");
+    ASSERT(file);
+
+    if (file) {
+        memmi_lnx_ElfHeader elf_header = zero_struct(memmi_lnx_ElfHeader);
+
+        if (fread(&elf_header, sizeof(elf_header), 1, file) == 1) {
+            result = memcmp(elf_header.e_ident, ELFMAG, SELFMAG) == 0;
+        }
+    }
+
+    fclose(file);
+
+
+    return result;
+}
+
+static bool memmi_lnx_path_is_potential_object(memmi_String path)
+{
+    bool result = (path.count > 0) && (path.data[0] != '[');
+
+    return result;
+}
 
 typedef struct {
     memmi_MemoryRegion region_info;
     memmi_String pathname_view; // NOTE: Only a view into string provided, not a copy
 } memmi_lnx_Region;
 
-static memmi_lnx_Region parse_memory_region(memmi_String line)
+// TODO: make this take a cstr instead
+static memmi_lnx_Region parse_memory_region(char *line, size_t length)
 {
+    // Replace the trailing newline with a null terminator.
+    line[length - 1] = '\0';
+
+    memmi_String line_str = {line, length};
     memmi_String fields[6];
 
     memmi_String space_lit = str_lit(" ");
-    Cut cut = str_cut(line, space_lit);
+    Cut cut = str_cut(line_str, space_lit);
 
     for (size_t i = 0; i < ARRAY_COUNT(fields); ++i) {
         if (cut.head.count > 0) {
@@ -741,7 +774,9 @@ static memmi_lnx_Region parse_memory_region(memmi_String line)
     }
 
     memmi_String pathname = fields[pathname_index];
-    /* --pathname.count; // Pathname contains a trailing newline. */
+    if ((pathname.count == 1) && (pathname.data[0] == '\0')) {
+        pathname = zero_struct(memmi_String);
+    }
 
     size_t region_size = end_address - base_address;
 
@@ -750,6 +785,12 @@ static memmi_lnx_Region parse_memory_region(memmi_String line)
     result.region_info.size = region_size;
     result.region_info.permissions = permissions;
     result.pathname_view = pathname;
+
+    if ((pathname.count == 0) || (pathname.data[0] == '[') || memmi_lnx_file_is_so_or_executable(pathname)) {
+        result.region_info.kind = MEMMI_REGION_NORMAL;
+    } else {
+        result.region_info.kind = MEMMI_REGION_MAPPED_FILE;
+    }
 
     return result;
 }
@@ -768,35 +809,6 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid)
     } else {
         result.process.pid = pid;
     }
-
-    return result;
-}
-
-static bool memmi_lnx_file_is_so_or_executable(memmi_String path)
-{
-    bool result = false;
-
-    // TODO: make sure that this is null terminated
-    FILE *file = fopen(path.data, "rb");
-    ASSERT(file);
-
-    if (file) {
-        memmi_lnx_ElfHeader elf_header = zero_struct(memmi_lnx_ElfHeader);
-
-        if (fread(&elf_header, sizeof(elf_header), 1, file) == 1) {
-            result = memcmp(elf_header.e_ident, ELFMAG, SELFMAG) == 0;
-        }
-    }
-
-    fclose(file);
-
-
-    return result;
-}
-
-static bool memmi_lnx_path_is_potential_object(memmi_String path)
-{
-    bool result = (path.count > 0) && (path.data[0] != '[');
 
     return result;
 }
@@ -823,13 +835,8 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
         char buffer[256];
 
         while (fgets(buffer, ARRAY_COUNT(buffer), maps_file.libc_file_handle)) {
-            // Replace the trailing newline with a null byte so that we can provide the
-            // pathname to fopen.
-            // TODO: do this in a less cursed way.
             size_t line_length = strlen(buffer);
-            buffer[line_length - 1] = '\0';
-
-            memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
+            memmi_lnx_Region lnx_region = parse_memory_region(buffer, line_length);
 
             bool should_begin_new_object =
                 memmi_lnx_path_is_potential_object(lnx_region.pathname_view)
@@ -1055,7 +1062,14 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
 
         while (fgets(buffer, ARRAY_COUNT(buffer), maps_file.libc_file_handle)) {
             // TODO: skip ones that have zero size
-            memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
+            size_t line_length = strlen(buffer);
+
+            memmi_lnx_Region lnx_region = parse_memory_region(buffer, line_length);
+
+            if (lnx_region.region_info.kind == MEMMI_REGION_MAPPED_FILE) {
+                lnx_region.region_info.backing_file_name = str_copy(lnx_region.pathname_view, allocator);
+            }
+
             DynArray new_regions = dyn_arr_push(&regions, lnx_region.region_info, allocator);
 
             if (!new_regions.data) {
