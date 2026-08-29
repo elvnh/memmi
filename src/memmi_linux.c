@@ -983,6 +983,7 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, siz
     if (size > (size_t)SSIZE_MAX) {
         result.status = MEMMI_INVALID_ARGUMENTS;
     } else {
+        // TODO: free this memory on error
         result.memory = allocate(allocator, char, size);
 
         if (!result.memory) {
@@ -999,7 +1000,11 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, siz
             ssize_t bytes_read = process_vm_readv(pid, &local_iov, 1, &remote_iov, 1, 0);
 
             if (bytes_read == -1) {
-                result.status = errno_to_memmi_status(errno);
+                if (errno == EFAULT) {
+                    result.status = MEMMI_INSUFFICIENT_PERMISSIONS;
+                } else {
+                    result.status = errno_to_memmi_status(errno);
+                }
             } else {
                 result.bytes_read = (size_t)bytes_read;
 
@@ -1032,7 +1037,11 @@ memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void 
         ssize_t bytes_written = process_vm_writev(pid, &local_iov, 1, &remote_iov, 1, 0);
 
         if (bytes_written == -1) {
-            result.status = errno_to_memmi_status(errno);
+            if (errno == EFAULT) {
+                result.status = MEMMI_INSUFFICIENT_PERMISSIONS;
+            } else {
+                result.status = errno_to_memmi_status(errno);
+            }
         } else {
             result.bytes_written = (size_t)bytes_written;
 
