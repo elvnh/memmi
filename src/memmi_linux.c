@@ -694,6 +694,68 @@ static memmi_lnx_Region parse_memory_region(memmi_String line)
     return result;
 }
 
+typedef struct {
+    memmi_Status status;
+    int proc_subdir_fd;
+    FILE *file;
+} memmi_lnx_ProcFsFile;
+
+static void memmi_lnx_close_proc_fs_file(memmi_lnx_ProcFsFile *file)
+{
+    int saved_errno = errno;
+
+    close(file->proc_subdir_fd);
+
+    if (file->file) {
+        fclose(file->file);
+    }
+
+    file->proc_subdir_fd = -1;
+    file->file = 0;
+
+    errno = saved_errno;
+}
+
+static memmi_lnx_ProcFsFile memmi_lnx_open_proc_fs_file(pid_t pid, const char *file_name)
+{
+    memmi_lnx_ProcFsFile result = zero_struct(memmi_lnx_ProcFsFile);
+
+    int saved_errno = errno;
+
+    if (pid_exists(pid) != MEMMI_OK) {
+        result.status = MEMMI_NO_SUCH_PROCESS;
+    } else {
+        ProcessDirFd proc_dir_fd = get_process_directory_fd(pid);
+
+        if (proc_dir_fd.status != MEMMI_OK) {
+            result.status = proc_dir_fd.status;
+        } else {
+            result.proc_subdir_fd = proc_dir_fd.fd;
+
+            // Automatically closed by fclose.
+            int file_fd = openat(proc_dir_fd.fd, file_name, O_RDONLY);
+
+            if (file_fd == -1) {
+                result.status = proc_fs_errno_to_memmi_status(errno);
+            } else {
+                result.file = fdopen(file_fd, "r");
+
+                if (!result.file) {
+                    result.status = proc_fs_errno_to_memmi_status(errno);
+                }
+            }
+        }
+    }
+
+    if (result.status != MEMMI_OK) {
+        memmi_lnx_close_proc_fs_file(&result);
+    }
+
+    errno = saved_errno;
+
+    return result;
+}
+
 /**********************/
 /* API implementation */
 /**********************/
@@ -744,117 +806,92 @@ static bool memmi_lnx_path_is_potential_object(memmi_String path)
 memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator allocator)
 {
     // TODO: should we check that the object actually has an exectuable region?
-
     memmi_ObjectList result = zero_struct(memmi_ObjectList);
+
     memmi_ObjectDynArray objects = zero_struct(memmi_ObjectDynArray);
 
     pid_t native_pid = get_native_pid(proc);
 
-    // TODO: split out this entire pattern into function
-    memmi_Status pid_exists_result = pid_exists(native_pid);
+    memmi_lnx_ProcFsFile maps_file = memmi_lnx_open_proc_fs_file(native_pid, "maps");
 
-    if (pid_exists_result != MEMMI_OK) {
-        result.status = pid_exists_result;
+    if (maps_file.status != MEMMI_OK) {
+        result.status = maps_file.status;
     } else {
-        ProcessDirFd proc_dir_fd = get_process_directory_fd(native_pid);
+        memmi_String proc_name = get_process_name(maps_file.proc_subdir_fd, allocator).value;
 
-        if (proc_dir_fd.status != MEMMI_OK) {
-            result.status = proc_dir_fd.status;
-        } else {
-            ASSERT(proc_dir_fd.fd > 0);
+        memmi_Object current_object = zero_struct(memmi_Object);
+        bool is_parsing_object = false;
 
-            memmi_String proc_name = get_process_name(proc_dir_fd.fd, allocator).value;
+        char buffer[256];
 
-            // Automatically closed by fclose.
-            int maps_fd = openat(proc_dir_fd.fd, "maps", O_RDONLY);
+        while (fgets(buffer, ARRAY_COUNT(buffer), maps_file.file)) {
+            // Replace the trailing newline with a null byte so that we can provide the
+            // pathname to fopen.
+            // TODO: do this in a less cursed way.
+            size_t line_length = strlen(buffer);
+            buffer[line_length - 1] = '\0';
 
-            if (maps_fd == -1) {
-                result.status = proc_fs_errno_to_memmi_status(errno);
-            } else {
-                FILE *maps_file = fdopen(maps_fd, "r");
+            memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
 
-                if (!maps_file) {
-                    result.status = proc_fs_errno_to_memmi_status(errno);
-                } else {
-                    // TODO: is this large enough?
-                    char buffer[256];
+            bool should_begin_new_object =
+                memmi_lnx_path_is_potential_object(lnx_region.pathname_view)
+                && memmi_lnx_file_is_so_or_executable(lnx_region.pathname_view)
+                && (!is_parsing_object || !str_eq(lnx_region.pathname_view, current_object.path));
 
-                    memmi_Object current_object = zero_struct(memmi_Object);
-                    bool is_parsing_object = false;
+            bool should_end_current_object = should_begin_new_object
+                || !memmi_lnx_path_is_potential_object(lnx_region.pathname_view);
 
-                    while (fgets(buffer, ARRAY_COUNT(buffer), maps_file)) {
-                        // Replace the trailing newline with a null byte so that we can provide the
-                        // pathname to fopen.
-                        // TODO: do this in a less cursed way.
-                        size_t line_length = strlen(buffer);
-                        buffer[line_length - 1] = '\0';
+            if (should_end_current_object && (current_object.size > 0)) {
+                ASSERT(current_object.path.count > 0);
 
-                        memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
+                bool is_bss_region = (lnx_region.pathname_view.count == 0)
+                    && (lnx_region.region_info.permissions &
+                        (MEMMI_REGION_PERMISSION_READ | MEMMI_REGION_PERMISSION_WRITE));
 
-                        bool should_begin_new_object =
-                            memmi_lnx_path_is_potential_object(lnx_region.pathname_view)
-                            && memmi_lnx_file_is_so_or_executable(lnx_region.pathname_view)
-                            && (!is_parsing_object || !str_eq(lnx_region.pathname_view, current_object.path));
-
-                        bool should_end_current_object = should_begin_new_object
-                            || !memmi_lnx_path_is_potential_object(lnx_region.pathname_view);
-
-                        if (should_end_current_object && (current_object.size > 0)) {
-                            ASSERT(current_object.path.count > 0);
-
-                            bool is_bss_region = (lnx_region.pathname_view.count == 0)
-                                && (lnx_region.region_info.permissions &
-                                    (MEMMI_REGION_PERMISSION_READ | MEMMI_REGION_PERMISSION_WRITE));
-
-                            if (is_bss_region) {
-                                current_object.size += lnx_region.region_info.size;
-                            }
-
-                            DynArray new_objects = dyn_arr_push(&objects, current_object, allocator);
-
-                            if (!new_objects.data) {
-                                result.status = MEMMI_ALLOCATION_FAILED;
-                                break;
-                            } else {
-                                dyn_arr_assign(&objects, new_objects);
-                            }
-
-                            current_object = zero_struct(memmi_Object);
-
-                            is_parsing_object = false;
-                        }
-
-                        if (should_begin_new_object) {
-                            current_object = zero_struct(memmi_Object);
-                            current_object.path = str_copy(lnx_region.pathname_view, allocator);
-
-                            if (str_eq(proc_name, current_object.path)) {
-                                current_object.kind = MEMMI_OBJECT_EXECUTABLE;
-                            } else {
-                                current_object.kind = MEMMI_OBJECT_DYNAMIC_LIBRARY;
-                            }
-
-                            is_parsing_object = true;
-                        }
-
-                        if (is_parsing_object) {
-                            current_object.size += lnx_region.region_info.size;
-                        }
-                    }
+                if (is_bss_region) {
+                    current_object.size += lnx_region.region_info.size;
                 }
 
-                fclose(maps_file);
+                DynArray new_objects = dyn_arr_push(&objects, current_object, allocator);
+
+                if (!new_objects.data) {
+                    result.status = MEMMI_ALLOCATION_FAILED;
+                    break;
+                } else {
+                    dyn_arr_assign(&objects, new_objects);
+                }
+
+                current_object = zero_struct(memmi_Object);
+
+                is_parsing_object = false;
             }
 
-            // We only needed the process name for checking if an object is the executable itself.
-            deallocate(allocator, (char *)proc_name.data, proc_name.count);
+            if (should_begin_new_object) {
+                current_object = zero_struct(memmi_Object);
+                current_object.path = str_copy(lnx_region.pathname_view, allocator);
+
+                if (str_eq(proc_name, current_object.path)) {
+                    current_object.kind = MEMMI_OBJECT_EXECUTABLE;
+                } else {
+                    current_object.kind = MEMMI_OBJECT_DYNAMIC_LIBRARY;
+                }
+
+                is_parsing_object = true;
+            }
+
+            if (is_parsing_object) {
+                current_object.size += lnx_region.region_info.size;
+            }
         }
 
-        close(proc_dir_fd.fd);
+        // We only needed the process name for checking if an object is the executable itself.
+        deallocate(allocator, (char *)proc_name.data, proc_name.count);
+
+        result.data = objects.data;
+        result.count = objects.count;
     }
 
-    result.data = objects.data;
-    result.count = objects.count;
+    memmi_lnx_close_proc_fs_file(&maps_file);
 
     return result;
 }
@@ -1011,58 +1048,31 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
 
     pid_t native_pid = get_native_pid(process);
 
-    memmi_Status pid_exists_result = pid_exists(native_pid);
+    memmi_lnx_ProcFsFile maps_file = memmi_lnx_open_proc_fs_file(native_pid, "maps");
 
-    if (pid_exists_result != MEMMI_OK) {
-        result.status = pid_exists_result;
+    if (maps_file.status != MEMMI_OK) {
+        result.status = maps_file.status;
     } else {
-        ProcessDirFd proc_dir_fd = get_process_directory_fd(native_pid);
+        char buffer[256];
 
-        if (proc_dir_fd.status != MEMMI_OK) {
-            result.status = proc_dir_fd.status;
-        } else {
-            ASSERT(proc_dir_fd.fd > 0);
+        while (fgets(buffer, ARRAY_COUNT(buffer), maps_file.file)) {
+            // TODO: skip ones that have zero size
+            memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
+            DynArray new_regions = dyn_arr_push(&regions, lnx_region.region_info, allocator);
 
-            // TODO: this pattern of proc dir fd, followed by open of subdir, followed by fdopen etc.
-            // is starting to be a pattern, maybe extract out to a function
-
-            // Automatically closed by fclose.
-            int maps_fd = openat(proc_dir_fd.fd, "maps", O_RDONLY);
-
-            if (maps_fd == -1) {
-                result.status = proc_fs_errno_to_memmi_status(errno);
+            if (!new_regions.data) {
+                result.status = MEMMI_ALLOCATION_FAILED;
+                break;
             } else {
-                FILE *maps_file = fdopen(maps_fd, "r");
-
-                if (!maps_file) {
-                    result.status = proc_fs_errno_to_memmi_status(errno);
-                } else {
-                    // TODO: is this large enough?
-                    char buffer[256];
-
-                    while (fgets(buffer, ARRAY_COUNT(buffer), maps_file)) {
-                        // TODO: skip ones that have zero size
-                        memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
-                        DynArray new_regions = dyn_arr_push(&regions, lnx_region.region_info, allocator);
-
-                        if (!new_regions.data) {
-                            result.status = MEMMI_ALLOCATION_FAILED;
-                            break;
-                        } else {
-                            dyn_arr_assign(&regions, new_regions);
-                        }
-                    }
-
-                    result.data = regions.data;
-                    result.count = regions.count;
-                }
-
-                fclose(maps_file);
+                dyn_arr_assign(&regions, new_regions);
             }
         }
 
-        close(proc_dir_fd.fd);
+        result.data = regions.data;
+        result.count = regions.count;
     }
+
+    memmi_lnx_close_proc_fs_file(&maps_file);
 
     return result;
 }
