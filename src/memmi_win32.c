@@ -290,9 +290,11 @@ static Win32Context win32_get_thread_context(HANDLE handle)
 /**********************/
 /* API implementation */
 /**********************/
-static memmi_String memmi_win32_get_module_name(HMODULE module, memmi_Allocator allocator)
+static memmi_String memmi_win32_get_module_name(HANDLE proc_handle, HMODULE module, memmi_Allocator allocator)
 {
     memmi_String result = zero_struct(memmi_String);
+
+    char proc_name_buf[MAX_PATH];
 
     DWORD module_name_chars_written = GetModuleBaseNameA(
         proc_handle, module, proc_name_buf, ARRAY_COUNT(proc_name_buf));
@@ -317,7 +319,6 @@ static memmi_String get_process_name(DWORD pid, memmi_Allocator allocator)
     // If we can't open the process, that probably means that we don't have the permissions
     // to do so due to not running as administrator.
     if (proc_handle) {
-        char proc_name_buf[MAX_PATH];
 
         HMODULE module = 0;
         DWORD bytes_stored = 0;
@@ -327,7 +328,7 @@ static memmi_String get_process_name(DWORD pid, memmi_Allocator allocator)
 
         if (enum_modules_result) {
             // TODO: use GetProcessImageFilenameA or QueryFullProcessImageName?
-            result = memmi_win32_get_module_name(module, allocator);
+            result = memmi_win32_get_module_name(proc_handle, module, allocator);
         }
     }
 
@@ -1156,22 +1157,23 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
     if (!modules) {
         result.status = MEMMI_ALLOCATION_FAILED;
     } else {
+        DWORD modules_size_in_bytes = 0;
         DWORD bytes_needed = 0;
         BOOL enum_modules_result = false;
 
         do {
+            modules_size_in_bytes = module_count * (DWORD)sizeof(*modules);
+            
             enum_modules_result = EnumProcessModulesEx(
                 handle,
                 modules,
-                modules_size * sizeof(*modules),
+                modules_size_in_bytes,
                 &bytes_needed,
                 LIST_MODULES_ALL
             );
-
-            size_t modules_size_in_bytes = modules_count * sizeof(*modules);
-
+            
             if (!enum_modules_result) {
-                result = win32_error_to_memmi_status(GetLastError());
+                result.status = windows_error_to_memmi_status(GetLastError());
             } else if (bytes_needed > modules_size_in_bytes) {
                 // The array was too small, try again.
                 DWORD new_module_count = bytes_needed / sizeof(*modules);
@@ -1184,15 +1186,15 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
                     modules = new_modules;
                 }
             } else {
-                for (size_t i = 0; i < modules_count; ++i) {
+                for (size_t i = 0; i < module_count; ++i) {
                     MODULEINFO module_info = zero_struct(MODULEINFO);
 
                     if (GetModuleInformation(handle, modules[i], &module_info, sizeof(module_info))) {
                         memmi_Object object = zero_struct(memmi_Object);
-                        object.path = memmi_win32_get_module_name(modules[i], allocator);
+                        object.path = memmi_win32_get_module_name(handle, modules[i], allocator);
 
                         if (object.path.data) {
-                            ASSERT(module_info.lpBaseOfDll == (DWORD)modules[i]);
+                            ASSERT((uintptr_t)module_info.lpBaseOfDll == (uintptr_t)modules[i]);
                             object.base_address = (uintptr_t)module_info.lpBaseOfDll;
                             object.size = module_info.SizeOfImage;
 
@@ -1204,7 +1206,7 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
                             }
                         }
 
-                        DynArray new_objects = dyn_arr_push(&objects, object);
+                        DynArray new_objects = dyn_arr_push(&objects, object, allocator);
 
                         if (!new_objects.data) {
                             result.status = MEMMI_ALLOCATION_FAILED;
