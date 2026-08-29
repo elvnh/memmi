@@ -686,7 +686,6 @@ static bool memmi_lnx_file_is_so_or_executable(memmi_String path)
 
     // TODO: make sure that this is null terminated
     FILE *file = fopen(path.data, "rb");
-    ASSERT(file);
 
     if (file) {
         memmi_lnx_ElfHeader elf_header = zero_struct(memmi_lnx_ElfHeader);
@@ -694,9 +693,9 @@ static bool memmi_lnx_file_is_so_or_executable(memmi_String path)
         if (fread(&elf_header, sizeof(elf_header), 1, file) == 1) {
             result = memcmp(elf_header.e_ident, ELFMAG, SELFMAG) == 0;
         }
-    }
 
-    fclose(file);
+        fclose(file);
+    }
 
 
     return result;
