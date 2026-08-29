@@ -1015,6 +1015,13 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, siz
         }
     }
 
+    if ((result.status != MEMMI_OK) && (result.status != MEMMI_PARTIAL_READ_OR_WRITE)) {
+        deallocate(allocator, result.memory, size);
+
+        result.memory = 0;
+        result.bytes_read = 0;
+    }
+
     return result;
 }
 
