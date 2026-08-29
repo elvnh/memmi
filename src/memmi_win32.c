@@ -290,6 +290,23 @@ static Win32Context win32_get_thread_context(HANDLE handle)
 /**********************/
 /* API implementation */
 /**********************/
+static memmi_String memmi_win32_get_module_name(HMODULE module, memmi_Allocator allocator)
+{
+    memmi_String result = zero_struct(memmi_String);
+
+    DWORD module_name_chars_written = GetModuleBaseNameA(
+        proc_handle, module, proc_name_buf, ARRAY_COUNT(proc_name_buf));
+
+    ASSERT((module_name_chars_written > 0) && "TODO: how to handle this? Just ignore?");
+
+    if (module_name_chars_written > 0) {
+        memmi_String proc_name = {proc_name_buf, module_name_chars_written};
+        result = str_copy(proc_name, allocator);
+    }
+
+    return result;
+}
+
 static memmi_String get_process_name(DWORD pid, memmi_Allocator allocator)
 {
     memmi_String result = zero_struct(memmi_String);
@@ -310,17 +327,8 @@ static memmi_String get_process_name(DWORD pid, memmi_Allocator allocator)
 
         if (enum_modules_result) {
             // TODO: use GetProcessImageFilenameA or QueryFullProcessImageName?
-            DWORD module_name_chars_written = GetModuleBaseNameA(
-                proc_handle, module, proc_name_buf, ARRAY_COUNT(proc_name_buf));
-
-            ASSERT((module_name_chars_written > 0) && "TODO: how to handle this? Just ignore?");
-
-            if (module_name_chars_written > 0) {
-                memmi_String proc_name = {proc_name_buf, module_name_chars_written};
-                result = str_copy(proc_name, allocator);
-            }
+            result = memmi_win32_get_module_name(module, allocator);
         }
-
     }
 
     CloseHandle(proc_handle);
@@ -378,7 +386,6 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                         proc_info.name = proc_name;
                         proc_info.pid.value = pids[i];
 
-                        // TODO: check that dyn_arr_push doesn't fail
                         DynArray new_procs = dyn_arr_push(&procs, proc_info, allocator);
                         
                         if (!new_procs.data) {
@@ -1136,4 +1143,82 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
     return result;
 }
 
-#undef WIN32_CONTEXT_MEMBER_LIST
+memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator allocator)
+{
+    memmi_ObjectList result = zero_struct(memmi_ObjectList);
+    memmi_ObjectDynArray objects = zero_struct(memmi_ObjectDynArray);
+
+    HANDLE handle = win32_get_process_handle(proc);
+
+    DWORD module_count = 512;
+    HMODULE *modules = allocate(allocator, HMODULE, module_count);
+
+    if (!modules) {
+        result.status = MEMMI_ALLOCATION_FAILED;
+    } else {
+        DWORD bytes_needed = 0;
+        BOOL enum_modules_result = false;
+
+        do {
+            enum_modules_result = EnumProcessModulesEx(
+                handle,
+                modules,
+                modules_size * sizeof(*modules),
+                &bytes_needed,
+                LIST_MODULES_ALL
+            );
+
+            size_t modules_size_in_bytes = modules_count * sizeof(*modules);
+
+            if (!enum_modules_result) {
+                result = win32_error_to_memmi_status(GetLastError());
+            } else if (bytes_needed > modules_size_in_bytes) {
+                // The array was too small, try again.
+                DWORD new_module_count = bytes_needed / sizeof(*modules);
+                HMODULE *new_modules = reallocate(allocator, modules, module_count, new_module_count);
+
+                if (!new_modules) {
+                    result.status = MEMMI_ALLOCATION_FAILED;
+                } else {
+                    module_count = new_module_count;
+                    modules = new_modules;
+                }
+            } else {
+                for (size_t i = 0; i < modules_count; ++i) {
+                    MODULEINFO module_info = zero_struct(MODULEINFO);
+
+                    if (GetModuleInformation(handle, modules[i], &module_info, sizeof(module_info))) {
+                        memmi_Object object = zero_struct(memmi_Object);
+                        object.path = memmi_win32_get_module_name(modules[i], allocator);
+
+                        if (object.path.data) {
+                            ASSERT(module_info.lpBaseOfDll == (DWORD)modules[i]);
+                            object.base_address = (uintptr_t)module_info.lpBaseOfDll;
+                            object.size = module_info.SizeOfImage;
+
+                            if (objects.count == 0) {
+                                // The executable itself is always the first module.
+                                object.kind = MEMMI_OBJECT_EXECUTABLE;
+                            } else {
+                                object.kind = MEMMI_OBJECT_DYNAMIC_LIBRARY;
+                            }
+                        }
+
+                        DynArray new_objects = dyn_arr_push(&objects, object);
+
+                        if (!new_objects.data) {
+                            result.status = MEMMI_ALLOCATION_FAILED;
+                        } else {
+                            dyn_arr_assign(&objects, new_objects);
+                        }
+                    }
+                }
+            }
+        } while ((result.status == MEMMI_OK) && enum_modules_result && (bytes_needed > modules_size_in_bytes));
+    }
+
+    result.data = objects.data;
+    result.count = objects.count;
+
+    return result;
+}
