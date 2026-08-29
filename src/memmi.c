@@ -317,6 +317,21 @@ static memmi_String str_trim_whitespace(memmi_String str)
     return result;
 }
 
+static memmi_String str_copy(memmi_String str, memmi_Allocator allocator)
+{
+    memmi_String result = zero_struct(memmi_String);
+
+    char *data = allocate(allocator, char, str.count);
+
+    if (data) {
+        memcpy(data, str.data, str.count);
+        result.data = data;
+        result.count = str.count;
+    }
+
+    return result;
+}
+
 /***************************/
 /*      Safe arithmetic    */
 /***************************/
@@ -690,6 +705,12 @@ typedef struct {
     size_t count;
     size_t capacity;
 } ThreadDynArray;
+
+typedef struct {
+    memmi_Object *data;
+    size_t count;
+    size_t capacity;
+} memmi_ObjectDynArray;
 
 /***************************/
 /*      Architecture       */

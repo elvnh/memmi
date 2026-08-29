@@ -30,22 +30,6 @@ static memmi_Status windows_error_to_memmi_status(DWORD error_code)
     return result;
 }
 
-// TODO: move to utils file
-static memmi_String str_copy(memmi_String str, memmi_Allocator allocator)
-{
-    memmi_String result = zero_struct(memmi_String);
-
-    char *data = allocate(allocator, char, str.count);
-
-    if (data) {
-        memcpy(data, str.data, str.count);
-        result.data = data;
-        result.count = str.count;
-    }
-
-    return result;
-}
-
 static DWORD win32_get_native_pid(memmi_Process proc)
 {
     DWORD result = (DWORD)proc.pid.value;

@@ -7,10 +7,17 @@
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 #include <sys/user.h>
+#include <elf.h>
 
 #include <errno.h>
 
 #include "memmi.h"
+
+#if MEMMI_X64
+    typedef Elf64_Ehdr memmi_lnx_ElfHeader;
+#elif MEMMI_X86
+    typedef Elf32_Ehdr memmi_lnx_ElfHeader;
+#endif
 
 typedef struct {
     memmi_String value;
@@ -614,6 +621,79 @@ static memmi_Status set_thread_debug_register(pid_t tid, memmi_Register reg, mem
     return result;
 }
 
+typedef struct {
+    memmi_MemoryRegion region_info;
+    memmi_String pathname_view; // NOTE: Only a view into string provided, not a copy
+} memmi_lnx_Region;
+
+static memmi_lnx_Region parse_memory_region(memmi_String line)
+{
+    memmi_String fields[6];
+
+    memmi_String space_lit = str_lit(" ");
+    Cut cut = str_cut(line, space_lit);
+
+    for (size_t i = 0; i < ARRAY_COUNT(fields); ++i) {
+        if (cut.head.count > 0) {
+            fields[i] = cut.head;
+
+            memmi_String trimmed_tail = str_trim_leading_whitespace(cut.tail);
+            cut = str_cut(trimmed_tail, space_lit);
+        } else {
+            break;
+        }
+    }
+
+    const size_t address_index = 0;
+    const size_t perms_index = 1;
+    /* const size_t offset_index = 2; */
+    /* const size_t dev_index = 3; */
+    /* const size_t inode_index = 4; */
+    const size_t pathname_index = 5;
+
+    memmi_String dash_lit = str_lit("-");
+    Cut addresses = str_cut(fields[address_index], dash_lit);
+    memmi_String base_address_str = addresses.head;
+    memmi_String end_address_str = addresses.tail;
+
+    memmi_String perms_str = fields[perms_index];
+
+    MaybeU64 base_address_opt = str_to_u64(base_address_str, NUM_BASE_HEX);
+    MaybeU64 end_address_opt = str_to_u64(end_address_str, NUM_BASE_HEX);
+    ASSERT(base_address_opt.ok);
+    ASSERT(end_address_opt.ok);
+
+    uintptr_t base_address = (uintptr_t)base_address_opt.value;
+    uintptr_t end_address = (uintptr_t)end_address_opt.value;
+
+    memmi_MemoryRegionPermission permissions = zero_enum(memmi_MemoryRegionPermission);
+
+    if (perms_str.data[0] == 'r') {
+        set_flag(permissions, MEMMI_REGION_PERMISSION_READ);
+    }
+
+    if (perms_str.data[1] == 'w') {
+        set_flag(permissions, MEMMI_REGION_PERMISSION_WRITE);
+    }
+
+    if (perms_str.data[2] == 'x') {
+        set_flag(permissions, MEMMI_REGION_PERMISSION_EXECUTE);
+    }
+
+    memmi_String pathname = fields[pathname_index];
+    /* --pathname.count; // Pathname contains a trailing newline. */
+
+    size_t region_size = end_address - base_address;
+
+    memmi_lnx_Region result = zero_struct(memmi_lnx_Region);
+    result.region_info.base_address = base_address;
+    result.region_info.size = region_size;
+    result.region_info.permissions = permissions;
+    result.pathname_view = pathname;
+
+    return result;
+}
+
 /**********************/
 /* API implementation */
 /**********************/
@@ -628,6 +708,153 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid)
     } else {
         result.process.pid = pid;
     }
+
+    return result;
+}
+
+static bool memmi_lnx_file_is_so_or_executable(memmi_String path)
+{
+    bool result = false;
+
+    // TODO: make sure that this is null terminated
+    FILE *file = fopen(path.data, "rb");
+    ASSERT(file);
+
+    if (file) {
+        memmi_lnx_ElfHeader elf_header = zero_struct(memmi_lnx_ElfHeader);
+
+        if (fread(&elf_header, sizeof(elf_header), 1, file) == 1) {
+            result = memcmp(elf_header.e_ident, ELFMAG, SELFMAG) == 0;
+        }
+    }
+
+    fclose(file);
+
+
+    return result;
+}
+
+static bool memmi_lnx_path_is_potential_object(memmi_String path)
+{
+    bool result = (path.count > 0) && (path.data[0] != '[');
+
+    return result;
+}
+
+memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator allocator)
+{
+    // TODO: should we check that the object actually has an exectuable region?
+
+    memmi_ObjectList result = zero_struct(memmi_ObjectList);
+    memmi_ObjectDynArray objects = zero_struct(memmi_ObjectDynArray);
+
+    pid_t native_pid = get_native_pid(proc);
+
+    // TODO: split out this entire pattern into function
+    memmi_Status pid_exists_result = pid_exists(native_pid);
+
+    if (pid_exists_result != MEMMI_OK) {
+        result.status = pid_exists_result;
+    } else {
+        ProcessDirFd proc_dir_fd = get_process_directory_fd(native_pid);
+
+        if (proc_dir_fd.status != MEMMI_OK) {
+            result.status = proc_dir_fd.status;
+        } else {
+            ASSERT(proc_dir_fd.fd > 0);
+
+            memmi_String proc_name = get_process_name(proc_dir_fd.fd, allocator).value;
+
+            // Automatically closed by fclose.
+            int maps_fd = openat(proc_dir_fd.fd, "maps", O_RDONLY);
+
+            if (maps_fd == -1) {
+                result.status = proc_fs_errno_to_memmi_status(errno);
+            } else {
+                FILE *maps_file = fdopen(maps_fd, "r");
+
+                if (!maps_file) {
+                    result.status = proc_fs_errno_to_memmi_status(errno);
+                } else {
+                    // TODO: is this large enough?
+                    char buffer[256];
+
+                    memmi_Object current_object = zero_struct(memmi_Object);
+                    bool is_parsing_object = false;
+
+                    while (fgets(buffer, ARRAY_COUNT(buffer), maps_file)) {
+                        // Replace the trailing newline with a null byte so that we can provide the
+                        // pathname to fopen.
+                        // TODO: do this in a less cursed way.
+                        size_t line_length = strlen(buffer);
+                        buffer[line_length - 1] = '\0';
+
+                        memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
+
+                        bool should_begin_new_object =
+                            memmi_lnx_path_is_potential_object(lnx_region.pathname_view)
+                            && memmi_lnx_file_is_so_or_executable(lnx_region.pathname_view)
+                            && (!is_parsing_object || !str_eq(lnx_region.pathname_view, current_object.path));
+
+                        bool should_end_current_object = should_begin_new_object
+                            || !memmi_lnx_path_is_potential_object(lnx_region.pathname_view);
+
+                        if (should_end_current_object && (current_object.size > 0)) {
+                            ASSERT(current_object.path.count > 0);
+
+                            bool is_bss_region = (lnx_region.pathname_view.count == 0)
+                                && (lnx_region.region_info.permissions &
+                                    (MEMMI_REGION_PERMISSION_READ | MEMMI_REGION_PERMISSION_WRITE));
+
+                            if (is_bss_region) {
+                                current_object.size += lnx_region.region_info.size;
+                            }
+
+                            DynArray new_objects = dyn_arr_push(&objects, current_object, allocator);
+
+                            if (!new_objects.data) {
+                                result.status = MEMMI_ALLOCATION_FAILED;
+                                break;
+                            } else {
+                                dyn_arr_assign(&objects, new_objects);
+                            }
+
+                            current_object = zero_struct(memmi_Object);
+
+                            is_parsing_object = false;
+                        }
+
+                        if (should_begin_new_object) {
+                            current_object = zero_struct(memmi_Object);
+                            current_object.path = str_copy(lnx_region.pathname_view, allocator);
+
+                            if (str_eq(proc_name, current_object.path)) {
+                                current_object.kind = MEMMI_OBJECT_EXECUTABLE;
+                            } else {
+                                current_object.kind = MEMMI_OBJECT_DYNAMIC_LIBRARY;
+                            }
+
+                            is_parsing_object = true;
+                        }
+
+                        if (is_parsing_object) {
+                            current_object.size += lnx_region.region_info.size;
+                        }
+                    }
+                }
+
+                fclose(maps_file);
+            }
+
+            // We only needed the process name for checking if an object is the executable itself.
+            deallocate(allocator, (char *)proc_name.data, proc_name.count);
+        }
+
+        close(proc_dir_fd.fd);
+    }
+
+    result.data = objects.data;
+    result.count = objects.count;
 
     return result;
 }
@@ -777,78 +1004,6 @@ memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void 
     return result;
 }
 
-typedef struct {
-    memmi_MemoryRegion region_info;
-    memmi_String pathname_view; // NOTE: Only a view into string provided, not a copy
-} memmi_lnx_Region;
-
-static memmi_lnx_Region parse_memory_region(memmi_String line)
-{
-    memmi_String fields[6];
-
-    memmi_String space_lit = str_lit(" ");
-    Cut cut = str_cut(line, space_lit);
-
-    for (size_t i = 0; i < ARRAY_COUNT(fields); ++i) {
-        if (cut.head.count > 0) {
-            fields[i] = cut.head;
-
-            memmi_String trimmed_tail = str_trim_leading_whitespace(cut.tail);
-            cut = str_cut(trimmed_tail, space_lit);
-        } else {
-            break;
-        }
-    }
-
-    const size_t address_index = 0;
-    const size_t perms_index = 1;
-    /* const size_t offset_index = 2; */
-    /* const size_t dev_index = 3; */
-    /* const size_t inode_index = 4; */
-    const size_t pathname_index = 5;
-
-    memmi_String dash_lit = str_lit("-");
-    Cut addresses = str_cut(fields[address_index], dash_lit);
-    memmi_String base_address_str = addresses.head;
-    memmi_String end_address_str = addresses.tail;
-
-    memmi_String perms_str = fields[perms_index];
-
-    MaybeU64 base_address_opt = str_to_u64(base_address_str, NUM_BASE_HEX);
-    MaybeU64 end_address_opt = str_to_u64(end_address_str, NUM_BASE_HEX);
-    ASSERT(base_address_opt.ok);
-    ASSERT(end_address_opt.ok);
-
-    uintptr_t base_address = (uintptr_t)base_address_opt.value;
-    uintptr_t end_address = (uintptr_t)end_address_opt.value;
-
-    memmi_MemoryRegionPermission permissions = zero_enum(memmi_MemoryRegionPermission);
-
-    if (perms_str.data[0] == 'r') {
-        set_flag(permissions, MEMMI_REGION_PERMISSION_READ);
-    }
-
-    if (perms_str.data[1] == 'w') {
-        set_flag(permissions, MEMMI_REGION_PERMISSION_WRITE);
-    }
-
-    if (perms_str.data[2] == 'x') {
-        set_flag(permissions, MEMMI_REGION_PERMISSION_EXECUTE);
-    }
-
-    memmi_String pathname = fields[pathname_index];
-
-    size_t region_size = end_address - base_address;
-
-    memmi_lnx_Region result = zero_struct(memmi_lnx_Region);
-    result.region_info.base_address = base_address;
-    result.region_info.size = region_size;
-    result.region_info.permissions = permissions;
-    result.pathname = pathname;
-
-    return result;
-}
-
 memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator)
 {
     memmi_MemoryRegions result = zero_struct(memmi_MemoryRegions);
@@ -886,6 +1041,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
                     char buffer[256];
 
                     while (fgets(buffer, ARRAY_COUNT(buffer), maps_file)) {
+                        // TODO: skip ones that have zero size
                         memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
                         DynArray new_regions = dyn_arr_push(&regions, lnx_region.region_info, allocator);
 
