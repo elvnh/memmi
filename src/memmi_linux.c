@@ -777,7 +777,12 @@ memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void 
     return result;
 }
 
-static memmi_MemoryRegion parse_memory_region(memmi_String line)
+typedef struct {
+    memmi_MemoryRegion region_info;
+    memmi_String pathname_view; // NOTE: Only a view into string provided, not a copy
+} memmi_lnx_Region;
+
+static memmi_lnx_Region parse_memory_region(memmi_String line)
 {
     memmi_String fields[6];
 
@@ -800,7 +805,7 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
     /* const size_t offset_index = 2; */
     /* const size_t dev_index = 3; */
     /* const size_t inode_index = 4; */
-    /* const size_t pathname_index = 5; */
+    const size_t pathname_index = 5;
 
     memmi_String dash_lit = str_lit("-");
     Cut addresses = str_cut(fields[address_index], dash_lit);
@@ -831,12 +836,15 @@ static memmi_MemoryRegion parse_memory_region(memmi_String line)
         set_flag(permissions, MEMMI_REGION_PERMISSION_EXECUTE);
     }
 
+    memmi_String pathname = fields[pathname_index];
+
     size_t region_size = end_address - base_address;
 
-    memmi_MemoryRegion result = zero_struct(memmi_MemoryRegion);
-    result.base_address = base_address;
-    result.size = region_size;
-    result.permissions = permissions;
+    memmi_lnx_Region result = zero_struct(memmi_lnx_Region);
+    result.region_info.base_address = base_address;
+    result.region_info.size = region_size;
+    result.region_info.permissions = permissions;
+    result.pathname = pathname;
 
     return result;
 }
@@ -874,11 +882,12 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
                 if (!maps_file) {
                     result.status = proc_fs_errno_to_memmi_status(errno);
                 } else {
+                    // TODO: is this large enough?
                     char buffer[256];
 
                     while (fgets(buffer, ARRAY_COUNT(buffer), maps_file)) {
-                        memmi_MemoryRegion region = parse_memory_region(str_from_c_str(buffer));
-                        DynArray new_regions = dyn_arr_push(&regions, region, allocator);
+                        memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
+                        DynArray new_regions = dyn_arr_push(&regions, lnx_region.region_info, allocator);
 
                         if (!new_regions.data) {
                             result.status = MEMMI_ALLOCATION_FAILED;
