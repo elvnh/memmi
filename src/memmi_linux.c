@@ -715,15 +715,16 @@ typedef struct {
 } memmi_lnx_Region;
 
 // TODO: make this take a cstr instead
-static memmi_lnx_Region parse_memory_region(memmi_String line)
+static memmi_lnx_Region parse_memory_region(char *line, size_t length)
 {
-    // TODO: get rid of this
-    *(char *)&line.data[line.count - 1] = '\0';
+    // Replace the trailing newline with a null terminator.
+    line[length - 1] = '\0';
 
+    memmi_String line_str = {line, length};
     memmi_String fields[6];
 
     memmi_String space_lit = str_lit(" ");
-    Cut cut = str_cut(line, space_lit);
+    Cut cut = str_cut(line_str, space_lit);
 
     for (size_t i = 0; i < ARRAY_COUNT(fields); ++i) {
         if (cut.head.count > 0) {
@@ -788,7 +789,6 @@ static memmi_lnx_Region parse_memory_region(memmi_String line)
     if ((pathname.count == 0) || (pathname.data[0] == '[') || memmi_lnx_file_is_so_or_executable(pathname)) {
         result.region_info.kind = MEMMI_REGION_NORMAL;
     } else {
-        ASSERT(0);
         result.region_info.kind = MEMMI_REGION_MAPPED_FILE;
     }
 
@@ -839,9 +839,8 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
             // pathname to fopen.
             // TODO: do this in a less cursed way.
             size_t line_length = strlen(buffer);
-            buffer[line_length - 1] = '\0';
 
-            memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
+            memmi_lnx_Region lnx_region = parse_memory_region(buffer, line_length);
 
             bool should_begin_new_object =
                 memmi_lnx_path_is_potential_object(lnx_region.pathname_view)
@@ -1067,7 +1066,10 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
 
         while (fgets(buffer, ARRAY_COUNT(buffer), maps_file.libc_file_handle)) {
             // TODO: skip ones that have zero size
-            memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
+            size_t line_length = strlen(buffer);
+
+            memmi_lnx_Region lnx_region = parse_memory_region(buffer, line_length);
+
             DynArray new_regions = dyn_arr_push(&regions, lnx_region.region_info, allocator);
 
             if (!new_regions.data) {
