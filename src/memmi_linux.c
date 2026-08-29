@@ -184,6 +184,101 @@ static ProcessDirFd get_process_directory_fd(pid_t pid)
     return result;
 }
 
+static memmi_Status pid_exists(pid_t pid)
+{
+    // TODO: error check and return memmi_Status
+    memmi_Status result = MEMMI_OK;
+
+    DIR *proc_dir = opendir("/proc");
+    int proc_dir_fd = dirfd(proc_dir);
+
+    if (proc_dir_fd == -1) {
+        result = MEMMI_NO_SUCH_PROCESS;
+    } else {
+        char pid_str[64];
+        int chars_written = snprintf(pid_str, ARRAY_COUNT(pid_str), "%d", pid);
+        ASSERT(chars_written < (int)ARRAY_COUNT(pid_str));
+
+        struct stat stat_buf = zero_struct(struct stat);
+        int stat_result = fstatat(proc_dir_fd, pid_str, &stat_buf, 0);
+
+        if (stat_result == -1) {
+            result = proc_fs_errno_to_memmi_status(errno);
+        }
+
+    }
+
+    closedir(proc_dir);
+
+    return result;
+}
+
+typedef struct {
+    memmi_Status status;
+    int proc_subdir_fd;
+    FILE *libc_file_handle;
+    int fd;
+} memmi_lnx_ProcFsFile;
+
+static void memmi_lnx_close_proc_fs_file(memmi_lnx_ProcFsFile *file)
+{
+    int saved_errno = errno;
+
+    close(file->proc_subdir_fd);
+
+    if (file->libc_file_handle) {
+        fclose(file->libc_file_handle);
+    }
+
+    // In case openat() succeeded but fdopen() failed.
+    close(file->fd);
+
+    file->proc_subdir_fd = -1;
+    file->libc_file_handle = 0;
+
+    errno = saved_errno;
+}
+
+static memmi_lnx_ProcFsFile memmi_lnx_open_proc_fs_file(pid_t pid, const char *file_name)
+{
+    memmi_lnx_ProcFsFile result = zero_struct(memmi_lnx_ProcFsFile);
+
+    int saved_errno = errno;
+
+    if (pid_exists(pid) != MEMMI_OK) {
+        result.status = MEMMI_NO_SUCH_PROCESS;
+    } else {
+        ProcessDirFd proc_dir_fd = get_process_directory_fd(pid);
+
+        if (proc_dir_fd.status != MEMMI_OK) {
+            result.status = proc_dir_fd.status;
+        } else {
+            result.proc_subdir_fd = proc_dir_fd.fd;
+
+            // Automatically closed by fclose.
+            result.fd = openat(proc_dir_fd.fd, file_name, O_RDONLY);
+
+            if (result.fd == -1) {
+                result.status = proc_fs_errno_to_memmi_status(errno);
+            } else {
+                result.libc_file_handle = fdopen(result.fd, "r");
+
+                if (!result.libc_file_handle) {
+                    result.status = proc_fs_errno_to_memmi_status(errno);
+                }
+            }
+        }
+    }
+
+    if (result.status != MEMMI_OK) {
+        memmi_lnx_close_proc_fs_file(&result);
+    }
+
+    errno = saved_errno;
+
+    return result;
+}
+
 // TODO: this isn't needed?
 typedef enum {
     FOR_EACH_THREAD_RES_CONTINUE,
@@ -198,66 +293,59 @@ static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn 
     memmi_Status result = MEMMI_OK;
 
     bool found_thread_dir = false;
-    ProcessDirFd proc_dir_fd = get_process_directory_fd(pid);
 
-    if (proc_dir_fd.status != MEMMI_OK) {
-        result = proc_dir_fd.status;
+    memmi_lnx_ProcFsFile task_dir_fd = memmi_lnx_open_proc_fs_file(pid, "task");
+
+    if (task_dir_fd.status != MEMMI_OK) {
+        result = task_dir_fd.status;
     } else {
-        // Gets closed by closedir.
-        int threads_dir_fd = openat(proc_dir_fd.fd, "task", O_RDONLY);
-        ASSERT(proc_dir_fd.fd > 0);
+        DIR *task_dir = fdopendir(task_dir_fd.fd);
 
-        if (threads_dir_fd == -1) {
+        if (!task_dir) {
             result = proc_fs_errno_to_memmi_status(errno);
         } else {
-            DIR *threads_dir = fdopendir(threads_dir_fd);
+            struct dirent *subdir_entry = 0;
 
-            if (!threads_dir) {
-                result = proc_fs_errno_to_memmi_status(errno);
-            } else {
-                struct dirent *subdir_entry = 0;
+            errno = 0;
 
-                errno = 0;
+            while ((subdir_entry = readdir(task_dir))) {
+                // Only count as a success if there was at least one thread,
+                // as otherwise the process has been killed.
+                struct stat stat_buf = zero_struct(struct stat);
+                int stat_result = fstatat(task_dir_fd.fd, subdir_entry->d_name, &stat_buf, 0);
+                ASSERT(stat_result == 0);
 
-                while ((subdir_entry = readdir(threads_dir))) {
-                    // Only count as a success if there was at least one thread,
-                    // as otherwise the process has been killed.
-                    struct stat stat_buf = zero_struct(struct stat);
-                    int stat_result = fstatat(threads_dir_fd, subdir_entry->d_name, &stat_buf, 0);
-                    ASSERT(stat_result == 0);
+                // I believe there should never be any non-directory entries in the
+                // task subdirectory, but we'll check just to be sure.
+                if ((stat_result == 0) && S_ISDIR(stat_buf.st_mode)) {
+                    found_thread_dir = true;
 
-                    // I believe there should never be any non-directory entries in the
-                    // task subdirectory, but we'll check just to be sure.
-                    if ((stat_result == 0) && S_ISDIR(stat_buf.st_mode)) {
-                        found_thread_dir = true;
+                    memmi_String name = str_from_c_str(subdir_entry->d_name);
+                    MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
 
-                        memmi_String name = str_from_c_str(subdir_entry->d_name);
-                        MaybeS64 tid_opt = str_to_s64(name, NUM_BASE_DEC);
+                    if (tid_opt.ok) {
+                        pid_t tid = (pid_t)tid_opt.value;
 
-                        if (tid_opt.ok) {
-                            pid_t tid = (pid_t)tid_opt.value;
+                        int saved_errno = errno;
 
-                            int saved_errno = errno;
+                        ForEachThreadResult cb_result = fn(user_data, tid);
 
-                            ForEachThreadResult cb_result = fn(user_data, tid);
+                        // We don't want the callback to affect our errno checking after the loop.
+                        errno = saved_errno;
 
-                            // We don't want the callback to affect our errno checking after the loop.
-                            errno = saved_errno;
-
-                            if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
-                                break;
-                            }
+                        if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
+                            break;
                         }
                     }
                 }
-
-                if (errno != 0) {
-                    result = proc_fs_errno_to_memmi_status(errno);
-                }
             }
 
-            closedir(threads_dir);
+            if (errno != 0) {
+                result = proc_fs_errno_to_memmi_status(errno);
+            }
         }
+
+        closedir(task_dir);
     }
 
     if (!found_thread_dir) {
@@ -267,7 +355,7 @@ static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn 
         result = MEMMI_NO_SUCH_PROCESS;
     }
 
-    close(proc_dir_fd.fd);
+    memmi_lnx_close_proc_fs_file(&task_dir_fd);
 
     return result;
 }
@@ -327,35 +415,6 @@ static StatusFileRow get_proc_status_file_row(pid_t tid, memmi_String row_name)
     }
 
     close(proc_dir_fd.fd);
-
-    return result;
-}
-
-static memmi_Status pid_exists(pid_t pid)
-{
-    // TODO: error check and return memmi_Status
-    memmi_Status result = MEMMI_OK;
-
-    DIR *proc_dir = opendir("/proc");
-    int proc_dir_fd = dirfd(proc_dir);
-
-    if (proc_dir_fd == -1) {
-        result = MEMMI_NO_SUCH_PROCESS;
-    } else {
-        char pid_str[64];
-        int chars_written = snprintf(pid_str, ARRAY_COUNT(pid_str), "%d", pid);
-        ASSERT(chars_written < (int)ARRAY_COUNT(pid_str));
-
-        struct stat stat_buf = zero_struct(struct stat);
-        int stat_result = fstatat(proc_dir_fd, pid_str, &stat_buf, 0);
-
-        if (stat_result == -1) {
-            result = proc_fs_errno_to_memmi_status(errno);
-        }
-
-    }
-
-    closedir(proc_dir);
 
     return result;
 }
@@ -621,6 +680,7 @@ static memmi_Status set_thread_debug_register(pid_t tid, memmi_Register reg, mem
     return result;
 }
 
+
 typedef struct {
     memmi_MemoryRegion region_info;
     memmi_String pathname_view; // NOTE: Only a view into string provided, not a copy
@@ -694,68 +754,6 @@ static memmi_lnx_Region parse_memory_region(memmi_String line)
     return result;
 }
 
-typedef struct {
-    memmi_Status status;
-    int proc_subdir_fd;
-    FILE *file;
-} memmi_lnx_ProcFsFile;
-
-static void memmi_lnx_close_proc_fs_file(memmi_lnx_ProcFsFile *file)
-{
-    int saved_errno = errno;
-
-    close(file->proc_subdir_fd);
-
-    if (file->file) {
-        fclose(file->file);
-    }
-
-    file->proc_subdir_fd = -1;
-    file->file = 0;
-
-    errno = saved_errno;
-}
-
-static memmi_lnx_ProcFsFile memmi_lnx_open_proc_fs_file(pid_t pid, const char *file_name)
-{
-    memmi_lnx_ProcFsFile result = zero_struct(memmi_lnx_ProcFsFile);
-
-    int saved_errno = errno;
-
-    if (pid_exists(pid) != MEMMI_OK) {
-        result.status = MEMMI_NO_SUCH_PROCESS;
-    } else {
-        ProcessDirFd proc_dir_fd = get_process_directory_fd(pid);
-
-        if (proc_dir_fd.status != MEMMI_OK) {
-            result.status = proc_dir_fd.status;
-        } else {
-            result.proc_subdir_fd = proc_dir_fd.fd;
-
-            // Automatically closed by fclose.
-            int file_fd = openat(proc_dir_fd.fd, file_name, O_RDONLY);
-
-            if (file_fd == -1) {
-                result.status = proc_fs_errno_to_memmi_status(errno);
-            } else {
-                result.file = fdopen(file_fd, "r");
-
-                if (!result.file) {
-                    result.status = proc_fs_errno_to_memmi_status(errno);
-                }
-            }
-        }
-    }
-
-    if (result.status != MEMMI_OK) {
-        memmi_lnx_close_proc_fs_file(&result);
-    }
-
-    errno = saved_errno;
-
-    return result;
-}
-
 /**********************/
 /* API implementation */
 /**********************/
@@ -824,7 +822,7 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
 
         char buffer[256];
 
-        while (fgets(buffer, ARRAY_COUNT(buffer), maps_file.file)) {
+        while (fgets(buffer, ARRAY_COUNT(buffer), maps_file.libc_file_handle)) {
             // Replace the trailing newline with a null byte so that we can provide the
             // pathname to fopen.
             // TODO: do this in a less cursed way.
@@ -1055,7 +1053,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
     } else {
         char buffer[256];
 
-        while (fgets(buffer, ARRAY_COUNT(buffer), maps_file.file)) {
+        while (fgets(buffer, ARRAY_COUNT(buffer), maps_file.libc_file_handle)) {
             // TODO: skip ones that have zero size
             memmi_lnx_Region lnx_region = parse_memory_region(str_from_c_str(buffer));
             DynArray new_regions = dyn_arr_push(&regions, lnx_region.region_info, allocator);
