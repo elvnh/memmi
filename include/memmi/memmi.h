@@ -103,7 +103,15 @@ typedef enum {
     MEMMI_REGION_PERMISSION_EXECUTE = (1u << 2u),
 } memmi_MemoryRegionPermission;
 
+typedef enum {
+    MEMMI_REGION_NORMAL,
+    MEMMI_REGION_MAPPED_FILE,
+} memmi_MemoryRegionKind;
+
 typedef struct {
+    memmi_MemoryRegionKind kind;
+    memmi_String backing_file_name; /* Only used for MEMMI_REGION_MAPPED_FILE. */
+
     uintptr_t base_address;
     size_t size;
     memmi_MemoryRegionPermission permissions;
