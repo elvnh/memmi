@@ -31,11 +31,11 @@ set bin=%build_dir%/memmi
 
 set cflags=
 
-set msvc_cflags=/Iinclude /W4 /wd4100 /wd4702 /wd4127 /nologo /Fo:%bin% /c
+set msvc_cflags=/Iinclude/memmi /W4 /wd4100 /wd4702 /wd4127 /nologo /Fo:%bin% /c
 set msvc_cflags_debug=-Zi /DMEMMI_DEBUG=1 /fsanitize=address
 set msvc_cflags_release=
 
-set clang_cflags=-Iinclude -c -o%bin%.obj -Werror -std=c99 -Wall -Wextra -Wshadow -Wcast-align -Wunused -Wconversion -Wstrict-prototypes -Wsign-conversion -Wsign-compare -Wenum-compare -Wenum-conversion -Wnull-dereference -Wdouble-promotion -Wformat=2 -Wcast-align -Werror=return-type -Werror=incompatible-pointer-types -Werror=int-conversion -Werror=implicit-function-declaration -Werror=overflow -Werror=implicit-int -Wsign-conversion -Werror=missing-braces -Werror=ignored-qualifiers -Wno-error=unused-parameter -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-unused-function
+set clang_cflags=-Iinclude/memmi -c -o%bin%.obj -Werror -std=c99 -Wall -Wextra -Wshadow -Wcast-align -Wunused -Wconversion -Wstrict-prototypes -Wsign-conversion -Wsign-compare -Wenum-compare -Wenum-conversion -Wnull-dereference -Wdouble-promotion -Wformat=2 -Wcast-align -Werror=return-type -Werror=incompatible-pointer-types -Werror=int-conversion -Werror=implicit-function-declaration -Werror=overflow -Werror=implicit-int -Wsign-conversion -Werror=missing-braces -Werror=ignored-qualifiers -Wno-error=unused-parameter -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-unused-function
 set clang_cflags_debug=-g -fsanitize=address,undefined
 set clang_cflags_release=
 

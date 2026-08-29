@@ -227,7 +227,6 @@ typedef enum {
     typedef uint32_t memmi_RegisterValue;
 #endif
 
-// TODO: include debug registers in this
 typedef struct {
     memmi_Status        status;
     memmi_RegisterValue values[MEMMI_REG_COUNT];
@@ -245,6 +244,24 @@ typedef enum {
     MEMMI_BREAKPOINT_4_BYTES = 4,
     MEMMI_BREAKPOINT_8_BYTES = 8,
 } memmi_BreakpointLength;
+
+typedef enum {
+    MEMMI_OBJECT_EXECUTABLE,
+    MEMMI_OBJECT_DYNAMIC_LIBRARY,
+} memmi_ObjectKind;
+
+typedef struct {
+    memmi_ObjectKind kind;
+    memmi_String     path;
+    uintptr_t        base_address;
+    size_t           size;
+} memmi_Object;
+
+typedef struct {
+    memmi_Status  status;
+    memmi_Object *data;
+    size_t        count;
+} memmi_ObjectList;
 
 /* Functions */
 // TODO: allow checking if process exists
@@ -271,4 +288,5 @@ memmi_Status             memmi_set_thread_register(memmi_TID tid, memmi_Register
 memmi_Status             memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
                                                        memmi_BreakpointCondition condition, uint32_t index,
                                                        memmi_BreakpointLength length);
+memmi_ObjectList         memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator allocator);
 memmi_Allocator          memmi_default_allocator(void);
