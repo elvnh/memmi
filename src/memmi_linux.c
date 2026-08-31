@@ -873,6 +873,7 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
             if (should_begin_new_object) {
                 current_object = zero_struct(memmi_Object);
                 current_object.path = str_copy(lnx_region.pathname_view, allocator);
+                current_object.base_address = lnx_region.region_info.base_address;
 
                 if (str_eq(proc_name, current_object.path)) {
                     current_object.kind = MEMMI_OBJECT_EXECUTABLE;
