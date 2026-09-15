@@ -12,6 +12,7 @@ int main()
     Ipc ipc = ipc_connect(TEST_IPC_PORT);
 
     if (!ipc_ok(ipc)) {
+        perror("");
         assert(0);
         return 1;
     }

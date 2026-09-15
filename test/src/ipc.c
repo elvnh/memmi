@@ -1,3 +1,6 @@
+#include <stdint.h>
+#include <stddef.h>
+
 #include "ipc.h"
 
 #if defined(__linux__)

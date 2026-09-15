@@ -2,6 +2,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <netinet/in.h>
+#include <errno.h>
 
 typedef enum {
     LNX_IPC_SERVER,
@@ -87,17 +88,37 @@ bool ipc_send(Ipc ipc, void *buf, size_t buf_size)
     return result;
 }
 
-bool ipc_receive(Ipc ipc, void *buf, size_t buf_size, size_t *bytes_received)
+IpcReceiveResult ipc_receive(Ipc ipc, void *buf, size_t buf_size, size_t *bytes_received, uint32_t timeout_ms)
 {
-    bool result = false;
+    IpcReceiveResult result = IPC_RECEIVE_OK;
 
     lnx_Ipc *lnx_ipc = ipc.data;
 
-    ssize_t recv_result = recv(lnx_ipc->client_socket, buf, buf_size, 0);
+    if (timeout_ms != IPC_TIMEOUT_NONE) {
+        struct timeval tv = {0};
+        tv.tv_usec = timeout_ms * 1000;
 
-    if (recv_result >= 0) {
-        result = true;
-        *bytes_received = recv_result;
+        fd_set set = {0};
+        FD_ZERO(&set);
+        FD_SET(lnx_ipc->client_socket, &set);
+
+        int select_result = select(lnx_ipc->client_socket + 1, &set, 0, 0, &tv);
+
+        if (select_result == -1) {
+            result = IPC_RECEIVE_ERROR;
+        } else if (select_result == 0) {
+            result = IPC_RECEIVE_TIMEOUT;
+        }
+    }
+
+    if (result == IPC_RECEIVE_OK) {
+        ssize_t recv_result = recv(lnx_ipc->client_socket, buf, buf_size, 0);
+
+        if (recv_result == -1) {
+            result = IPC_RECEIVE_ERROR;
+        } else {
+            *bytes_received = recv_result;
+        }
     }
 
     return result;

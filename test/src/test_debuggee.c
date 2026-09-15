@@ -21,8 +21,13 @@ int main()
     while (true) {
         size_t bytes_received = 0;
 
-        if (!ipc_receive(ipc, buffer, sizeof(buffer), &bytes_received)) {
-            assert(0);
+        IpcReceiveResult recv_res = ipc_receive(ipc, buffer, sizeof(buffer), &bytes_received, 1000);
+
+        if (recv_res == IPC_RECEIVE_ERROR) {
+            assert(0 && "Error");
+            break;
+        } else if (recv_res == IPC_RECEIVE_TIMEOUT) {
+            assert(0 && "Timeout");
             break;
         } else if (bytes_received == 0) {
             printf("Done\n");
