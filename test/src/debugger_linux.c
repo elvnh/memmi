@@ -1,6 +1,8 @@
-static bool spawn_debuggee_process(const char *path)
+static bool spawn_debuggee_process(const char *path, Pid *pid)
 {
-    bool result = true;
+    assert(pid);
+
+    bool result = false;
 
     pid_t fork_result = fork();
 
@@ -9,7 +11,11 @@ static bool spawn_debuggee_process(const char *path)
     } else if (fork_result == 0) {
         char *args[] = {(char *)path, 0};
         execv(path, args);
+    } else {
+        *pid = (Pid)fork_result;
+        result = true;
     }
+
 
     return result;
 }

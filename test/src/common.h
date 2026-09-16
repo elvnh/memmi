@@ -2,6 +2,8 @@
 
 #define TEST_IPC_PORT 8080
 
+typedef int64_t Pid;
+
 /* Commands - sent from the debugger to the debuggee to make it perform an action */
 typedef enum {
     CMD_DO_NOTHING, /* Used to check if debuggee is alive */

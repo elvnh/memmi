@@ -8,7 +8,7 @@
 #include "common.h"
 #include "debugger.h"
 
-static bool spawn_debuggee_process(const char *path);
+static bool spawn_debuggee_process(const char *path, Pid *pid);
 
 #if defined(__linux__)
 #    include "debugger_linux.c"
@@ -16,25 +16,34 @@ static bool spawn_debuggee_process(const char *path);
 #    error
 #endif
 
-Ipc launch_debuggee(const char *path)
+Debuggee launch_debuggee(const char *path)
 {
-    // TODO: launch the program
-    Ipc result = {0};
-
-    bool launch_result = spawn_debuggee_process(path);
+    Pid pid = 0;
+    bool launch_result = spawn_debuggee_process(path, &pid);
     assert(launch_result);
 
-    while (!ipc_ok(result)) {
-        result = ipc_connect(TEST_IPC_PORT, sizeof(Message));
+    Ipc ipc = {0};
+
+    while (!ipc_ok(ipc)) {
+        ipc = ipc_connect(TEST_IPC_PORT, sizeof(Message));
     }
+
+    Debuggee result = {0};
+    result.pid = pid;
+    result.ipc = ipc;
 
     return result;
 }
 
-static Response receive_response(Ipc ipc, uint32_t timeout_ms)
+void destroy_debuggee(Debuggee debuggee)
+{
+    ipc_destroy(debuggee.ipc);
+}
+
+static Response receive_response(Debuggee debuggee, uint32_t timeout_ms)
 {
     Message response_msg = {0};
-    IpcReceiveResult receive_result = ipc_receive_with_timeout(ipc, &response_msg, timeout_ms);
+    IpcReceiveResult receive_result = ipc_receive_with_timeout(debuggee.ipc, &response_msg, timeout_ms);
 
     Response result = {0};
 
@@ -63,39 +72,39 @@ static Response receive_response(Ipc ipc, uint32_t timeout_ms)
     return result;
 }
 
-Response send_command_with_timeout(Ipc ipc, Command command, uint32_t timeout_ms)
+Response send_command_with_timeout(Debuggee debuggee, Command command, uint32_t timeout_ms)
 {
     Response result = {0};
 
     Message cmd_message = {0};
     cmd_message.command = command;
 
-    bool send_result = ipc_send(ipc, &cmd_message);
+    bool send_result = ipc_send(debuggee.ipc, &cmd_message);
 
     if (!send_result) {
         result.kind = RES_ERROR;
         assert(0);
     } else {
-        result = receive_response(ipc, timeout_ms);
+        result = receive_response(debuggee, timeout_ms);
     }
 
     return result;
 }
 
-Response send_command(Ipc ipc, Command command)
+Response send_command(Debuggee debuggee, Command command)
 {
-    Response result = send_command_with_timeout(ipc, command, IPC_TIMEOUT_NONE);
+    Response result = send_command_with_timeout(debuggee, command, IPC_TIMEOUT_NONE);
 
     return result;
 }
 
 int main()
 {
-    Ipc ipc = launch_debuggee("./build/debuggee");
+    Debuggee debuggee = launch_debuggee("./build/debuggee");
 
     Command cmd = {0};
     cmd.kind = CMD_DO_NOTHING;
-    Response res = send_command_with_timeout(ipc, cmd, IPC_TIMEOUT_NONE);
+    Response res = send_command_with_timeout(debuggee, cmd, IPC_TIMEOUT_NONE);
 
     switch (res.kind) {
         case RES_ACK: {
@@ -115,5 +124,5 @@ int main()
         } break;
     }
 
-    ipc_destroy(ipc);
+    destroy_debuggee(debuggee);
 }
