@@ -8,7 +8,9 @@
 
 int main()
 {
-    Ipc ipc = ipc_accept(TEST_IPC_PORT);
+    char buffer[256];
+
+    Ipc ipc = ipc_accept(TEST_IPC_PORT, sizeof(buffer));
 
     if (!ipc_ok(ipc)) {
         assert(0);
@@ -16,12 +18,9 @@ int main()
         return 1;
     }
 
-    char buffer[1024];
 
     while (true) {
-        size_t bytes_received = 0;
-
-        IpcReceiveResult recv_res = ipc_receive(ipc, buffer, sizeof(buffer), &bytes_received, 1000);
+        IpcReceiveResult recv_res = ipc_receive_with_timeout(ipc, buffer, 1000);
 
         if (recv_res == IPC_RECEIVE_ERROR) {
             assert(0 && "Error");
@@ -29,11 +28,12 @@ int main()
         } else if (recv_res == IPC_RECEIVE_TIMEOUT) {
             assert(0 && "Timeout");
             break;
-        } else if (bytes_received == 0) {
+        } else if (recv_res == IPC_RECEIVE_DONE) {
             printf("Done\n");
             break;
         } else  {
-            printf("%.*s\n", (int)bytes_received, buffer);
+            assert(recv_res == IPC_RECEIVE_OK);
+            printf("%s\n", buffer);
         }
     }
 

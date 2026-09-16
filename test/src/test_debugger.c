@@ -9,7 +9,9 @@
 
 int main()
 {
-    Ipc ipc = ipc_connect(TEST_IPC_PORT);
+    char buffer[256];
+
+    Ipc ipc = ipc_connect(TEST_IPC_PORT, sizeof(buffer));
 
     if (!ipc_ok(ipc)) {
         perror("");
@@ -17,9 +19,9 @@ int main()
         return 1;
     }
 
-    char *buf = "hello world";
-    size_t buf_size = strlen(buf);
-    bool result = ipc_send(ipc, buf, buf_size);
+    strncpy(buffer, "hello!", sizeof(buffer));
+
+    bool result = ipc_send(ipc, buffer);
     assert(result);
 
     ipc_destroy(ipc);

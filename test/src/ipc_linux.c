@@ -15,9 +15,12 @@ typedef struct{
     int client_socket; // Either ourselves, or the client from the servers point of view
 } lnx_Ipc;
 
-Ipc ipc_accept(int port)
+Ipc ipc_accept(int32_t port, size_t message_size)
 {
+    assert(message_size > 0);
+
     Ipc result = {0};
+    result.message_size = message_size;
 
     lnx_Ipc ipc = {0};
     ipc.ipc_end = LNX_IPC_SERVER;
@@ -44,9 +47,10 @@ Ipc ipc_accept(int port)
     return result;
 }
 
-Ipc ipc_connect(int port)
+Ipc ipc_connect(int32_t port, size_t message_size)
 {
     Ipc result = {0};
+    result.message_size = message_size;
 
     lnx_Ipc ipc = {0};
     ipc.ipc_end = LNX_IPC_CLIENT;
@@ -78,48 +82,76 @@ void ipc_destroy(Ipc ipc)
     free(ipc.data);
 }
 
-bool ipc_send(Ipc ipc, void *buf, size_t buf_size)
+bool ipc_send(Ipc ipc, void *msg)
 {
+    assert(ipc.message_size > 0);
+
     lnx_Ipc *lnx_ipc = ipc.data;
 
-    ssize_t bytes_sent = send(lnx_ipc->client_socket, buf, buf_size, 0);
-    bool result = bytes_sent == (ssize_t)buf_size;
+    size_t bytes_sent = 0;
+
+    bool result = true;
+
+    while (result && (bytes_sent < ipc.message_size)) {
+        ssize_t send_result = send(lnx_ipc->client_socket, msg, ipc.message_size, 0);
+
+        if (send_result == -1) {
+            result = false;
+        } else {
+            bytes_sent += send_result;
+        }
+    }
 
     return result;
 }
 
-IpcReceiveResult ipc_receive(Ipc ipc, void *buf, size_t buf_size, size_t *bytes_received, uint32_t timeout_ms)
+IpcReceiveResult ipc_receive_with_timeout(Ipc ipc, void *msg, uint32_t timeout_ms)
 {
+    assert(ipc.message_size > 0);
+
     IpcReceiveResult result = IPC_RECEIVE_OK;
 
     lnx_Ipc *lnx_ipc = ipc.data;
 
-    if (timeout_ms != IPC_TIMEOUT_NONE) {
-        struct timeval tv = {0};
-        tv.tv_usec = timeout_ms * 1000;
+    size_t bytes_received = 0;
 
-        fd_set set = {0};
-        FD_ZERO(&set);
-        FD_SET(lnx_ipc->client_socket, &set);
+    while ((result == IPC_RECEIVE_OK) && (bytes_received < ipc.message_size)) {
+        if (timeout_ms != IPC_TIMEOUT_NONE) {
+            struct timeval tv = {0};
+            tv.tv_usec = timeout_ms * 1000;
 
-        int select_result = select(lnx_ipc->client_socket + 1, &set, 0, 0, &tv);
+            fd_set set = {0};
+            FD_ZERO(&set);
+            FD_SET(lnx_ipc->client_socket, &set);
 
-        if (select_result == -1) {
-            result = IPC_RECEIVE_ERROR;
-        } else if (select_result == 0) {
-            result = IPC_RECEIVE_TIMEOUT;
+            int select_result = select(lnx_ipc->client_socket + 1, &set, 0, 0, &tv);
+
+            if (select_result == -1) {
+                result = IPC_RECEIVE_ERROR;
+            } else if (select_result == 0) {
+                result = IPC_RECEIVE_TIMEOUT;
+            }
         }
-    }
 
-    if (result == IPC_RECEIVE_OK) {
-        ssize_t recv_result = recv(lnx_ipc->client_socket, buf, buf_size, 0);
+        char *dst = (char *)msg + bytes_received;
+        size_t bytes_to_read = ipc.message_size - bytes_received;
+        ssize_t recv_result = recv(lnx_ipc->client_socket, dst, bytes_to_read, 0);
+        assert(bytes_to_read > 0);
 
-        if (recv_result == -1) {
+        if (recv_result == 0) {
+            if (bytes_received == 0) {
+                result = IPC_RECEIVE_DONE;
+            } else {
+                result = IPC_RECEIVE_ERROR;
+            }
+        } else if (recv_result == -1) {
             result = IPC_RECEIVE_ERROR;
         } else {
-            *bytes_received = recv_result;
+            bytes_received += recv_result;
         }
     }
+
+    assert((result != IPC_RECEIVE_OK) || (bytes_received == ipc.message_size));
 
     return result;
 }
