@@ -6,11 +6,30 @@
 #include "ipc.c"
 #include "test_common.h"
 
+Command receive_command(Ipc ipc)
+{
+    Message message = {0};
+    IpcReceiveResult recv_res = ipc_receive_with_timeout(ipc, &message, IPC_TIMEOUT_NONE);
+    assert(recv_res == IPC_RECEIVE_OK);
+
+    Command result = message.command;
+
+    return result;
+}
+
+bool send_response(Ipc ipc, Response response)
+{
+    Message message = {0};
+    message.response = response;
+
+    bool result = ipc_send(ipc, &message);
+
+    return result;
+}
+
 int main()
 {
-    char buffer[256];
-
-    Ipc ipc = ipc_accept(TEST_IPC_PORT, sizeof(buffer));
+    Ipc ipc = ipc_accept(TEST_IPC_PORT, sizeof(Message));
 
     if (!ipc_ok(ipc)) {
         assert(0);
@@ -18,23 +37,23 @@ int main()
         return 1;
     }
 
-
     while (true) {
-        IpcReceiveResult recv_res = ipc_receive_with_timeout(ipc, buffer, 1000);
+        Command cmd = receive_command(ipc);
 
-        if (recv_res == IPC_RECEIVE_ERROR) {
-            assert(0 && "Error");
-            break;
-        } else if (recv_res == IPC_RECEIVE_TIMEOUT) {
-            assert(0 && "Timeout");
-            break;
-        } else if (recv_res == IPC_RECEIVE_DONE) {
-            printf("Done\n");
-            break;
-        } else  {
-            assert(recv_res == IPC_RECEIVE_OK);
-            printf("%s\n", buffer);
+        Response response = {0};
+
+        switch (cmd.kind) {
+            case CMD_DO_NOTHING: {
+                printf("CMD_DO_NOTHING\n");
+                response.kind = RES_ACK;
+            } break;
+
+            default: {
+                assert(0);
+            } break;
         }
+
+        send_response(ipc, response);
     }
 
     ipc_destroy(ipc);

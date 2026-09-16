@@ -68,6 +68,8 @@ Ipc ipc_connect(int32_t port, size_t message_size)
         lnx_Ipc *ipc_copy = calloc(1, sizeof(lnx_Ipc));
         *ipc_copy = ipc;
         result.data = ipc_copy;
+    } else {
+        close(ipc.client_socket);
     }
 
     return result;
