@@ -8,12 +8,23 @@
 #include "test_common.h"
 #include "debugger.h"
 
+static bool spawn_debuggee_process(const char *path);
+
+
+#if defined(__linux__)
+#    include "debugger_linux.c"
+#else
+#    error
+#endif
+
 Ipc launch_debuggee(const char *path)
 {
     // TODO: launch the program
     Ipc result = {0};
 
-    // TODO: can you block while connecting?
+    bool launch_result = spawn_debuggee_process(path);
+    assert(launch_result);
+
     while (!ipc_ok(result)) {
         result = ipc_connect(TEST_IPC_PORT, sizeof(Message));
     }
