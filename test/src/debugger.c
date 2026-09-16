@@ -97,32 +97,3 @@ Response send_command(Debuggee debuggee, Command command)
 
     return result;
 }
-
-int main()
-{
-    Debuggee debuggee = launch_debuggee("./build/debuggee");
-
-    Command cmd = {0};
-    cmd.kind = CMD_DO_NOTHING;
-    Response res = send_command_with_timeout(debuggee, cmd, IPC_TIMEOUT_NONE);
-
-    switch (res.kind) {
-        case RES_ACK: {
-            printf("RES_ACK\n");
-        } break;
-
-        case RES_ERROR: {
-            printf("RES_ERROR\n");
-        } break;
-
-        case RES_EXITED: {
-            printf("RES_EXITED\n");
-        } break;
-
-        case RES_TIMEOUT: {
-            printf("RES_TIMEOUT\n");
-        } break;
-    }
-
-    destroy_debuggee(debuggee);
-}

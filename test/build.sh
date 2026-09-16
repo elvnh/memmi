@@ -6,4 +6,3 @@ cd $(dirname $0);
 mkdir -p build;
 
 gcc ${CFLAGS} src/debuggee.c -o build/debuggee;
-gcc ${CFLAGS} src/debugger.c -o build/debugger;
