@@ -5,11 +5,10 @@
 #include <string.h>
 
 #include "ipc.c"
-#include "test_common.h"
+#include "common.h"
 #include "debugger.h"
 
 static bool spawn_debuggee_process(const char *path);
-
 
 #if defined(__linux__)
 #    include "debugger_linux.c"
@@ -79,6 +78,13 @@ Response send_command_with_timeout(Ipc ipc, Command command, uint32_t timeout_ms
     } else {
         result = receive_response(ipc, timeout_ms);
     }
+
+    return result;
+}
+
+Response send_command(Ipc ipc, Command command)
+{
+    Response result = send_command_with_timeout(ipc, command, IPC_TIMEOUT_NONE);
 
     return result;
 }

@@ -4,9 +4,9 @@
 #include <assert.h>
 
 #include "ipc.c"
-#include "test_common.h"
+#include "common.h"
 
-Command receive_command(Ipc ipc)
+static Command receive_command(Ipc ipc)
 {
     Message message = {0};
     IpcReceiveResult recv_res = ipc_receive_with_timeout(ipc, &message, IPC_TIMEOUT_NONE);
@@ -17,7 +17,7 @@ Command receive_command(Ipc ipc)
     return result;
 }
 
-bool send_response(Ipc ipc, Response response)
+static bool send_response(Ipc ipc, Response response)
 {
     Message message = {0};
     message.response = response;
@@ -27,15 +27,20 @@ bool send_response(Ipc ipc, Response response)
     return result;
 }
 
+static Ipc accept_debugger_connection(void)
+{
+    Ipc result = ipc_accept(TEST_IPC_PORT, sizeof(Message));
+
+    if (!ipc_ok(result)) {
+        assert(0);
+    }
+
+    return result;
+}
+
 int main()
 {
-    Ipc ipc = ipc_accept(TEST_IPC_PORT, sizeof(Message));
-
-    if (!ipc_ok(ipc)) {
-        assert(0);
-
-        return 1;
-    }
+    Ipc ipc = accept_debugger_connection();
 
     while (true) {
         Command cmd = receive_command(ipc);
