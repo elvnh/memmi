@@ -4,6 +4,10 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
+
+#include "test_case.h"
 
 typedef struct {
     int return_code;
@@ -66,10 +70,45 @@ void subprocess_free(Subprocess subproc)
     free(subproc.output);
 }
 
-int main(int argc, const char **argv)
+int main(int argc, char **argv)
 {
-    char *args[] = {"", 0};
-    subprocess_run("build/example", args);
+    assert(argc > 1);
+
+    uint64_t tests_ran = 0;
+
+    uint64_t assertions_passed = 0;
+    uint64_t assertions_ran = 0;
+
+    for (int i = 1; i < argc; ++i) {
+        char *test_path = argv[i];
+
+        char *subproc_args[] = {test_path, 0};
+        Subprocess subproc = subprocess_run(test_path, subproc_args);
+        assert(subproc.return_code == 0);
+        // TODO: parse output
+
+        uint64_t assertions_passed_in_test = 0;
+        uint64_t assertions_ran_in_test = 0;
+
+        // Parse the output of the test.
+        int scan_result = sscanf(
+            subproc.output,
+            TEST_OUTPUT_FMT_STRING,
+            &assertions_passed_in_test,
+            &assertions_ran_in_test);
+
+        assert(scan_result == 2);
+
+        subprocess_free(subproc);
+
+        ++tests_ran;
+
+        assertions_passed += assertions_passed_in_test;
+        assertions_ran += assertions_ran_in_test;
+    }
+
+    printf("Passed %" PRIu64 "/%" PRIu64 " assertions in %" PRIu64 " test cases.\n",
+        assertions_passed, assertions_ran, tests_ran);
 
     return 0;
 }
