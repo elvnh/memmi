@@ -5,7 +5,7 @@ typedef struct {
     Ipc ipc;
 } Debuggee;
 
-Debuggee launch_debuggee(const char *path);
+Debuggee launch_debuggee();
 void     destroy_debuggee(Debuggee debuggee);
 Response send_command_with_timeout(Debuggee debuggee, Command command, uint32_t timeout_ms);
 Response send_command(Debuggee debuggee, Command command);

@@ -4,14 +4,16 @@
 #include <assert.h>
 #include <string.h>
 
-#include "debugger.h"
-
 #include "command.h"
 #include "response.h"
-#include "common.h"
 #include "ipc.c"
+#include "common.h"
+#include "debugger.h"
 
-static bool spawn_debuggee_process(const char *path, Pid *pid);
+// TODO: instead make relative to directory of test executable
+#define DEBUGGEE_EXECUTABLE_PATH "build/debuggee"
+
+static bool spawn_debuggee_process(Pid *pid);
 
 #if defined(__linux__)
 #    include "debugger_linux.c"
@@ -19,10 +21,10 @@ static bool spawn_debuggee_process(const char *path, Pid *pid);
 #    error
 #endif
 
-Debuggee launch_debuggee(const char *path)
+Debuggee launch_debuggee()
 {
     Pid pid = 0;
-    bool launch_result = spawn_debuggee_process(path, &pid);
+    bool launch_result = spawn_debuggee_process(&pid);
     assert(launch_result);
 
     Ipc ipc = {0};
