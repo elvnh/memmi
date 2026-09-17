@@ -24,9 +24,8 @@
     do {                                                        \
         if (!(e)) {                                             \
             fprintf(stderr, "\n*** TEST ASSERTION FAILED ***\n" \
-                "Expression: '%s'\nTest case: %s\n%s:%d:\n",    \
+                "Expression: '%s'\nTest case: %s\n%s:%d:\n\n",    \
                 #e, __FILE__, __FILE__, __LINE__);              \
-            DEBUG_BREAK();                                      \
         } else {                                                \
             ++g__assertions_passed;                             \
         }                                                       \
