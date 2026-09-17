@@ -6,6 +6,43 @@
 #include "ipc.c"
 #include "common.h"
 
+static Response handle_command(Command cmd);
+static Ipc      accept_debugger_connection(void);
+static Command  receive_command(Ipc ipc);
+static bool     send_response(Ipc ipc, Response response);
+
+int main()
+{
+    Ipc ipc = accept_debugger_connection();
+
+    while (true) {
+        Command cmd = receive_command(ipc);
+
+        Response response = handle_command(cmd);
+
+        send_response(ipc, response);
+    }
+
+    ipc_destroy(ipc);
+}
+
+static Response handle_command(Command cmd)
+{
+    Response result = {0};
+
+    switch (cmd.kind) {
+        case CMD_DO_NOTHING: {
+            result = res_ack();
+        } break;
+
+        default: {
+            assert(0);
+        } break;
+    }
+
+    return result;
+}
+
 static Command receive_command(Ipc ipc)
 {
     Message message = {0};
@@ -38,28 +75,3 @@ static Ipc accept_debugger_connection(void)
     return result;
 }
 
-int main()
-{
-    Ipc ipc = accept_debugger_connection();
-
-    while (true) {
-        Command cmd = receive_command(ipc);
-
-        Response response = {0};
-
-        switch (cmd.kind) {
-            case CMD_DO_NOTHING: {
-                printf("CMD_DO_NOTHING\n");
-                response.kind = RES_ACK;
-            } break;
-
-            default: {
-                assert(0);
-            } break;
-        }
-
-        send_response(ipc, response);
-    }
-
-    ipc_destroy(ipc);
-}

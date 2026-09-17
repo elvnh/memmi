@@ -4,30 +4,6 @@
 
 typedef int64_t Pid;
 
-/* Commands - sent from the debugger to the debuggee to make it perform an action */
-typedef enum {
-    CMD_DO_NOTHING, /* Used to check if debuggee is alive */
-} CommandKind;
-
-typedef struct {
-    CommandKind kind;
-} Command;
-
-/* Responses - sent back from the debuggee to the debugger as a response to a command */
-typedef enum {
-    /* Responses sent by the other process */
-    RES_ACK,
-
-    /* Errors that can occur when receiving response */
-    RES_ERROR,
-    RES_EXITED,
-    RES_TIMEOUT,
-} ResponseKind;
-
-typedef struct {
-    ResponseKind kind;
-} Response;
-
 /* Messages - used to wrap Responses and Commands when sending them between the processes */
 typedef union {
     Command  command;
