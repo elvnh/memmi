@@ -3,8 +3,10 @@
 #include <stdio.h>
 #include <assert.h>
 
-#include "ipc.c"
+#include "command.h"
+#include "response.h"
 #include "common.h"
+#include "ipc.c"
 
 static Response handle_command(Command cmd);
 static Ipc      accept_debugger_connection(void);

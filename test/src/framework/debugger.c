@@ -4,9 +4,12 @@
 #include <assert.h>
 #include <string.h>
 
-#include "ipc.c"
-#include "common.h"
 #include "debugger.h"
+
+#include "command.h"
+#include "response.h"
+#include "common.h"
+#include "ipc.c"
 
 static bool spawn_debuggee_process(const char *path, Pid *pid);
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-CFLAGS="-Wall -Wextra -ggdb -I../include/"
+CFLAGS="-Wall -Wextra -ggdb -I../include/ -Isrc/framework"
 
 cd $(dirname $0);
 mkdir -p build;
