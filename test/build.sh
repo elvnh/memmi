@@ -7,3 +7,4 @@ mkdir -p build;
 
 gcc ${CFLAGS} src/debuggee_main.c -o build/debuggee;
 gcc ${CFLAGS} src/cases/test_example.c  -o build/example;
+gcc ${CFLAGS} src/test_runner.c  -o build/test_runner;
