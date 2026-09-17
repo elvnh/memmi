@@ -85,7 +85,6 @@ int main(int argc, char **argv)
         char *subproc_args[] = {test_path, 0};
         Subprocess subproc = subprocess_run(test_path, subproc_args);
         assert(subproc.return_code == 0);
-        // TODO: parse output
 
         uint64_t assertions_passed_in_test = 0;
         uint64_t assertions_ran_in_test = 0;

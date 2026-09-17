@@ -1,10 +1,17 @@
 #!/usr/bin/env sh
 
+CC="gcc"
 CFLAGS="-Wall -Wextra -ggdb -I../include/ -Isrc/framework"
 
 cd $(dirname $0);
-mkdir -p build;
+mkdir -p build/cases;
 
-gcc ${CFLAGS} src/debuggee_main.c -o build/debuggee;
-gcc ${CFLAGS} src/cases/test_example.c  -o build/example;
-gcc ${CFLAGS} src/test_runner.c  -o build/test_runner;
+${CC} ${CFLAGS} src/debuggee_main.c -o build/debuggee;
+${CC} ${CFLAGS} src/test_runner.c  -o build/test_runner;
+
+for file in "src/cases/*"; do
+    name=$(basename ${file})
+    name_without_ext=${name%.*}
+
+    ${CC} ${CFLAGS} ${file} -o "build/cases/"${name_without_ext}
+done
