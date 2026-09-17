@@ -10,7 +10,7 @@
 
 static Response handle_command(Command cmd);
 static Ipc      accept_debugger_connection(void);
-static Command  receive_command(Ipc ipc);
+static bool     receive_command(Ipc ipc, Command *cmd);
 static bool     send_response(Ipc ipc, Response response);
 
 int main()
@@ -18,11 +18,15 @@ int main()
     Ipc ipc = accept_debugger_connection();
 
     while (true) {
-        Command cmd = receive_command(ipc);
+        Command cmd = {0};
 
-        Response response = handle_command(cmd);
+        if (receive_command(ipc, &cmd)) {
+            Response response = handle_command(cmd);
 
-        send_response(ipc, response);
+            send_response(ipc, response);
+        } else {
+            break;
+        }
     }
 
     ipc_destroy(ipc);
@@ -45,13 +49,17 @@ static Response handle_command(Command cmd)
     return result;
 }
 
-static Command receive_command(Ipc ipc)
+static bool receive_command(Ipc ipc, Command *cmd)
 {
+    bool result = false;
+
     Message message = {0};
     IpcReceiveResult recv_res = ipc_receive_with_timeout(ipc, &message, IPC_TIMEOUT_NONE);
-    assert(recv_res == IPC_RECEIVE_OK);
 
-    Command result = message.command;
+    if (recv_res == IPC_RECEIVE_OK) {
+        result = true;
+        *cmd = message.command;
+    }
 
     return result;
 }
