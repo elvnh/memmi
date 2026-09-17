@@ -1,13 +1,23 @@
 #pragma once
 
-/* This file should be included by all test case files. */
+/*
+  TODO:
+  - Allow tests to define arbitrary names
+  - Allow breaking/continuing/stopping on test failure
+ */
 
-#include "debugger.c"
+#define TEST_OUTPUT_FMT_STRING "%" PRIu64 "/%" PRIu64 "\n"
 
 #if defined(__GNUC__)
-#    define DEBUG_BREAK()
+#    define DEBUG_BREAK() __builtin_trap()
 #else
 #    error DEBUG_BREAK() not defined for this compiler
+#endif
+
+#if defined(__GNUC__)
+#    define MAYBE_UNUSED __attribute__((unused))
+#else
+#    error MAYBE_UNUSED not defined for this compiler
 #endif
 
 #define REQUIRE(e)                                              \
@@ -22,6 +32,3 @@
         }                                                       \
         ++g__assertions_ran;                                    \
     } while (0);
-
-static uint64_t g__assertions_ran;
-static uint64_t g__assertions_passed;

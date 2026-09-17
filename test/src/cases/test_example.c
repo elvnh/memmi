@@ -1,10 +1,9 @@
-#include "test_case.h"
+#include "test_case.c"
 
-int main()
+void test_case_main()
 {
     Debuggee d = launch_debuggee();
     Response res = send_command(d, cmd_do_nothing());
 
     REQUIRE(res.kind == RES_ACK);
-
 }
