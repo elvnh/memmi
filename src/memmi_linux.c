@@ -165,6 +165,7 @@ static memmi_Status memmi_lnx_proc_fs_errno_to_memmi_status(int errno_value)
 
     return result;
 }
+
 typedef struct {
     memmi_Status status;
     int fd;
@@ -339,14 +340,13 @@ static memmi_Status memmi_lnx_for_each_thread(pid_t pid, void *user_data, memmi_
                     found_thread_dir = true;
 
                     memmi_String name = memmi_str_from_c_str(subdir_entry->d_name);
-                    memmi_MaybeS64 tid_opt = memmi_str_to_s64(name, MEMMI_NUM_BASE_DEC);
 
-                    if (tid_opt.ok) {
-                        pid_t tid = (pid_t)tid_opt.value;
+                    uint64_t tid = 0;
 
+                    if (memmi_str_to_u64(name, &tid)) {
                         int saved_errno = errno;
 
-                        memmi_lnx_ForEachThreadResult cb_result = fn(user_data, tid);
+                        memmi_lnx_ForEachThreadResult cb_result = fn(user_data, (pid_t)tid);
 
                         // We don't want the callback to affect our errno checking after the loop.
                         errno = saved_errno;
@@ -453,10 +453,12 @@ static memmi_lnx_PidResult memmi_lnx_get_pid_of_tracing_process(pid_t tid)
         result.status = entry.status;
     } else {
         memmi_String str = memmi_str_from_span(entry);
-        memmi_MaybeS64 pid_opt = memmi_str_to_s64(str, MEMMI_NUM_BASE_DEC);
-        MEMMI_ASSERT(pid_opt.ok);
 
-        result.pid = (pid_t)pid_opt.value;
+        uint64_t pid_value = 0;
+        bool parse_ok = memmi_str_to_u64(str, &pid_value);
+        MEMMI_ASSERT(parse_ok);
+
+        result.pid = (pid_t)pid_value;
     }
 
 
@@ -489,9 +491,12 @@ static memmi_lnx_PidResult memmi_lnx_get_thread_group_id(pid_t tid)
         MEMMI_ASSERT(entry.count);
 
         memmi_String tgid_str = memmi_str_from_span(entry);
-        memmi_MaybeS64 tgid_opt = memmi_str_to_s64(tgid_str, MEMMI_NUM_BASE_DEC);
-        MEMMI_ASSERT(tgid_opt.ok);
-        result.pid = (pid_t)tgid_opt.value;
+
+        uint64_t tgid = 0;
+        bool tgid_ok = memmi_str_to_u64(tgid_str, &tgid);
+        MEMMI_ASSERT(tgid_ok);
+
+        result.pid = (pid_t)tgid;
     }
 
     return result;
@@ -768,13 +773,13 @@ static memmi_lnx_Region memmi_lnx_parse_memory_region(char *line, size_t length)
 
     memmi_String perms_str = fields[perms_index];
 
-    memmi_MaybeU64 base_address_opt = memmi_str_to_u64(base_address_str, MEMMI_NUM_BASE_HEX);
-    memmi_MaybeU64 end_address_opt = memmi_str_to_u64(end_address_str, MEMMI_NUM_BASE_HEX);
-    MEMMI_ASSERT(base_address_opt.ok);
-    MEMMI_ASSERT(end_address_opt.ok);
+    size_t base_address = 0;
+    size_t end_address = 0;
 
-    uintptr_t base_address = (uintptr_t)base_address_opt.value;
-    uintptr_t end_address = (uintptr_t)end_address_opt.value;
+    bool base_address_ok = memmi_str_to_usize(base_address_str, &base_address);
+    bool end_address_ok = memmi_str_to_usize(end_address_str, &end_address);
+    MEMMI_ASSERT(base_address_ok);
+    MEMMI_ASSERT(end_address_ok);
 
     memmi_MemoryRegionPermission permissions = memmi_zero_enum(memmi_MemoryRegionPermission);
 
@@ -798,7 +803,7 @@ static memmi_lnx_Region memmi_lnx_parse_memory_region(char *line, size_t length)
     size_t region_size = end_address - base_address;
 
     memmi_lnx_Region result = memmi_zero_struct(memmi_lnx_Region);
-    result.region_info.base_address = base_address;
+    result.region_info.base_address = (uintptr_t)base_address;
     result.region_info.size = region_size;
     result.region_info.permissions = permissions;
     result.pathname_view = pathname;
@@ -943,17 +948,16 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 
                 if ((stat_result == 0) && S_ISDIR(subdir_info.st_mode)) {
                     memmi_String dir_name = memmi_str_from_c_str(subdir_entry->d_name);
-                    memmi_MaybeS64 number_opt = memmi_str_to_s64(dir_name, MEMMI_NUM_BASE_DEC);
+                    uint64_t pid = 0;
 
-                    if (number_opt.ok) {
+                    if (memmi_str_to_u64(dir_name, &pid)) {
                         memmi_lnx_ProcessName proc_name = memmi_lnx_get_process_name(subdir_fd, allocator);
 
                         if (proc_name.ok) {
                             MEMMI_ASSERT(proc_name.value.count > 0);
                             MEMMI_ASSERT(proc_name.value.data);
 
-                            int64_t pid_value = number_opt.value;
-                            memmi_ProcessInfo proc = {proc_name.value, pid_value};
+                            memmi_ProcessInfo proc = {proc_name.value, (memmi_PID)pid};
 
                             memmi_DynArray new_processes = memmi_dyn_arr_push(&processes, proc, allocator);
 

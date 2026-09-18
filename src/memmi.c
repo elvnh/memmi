@@ -197,26 +197,6 @@ static inline bool memmi_is_whitespace(char ch)
     return result;
 }
 
-typedef enum {
-    MEMMI_NUM_BASE_DEC = 10,
-    MEMMI_NUM_BASE_HEX = 16,
-} memmi_NumberBase;
-
-typedef struct {
-    int64_t value;
-    bool ok;
-} memmi_MaybeS64;
-
-typedef struct {
-    uint64_t value;
-    bool ok;
-} memmi_MaybeU64;
-
-typedef struct {
-    size_t value;
-    bool ok;
-} memmi_MaybeUsize;
-
 /***************************/
 /*         String          */
 /***************************/
@@ -336,276 +316,107 @@ static memmi_String memmi_str_copy(memmi_String str, memmi_Allocator allocator)
 }
 
 /***************************/
-/*      Safe arithmetic    */
+/*     Safe arithmetic     */
 /***************************/
-// TODO: define these for other compilers
-// TODO: Redo all number parsing and safe arithmetic
-
-#if MEMMI_GCC
-#    define MEMMI_SAFE_ADD_S64(a, b, result_ptr)   !__builtin_add_overflow((a), (b), (result_ptr))
-#    define MEMMI_SAFE_ADD_U64(a, b, result_ptr)   !__builtin_add_overflow((a), (b), (result_ptr))
-#    define MEMMI_SAFE_MUL_S64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
-#    define MEMMI_SAFE_MUL_U64(a, b, result_ptr)   !__builtin_mul_overflow((a), (b), (result_ptr))
-#    define MEMMI_SAFE_MUL_USIZE(a, b, result_ptr) !__builtin_mul_overflow((a), (b), (result_ptr))
-#elif MEMMI_MSVC
-// TODO: these can be simplified
-// TODO: are these even needed for win32?
-#    define MEMMI_SAFE_ADD_S64(a, b, result_ptr)   memmi_safe_add_s64_impl((a), (b), (result_ptr))
-#    define MEMMI_SAFE_ADD_U64(a, b, result_ptr)   memmi_safe_add_u64_impl((a), (b), (result_ptr))
-#    define MEMMI_SAFE_MUL_S64(a, b, result_ptr)   memmi_safe_mul_s64_impl((a), (b), (result_ptr))
-#    define MEMMI_SAFE_MUL_U64(a, b, result_ptr)   memmi_safe_mul_u64_impl((a), (b), (result_ptr))
-#    define MEMMI_SAFE_MUL_USIZE(a, b, result_ptr) memmi_safe_mul_usize_impl((a), (b), (result_ptr))
-// Thanks MSVC, I'll do it myself.
-// TODO: use macros to generate the various types of these
-// TODO: the implementations of these are so simple that maybe
-// we should just use them for all compilers. They aren't used in any performance
-// critical paths anyways.
-
-static bool memmi_safe_add_s64_impl(int64_t a, int64_t b, int64_t *out)
-{
-    bool result = false;
-
-    if (a <= (INT64_MAX - b)) {
-        result = true;
-        *out = a + b;
-    }
-
-    return result;
-}
-
-static bool memmi_safe_add_u64_impl(uint64_t a, uint64_t b, uint64_t *out)
-{
-    bool result = false;
-
-    if (a <= (UINT64_MAX - b)) {
-        result = true;
-        *out = a + b;
-    }
-
-    return result;
-}
-
-static bool memmi_safe_mul_s64_impl(int64_t a, int64_t b, int64_t *out)
+static bool memmi_safe_add_u64(uint64_t a, uint64_t b, uint64_t *out)
 {
     bool result = false;
 
     if ((a == 0) || (b == 0)) {
         result = true;
-        *out = 0;
-    } else if (a <= (INT64_MAX / b)) {
-        result = true;
-        *out = a * b;
-    }
-
-    return result;
-}
-
-
-static bool memmi_safe_mul_u64_impl(uint64_t a, uint64_t b, uint64_t *out)
-{
-    bool result = false;
-
-    if ((a == 0) || (b == 0)) {
-        result = true;
-        *out = 0;
-    } else if (a <= (UINT64_MAX / b)) {
-        result = true;
-        *out = a * b;
-    }
-
-    return result;
-}
-
-static bool memmi_safe_mul_usize_impl(size_t a, size_t b, size_t *out)
-{
-    bool result = false;
-
-    if ((a == 0) || (b == 0)) {
-        result = true;
-        *out = 0;
-    } else if (a <= (SIZE_MAX / b)) {
-        result = true;
-        *out = a * b;
-    }
-
-    return result;
-}
-
-#else
-#    error Unsupported compiler
-#endif
-
-static memmi_MaybeS64 memmi_safe_add_s64(int64_t a, int64_t b)
-{
-    memmi_MaybeS64 result = memmi_zero_struct(memmi_MaybeS64);
-
-    result.ok = MEMMI_SAFE_ADD_S64(a, b, &result.value);
-
-    return result;
-}
-
-static memmi_MaybeU64 memmi_safe_add_u64(uint64_t a, uint64_t b)
-{
-    memmi_MaybeU64 result = memmi_zero_struct(memmi_MaybeU64);
-
-    result.ok = MEMMI_SAFE_ADD_U64(a, b, &result.value);
-
-    return result;
-}
-
-static memmi_MaybeS64 memmi_safe_mul_s64(int64_t a, int64_t b)
-{
-    memmi_MaybeS64 result = memmi_zero_struct(memmi_MaybeS64);
-
-    result.ok = MEMMI_SAFE_MUL_S64(a, b, &result.value);
-
-    return result;
-}
-
-static memmi_MaybeU64 memmi_safe_mul_u64(uint64_t a, uint64_t b)
-{
-    memmi_MaybeU64 result = memmi_zero_struct(memmi_MaybeU64);
-
-    result.ok = MEMMI_SAFE_MUL_U64(a, b, &result.value);
-
-    return result;
-}
-
-static memmi_MaybeUsize memmi_safe_mul_usize(size_t a, size_t b)
-{
-    memmi_MaybeUsize result = memmi_zero_struct(memmi_MaybeUsize);
-
-    result.ok = MEMMI_SAFE_MUL_USIZE(a, b, &result.value);
-
-    return result;
-}
-
-/***************************/
-/*      Number parsing     */
-/***************************/
-static uint32_t memmi_parse_digit(char c, memmi_NumberBase base)
-{
-    MEMMI_ASSERT(memmi_is_digit(c) || ((base == MEMMI_NUM_BASE_HEX) && memmi_is_hex(c)));
-
-    if (c >= 'a') {
-        // Convert to upper
-        c -= 'a' - 'A';
-    }
-
-    uint32_t result = 0;
-    if (memmi_is_alpha(c)) {
-        result = 10 + (uint32_t)(c - 'A');
     } else {
-        result = (uint32_t)(c - '0');
+        result = a <= (UINT64_MAX - b);
+    }
+
+    if (result) {
+        *out = a + b;
     }
 
     return result;
 }
 
-// TODO: These number parsing functions are bad
-static memmi_MaybeS64 memmi_str_to_s64(memmi_String str, memmi_NumberBase base)
+static bool memmi_safe_mul_u64(uint64_t a, uint64_t b, uint64_t *out)
 {
-    // TODO: reduce code duplication between this and str_to_u64
-    memmi_MaybeS64 result = memmi_zero_struct(memmi_MaybeS64);
-    // negativ hex?
+    bool result = false;
 
-    // Predeclare literals in order to avoid extended initializer list errors pre-C++11.
-    memmi_String minus_lit = memmi_str_lit("-");
-    memmi_String lower_hex_lit = memmi_str_lit("0x");
-    memmi_String upper_hex_lit = memmi_str_lit("0X");
-
-    int32_t sign = 1;
-    if (memmi_str_starts_with(str, minus_lit)) {
-        sign = -1;
-
-        ++str.data;
-        --str.count;
+    if ((a == 0) || (b == 0)) {
+        result = true;
+    } else {
+        result = a <= (UINT64_MAX / b);
     }
 
-    if (memmi_str_starts_with(str, lower_hex_lit) || memmi_str_starts_with(str, upper_hex_lit)) {
-        str.data += 2;
-        str.count -= 2;
+    if (result) {
+        *out = a * b;
     }
-
-    result.ok = str.count > 0;
-
-    for (size_t i = 0; i < str.count; ++i) {
-        char c = str.data[i];
-
-        if (!memmi_is_digit(c) && !((base == MEMMI_NUM_BASE_HEX) && memmi_is_hex(c))) {
-            result.ok = false;
-            break;
-        } else {
-            memmi_MaybeS64 product = memmi_safe_mul_s64(result.value, base);
-
-            if (product.ok) {
-                result.value = product.value;
-
-                int32_t digit = (int32_t)memmi_parse_digit(c, base) * sign;
-
-                memmi_MaybeS64 sum = memmi_safe_add_s64(result.value, digit);
-
-                if (sum.ok) {
-                    result.value = sum.value;
-                } else {
-                    result.ok = false;
-                    break;
-                }
-            } else {
-                result.ok = false;
-                break;
-            }
-        }
-    }
-
-    // TODO: negative numbers
 
     return result;
 }
 
-static memmi_MaybeU64 memmi_str_to_u64(memmi_String str, memmi_NumberBase base)
+static bool memmi_safe_mul_usize(size_t a, size_t b, size_t *out)
 {
-    memmi_MaybeU64 result = memmi_zero_struct(memmi_MaybeU64);
+    bool result = false;
 
-    // Predeclare literals in order to avoid extended initializer list errors pre-C++11.
-    memmi_String lower_hex_lit = memmi_str_lit("0x");
-    memmi_String upper_hex_lit = memmi_str_lit("0X");
+    uint64_t u64_value = 0;
 
-    if (memmi_str_starts_with(str, lower_hex_lit) || memmi_str_starts_with(str, upper_hex_lit)) {
-        str.data += 2;
-        str.count -= 2;
+    if (memmi_safe_mul_u64(a, b, &u64_value)) {
+        result = u64_value <= SIZE_MAX;
+        *out = (size_t)u64_value;
     }
 
-    result.ok = str.count > 0;
+    return result;
+}
+
+/***************************/
+/*     Integer parsing     */
+/***************************/
+int memmi_parse_digit(char c, uint32_t *out)
+{
+    int result = 0;
+    uint32_t value = 0;
+
+    if ((c >= '0') && (c < ('0' + (char)10))) {
+        value = (uint32_t)((char)c - '0');
+        result = 1;
+    }
+
+    *out = value;
+
+    return result;
+}
+
+static bool memmi_str_to_u64(memmi_String str, uint64_t *out)
+{
+    bool result = str.count > 0;
+    uint64_t value = 0;
 
     for (size_t i = 0; i < str.count; ++i) {
-        char c = str.data[i];
+        uint32_t digit = 0;
+        int digit_ok = memmi_parse_digit(str.data[i], &digit);
 
-        if (!memmi_is_digit(c) && !((base == MEMMI_NUM_BASE_HEX) && memmi_is_hex(c))) {
-            result.ok = false;
+        int multiply_ok = memmi_safe_mul_u64(value, 10, &value);
+        int add_ok = memmi_safe_add_u64(value, digit, &value);
+
+        if (!(digit_ok && multiply_ok && add_ok)) {
+            result = 0;
             break;
-        } else {
-            memmi_MaybeU64 factor = memmi_safe_mul_u64(result.value, (uint64_t)base);
-
-            if (factor.ok) {
-                result.value = factor.value;
-
-                uint32_t digit = memmi_parse_digit(c, base);
-
-                memmi_MaybeU64 sum = memmi_safe_add_u64(result.value, digit);
-
-                if (sum.ok) {
-                    result.value = sum.value;
-                } else {
-                    result.ok = false;
-                    break;
-                }
-            } else {
-                result.ok = false;
-                break;
-            }
         }
     }
+
+    *out = value;
+
+    return result;
+}
+
+static bool memmi_str_to_usize(memmi_String str, size_t *out)
+{
+    bool result = false;
+    uint64_t u64_value = 0;
+
+    if (memmi_str_to_u64(str, &u64_value)) {
+        result = u64_value <= SIZE_MAX;
+    }
+
+    *out = u64_value;
 
     return result;
 }
@@ -621,11 +432,10 @@ static void *memmi_default_allocate(void *ctx, void *ptr, size_t old_count, size
 
     void *result = 0;
 
-    memmi_MaybeUsize new_size = memmi_safe_mul_usize(new_count, item_size);
+    size_t new_size = 0;
 
-    if (new_size.ok) {
-        // TODO: get rid of libc?
-        result = realloc(ptr, new_size.value);
+    if (memmi_safe_mul_usize(new_count, item_size, &new_size)) {
+        result = realloc(ptr, new_size);
     }
 
     return result;
@@ -728,8 +538,7 @@ typedef struct {
 #    define MEMMI_REGISTER_PREFIX_LETTER_LOWER  e
 #endif
 
-// TODO: keeping this macro around probably isn't worth it
-#define MEMMI_16_BIT_TO_32_64_BIT_REGISTER_ENUM(name)                                     \
+#define MEMMI_16_BIT_TO_32_64_BIT_REGISTER_ENUM(name)                   \
     MEMMI_PP_CONCAT(MEMMI_REG_, MEMMI_PP_CONCAT(MEMMI_REGISTER_PREFIX_LETTER_UPPER, name))
 
 #if MEMMI_X64
