@@ -1,4 +1,4 @@
-#include "test_case.c"
+#include "test_case_base.c"
 
 void test_case_main()
 {

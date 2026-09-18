@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CC="gcc"
-CFLAGS="-Wall -Wextra -ggdb -I../include/memmi -Isrc/framework -I../src/"
+CFLAGS="-Wall -Wextra -ggdb -I../include/memmi -I../src/ -Isrc"
 
 BUILD_DIR="build"
 CASES_DIR="${BUILD_DIR}/cases"
@@ -11,10 +11,12 @@ TEST_RUNNER_PATH="${BUILD_DIR}/test_runner"
 
 cd $(dirname $0);
 
+# TODO: don't remove the directories, this gets weird if the user is inside the
+# directory when it gets removed, just remove all files instead
 rm -r ${BUILD_DIR} 2> /dev/null;
 mkdir -p ${CASES_DIR};
 
-${CC} ${CFLAGS} src/debuggee_main.c -o ${DEBUGGEE_PATH};
+${CC} ${CFLAGS} src/test_debuggee.c -o ${DEBUGGEE_PATH};
 ${CC} ${CFLAGS} src/test_runner.c  -o ${TEST_RUNNER_PATH};
 
 for file in src/cases/*.c; do

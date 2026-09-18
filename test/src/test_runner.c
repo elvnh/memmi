@@ -1,14 +1,8 @@
+#include "ipc/ipc_all.c"
+
 #include <unistd.h>
 #include <sys/wait.h>
 #include <poll.h>
-
-#include <stdio.h>
-#include <assert.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <inttypes.h>
-
-#include "test_case.h"
 
 typedef struct {
     int return_code;
@@ -17,6 +11,8 @@ typedef struct {
 
 #define PIPE_READ_END  0
 #define PIPE_WRITE_END 1
+
+// TODO: Split OS implementations into separate files
 
 Subprocess subprocess_run(const char *exe, char *argv[])
 {
@@ -97,13 +93,13 @@ int main(int argc, char **argv)
         char *subproc_args[] = {test_path, 0};
         Subprocess subproc = subprocess_run(test_path, subproc_args);
 
-        uint64_t assertions_passed_in_test = 0;
-        uint64_t assertions_ran_in_test = 0;
+        uint32_t assertions_passed_in_test = 0;
+        uint32_t assertions_ran_in_test = 0;
 
         // Parse the output of the test.
         int scan_result = sscanf(
             subproc.output,
-            TEST_OUTPUT_FMT_STRING,
+            IPC_TEST_OUTPUT_FMT_STRING,
             &assertions_passed_in_test,
             &assertions_ran_in_test);
 

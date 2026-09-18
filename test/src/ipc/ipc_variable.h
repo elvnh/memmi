@@ -1,8 +1,5 @@
 #pragma once
 
-#include <stdint.h>
-#include <stddef.h>
-
 typedef size_t VariableId;
 
 typedef enum {
@@ -12,6 +9,13 @@ typedef enum {
 typedef union {
     int32_t int32;
 } Value;
+
+typedef struct {
+    VariableId    id;
+    uintptr_t     address;
+    Value         value; // TODO: store as TypedValue?
+    ValueType     type;
+} VariableInfo;
 
 typedef struct {
     ValueType type;
@@ -26,10 +30,3 @@ static inline TypedValue val_int32(int32_t val)
 
     return result;
 }
-
-typedef struct {
-    VariableId    id;
-    uintptr_t     address;
-    Value         value;
-    ValueType     type;
-} VariableInfo;

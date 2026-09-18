@@ -1,12 +1,4 @@
-#include <stdbool.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <assert.h>
-
-#include "command.h"
-#include "response.h"
-#include "common.h"
-#include "ipc.c"
+#include "ipc/ipc_all.c"
 
 #define MAX_VARIABLE_COUNT 1024
 
@@ -130,7 +122,7 @@ static bool send_response(Ipc ipc, Response response)
 
 static Ipc accept_debugger_connection(void)
 {
-    Ipc result = ipc_accept(TEST_IPC_PORT, sizeof(Message));
+    Ipc result = ipc_accept(IPC_TEST_PORT, sizeof(Message));
 
     if (!ipc_ok(result)) {
         assert(0);
@@ -138,4 +130,3 @@ static Ipc accept_debugger_connection(void)
 
     return result;
 }
-

@@ -1,7 +1,4 @@
-#include <stdint.h>
-#include <stddef.h>
-
-#include "ipc.h"
+#include "ipc_connection.h"
 
 #if defined(__linux__)
 #    include "ipc_linux.c"

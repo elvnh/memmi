@@ -1,11 +1,5 @@
 #pragma once
 
-/*
-  TODO:
-  - Send/receive in a loop
-  - Timeout for send?
-*/
-
 #define IPC_TIMEOUT_NONE 0
 
 typedef struct {
