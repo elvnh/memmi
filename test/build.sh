@@ -22,6 +22,9 @@ ${CC} ${CFLAGS} src/test_runner.c  -o ${TEST_RUNNER_PATH} -DDEBUGGEE_EXECUTABLE_
 
 success=$?
 
+if [[ $(id -u) != "0" ]]; then
+    echo "In order to set the CAP_SYS_PTRACE permission on the test cases you will need root permissions. Please enter your password: ";
+fi
 
 for file in src/cases/*.c; do
     if [[ ${success} != 0 ]]; then
@@ -29,12 +32,13 @@ for file in src/cases/*.c; do
     fi
 
     [ -e "$file" ] || continue
+
     name=$(basename ${file})
     name_without_extension=${name%.*}
     test_case_exe="${CASES_DIR}/${name_without_extension}"
 
     ${CC} ${CFLAGS} ${file} -o ${test_case_exe} &&
-        setcap CAP_SYS_PTRACE=eip ${test_case_exe};
+        sudo setcap CAP_SYS_PTRACE=eip ${test_case_exe};
     success=$?
 done
 
