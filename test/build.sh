@@ -18,7 +18,7 @@ rm -r ${BUILD_DIR} 2> /dev/null;
 mkdir -p ${CASES_DIR};
 
 ${CC} ${CFLAGS} src/test_debuggee.c -o ${DEBUGGEE_PATH};
-${CC} ${CFLAGS} src/test_runner.c  -o ${TEST_RUNNER_PATH};
+${CC} ${CFLAGS} src/test_runner.c  -o ${TEST_RUNNER_PATH} -DDEBUGGEE_EXECUTABLE_NAME="\"${DEBUGGEE_EXE}\"";
 
 for file in src/cases/*.c; do
     [ -e "$file" ] || continue
@@ -27,9 +27,8 @@ for file in src/cases/*.c; do
     name_without_extension=${name%.*}
     test_case_exe="${CASES_DIR}/${name_without_extension}"
 
-    ${CC} ${CFLAGS} ${file} -o ${test_case_exe} \
-          -DDEBUGGEE_EXECUTABLE_NAME="\"${DEBUGGEE_EXE}\""
-    setcap CAP_SYS_PTRACE=eip ${test_case_exe}
+    ${CC} ${CFLAGS} ${file} -o ${test_case_exe};
+    setcap CAP_SYS_PTRACE=eip ${test_case_exe};
 done
 
 # TODO: separate test script

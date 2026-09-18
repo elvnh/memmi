@@ -2,10 +2,10 @@
 
 #define MAX_VARIABLE_COUNT 1024
 
-static Response handle_command(Command cmd);
-static Ipc      accept_debugger_connection(void);
-static bool     receive_command(Ipc ipc, Command *cmd);
-static bool     send_response(Ipc ipc, Response response);
+Response handle_command(Command cmd);
+Ipc      accept_debugger_connection(void);
+bool     receive_command(Ipc ipc, Command *cmd);
+bool     send_response(Ipc ipc, Response response);
 
 int main()
 {
@@ -35,7 +35,7 @@ static struct {
     } variables;
 } g;
 
-static VariableInfo get_variable(VariableId id)
+VariableInfo get_variable(VariableId id)
 {
     assert(id < MAX_VARIABLE_COUNT);
 
@@ -48,7 +48,7 @@ static VariableInfo get_variable(VariableId id)
     return info;
 }
 
-static VariableInfo set_variable(VariableId id, TypedValue typed_value)
+VariableInfo set_variable(VariableId id, TypedValue typed_value)
 {
     assert(id < MAX_VARIABLE_COUNT);
 
@@ -60,7 +60,7 @@ static VariableInfo set_variable(VariableId id, TypedValue typed_value)
     return result;
 }
 
-static VariableId declare_variable(TypedValue typed_value)
+VariableId declare_variable(TypedValue typed_value)
 {
     assert(g.variables.next_id < MAX_VARIABLE_COUNT);
 
@@ -70,7 +70,7 @@ static VariableId declare_variable(TypedValue typed_value)
     return id;
 }
 
-static Response handle_command(Command cmd)
+Response handle_command(Command cmd)
 {
     Response result = {0};
 
@@ -95,7 +95,7 @@ static Response handle_command(Command cmd)
     return result;
 }
 
-static bool receive_command(Ipc ipc, Command *cmd)
+bool receive_command(Ipc ipc, Command *cmd)
 {
     bool result = false;
 
@@ -110,7 +110,7 @@ static bool receive_command(Ipc ipc, Command *cmd)
     return result;
 }
 
-static bool send_response(Ipc ipc, Response response)
+bool send_response(Ipc ipc, Response response)
 {
     Message message = {0};
     message.response = response;
@@ -120,7 +120,7 @@ static bool send_response(Ipc ipc, Response response)
     return result;
 }
 
-static Ipc accept_debugger_connection(void)
+Ipc accept_debugger_connection(void)
 {
     Ipc result = ipc_accept(IPC_TEST_PORT, sizeof(Message));
 
