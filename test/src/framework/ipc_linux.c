@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <errno.h>
+#include <poll.h>
 
 typedef enum {
     LNX_IPC_SERVER,
@@ -119,18 +120,15 @@ IpcReceiveResult ipc_receive_with_timeout(Ipc ipc, void *msg, uint32_t timeout_m
 
     while ((result == IPC_RECEIVE_OK) && (bytes_received < ipc.message_size)) {
         if (timeout_ms != IPC_TIMEOUT_NONE) {
-            struct timeval tv = {0};
-            tv.tv_usec = timeout_ms * 1000;
+            struct pollfd poll_fd = {0};
+            poll_fd.fd = lnx_ipc->client_socket;
+            poll_fd.events = POLLIN;
 
-            fd_set set = {0};
-            FD_ZERO(&set);
-            FD_SET(lnx_ipc->client_socket, &set);
+            int poll_result = poll(&poll_fd, 1, timeout_ms);
 
-            int select_result = select(lnx_ipc->client_socket + 1, &set, 0, 0, &tv);
-
-            if (select_result == -1) {
+            if (poll_result == -1) {
                 result = IPC_RECEIVE_ERROR;
-            } else if (select_result == 0) {
+            } else if (poll_result == 0) {
                 result = IPC_RECEIVE_TIMEOUT;
             }
         }
