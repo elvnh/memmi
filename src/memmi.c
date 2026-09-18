@@ -91,19 +91,18 @@
 #define memmi_inc_enum(e) (e = (MEMMI_TYPEOF(e))((e) + 1))
 
 #if MEMMI_DEBUG
-#    define MEMMI_ASSERT(e) do {                                      \
-            if (!(e)) {                                         \
-                fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
-                    "Expression: '%s'\nFunction: %s\n%s:%d:\n", \
-                    #e, __func__, __FILE__, __LINE__);     \
-                DEBUG_BREAK;                                    \
-            }                                                   \
-        } while (0)
+#    define MEMMI_ASSERT(e) do {                            \
+        if (!(e)) {                                         \
+            fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
+                "Expression: '%s'\nFunction: %s\n%s:%d:\n", \
+                #e, __func__, __FILE__, __LINE__);          \
+            DEBUG_BREAK;                                    \
+        }                                                   \
+    } while (0)
 #else
 #    define MEMMI_ASSERT(e) (void)(e)
 #endif
 
-// TODO: is this still needed?
 #define memmi_sl_push_back(list, node)          \
     do {                                        \
         if ((list)->last) {                     \
@@ -145,58 +144,6 @@
 #    error MEMMI_TYPEOF not defined for this compiler
 #endif
 
-// TODO: move closer to function definition
-typedef struct {
-    memmi_String head;
-    memmi_String tail;
-    bool   ok;
-} memmi_Cut;
-
-// TODO: can these be in memmi_linux.c?
-static inline bool memmi_is_digit(char ch)
-{
-    bool result = (ch >= '0') && (ch <= '9');
-
-    return result;
-}
-
-static inline bool memmi_is_alpha(char ch)
-{
-    bool result = ((ch >= 'a') && (ch <= 'z'))
-        || ((ch >= 'A') && (ch <= 'Z'));
-
-    return result;
-}
-
-static inline bool memmi_is_hex(char ch)
-{
-    bool result = ((ch >= 'a') && (ch <= 'f'))
-        || ((ch >= 'A') && (ch <= 'F'));
-
-    return result;
-}
-
-static inline bool memmi_is_number(memmi_String str)
-{
-    bool result = str.count > 0;
-
-    for (size_t i = 0; i < str.count; ++i) {
-        if (!memmi_is_digit(str.data[i])) {
-            result = false;
-            break;
-        }
-    }
-
-    return result;
-}
-
-static inline bool memmi_is_whitespace(char ch)
-{
-    bool result = (ch == ' ') || (ch == '\n') || (ch == '\t') || (ch == '\r');
-
-    return result;
-}
-
 /***************************/
 /*         String          */
 /***************************/
@@ -205,6 +152,13 @@ static inline bool memmi_is_whitespace(char ch)
 #else
 #    define memmi_str_lit(s) (memmi_String) { s, MEMMI_ARRAY_COUNT(s) - 1 }
 #endif
+
+static inline bool memmi_is_whitespace(char ch)
+{
+    bool result = (ch == ' ') || (ch == '\n') || (ch == '\t') || (ch == '\r');
+
+    return result;
+}
 
 static memmi_String memmi_str_from_c_str(char *str)
 {
@@ -238,6 +192,12 @@ static bool memmi_str_starts_with(memmi_String str, memmi_String substr)
 
     return result;
 }
+
+typedef struct {
+    memmi_String head;
+    memmi_String tail;
+    bool   ok;
+} memmi_Cut;
 
 static memmi_Cut memmi_str_cut(memmi_String str, memmi_String pattern)
 {
