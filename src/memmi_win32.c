@@ -23,7 +23,7 @@ static memmi_Status windows_error_to_memmi_status(DWORD error_code)
         } break;
 
         default: {
-            ASSERT(0);
+            MEMMI_ASSERT(0);
         } break;
     }
 
@@ -51,12 +51,12 @@ typedef struct {
 
 Win32Handle win32_open_thread_handle(DWORD tid)
 {
-    Win32Handle result = zero_struct(Win32Handle);
+    Win32Handle result = memmi_zero_struct(Win32Handle);
 
     HANDLE handle = OpenThread(THREAD_ALL_ACCESS, FALSE, tid);
 
     if (!handle) {
-        ASSERT(0);
+        MEMMI_ASSERT(0);
         result.status = windows_error_to_memmi_status(GetLastError());
     } else {
         result.data = handle;
@@ -195,7 +195,7 @@ static memmi_RegisterValue win32_load_context_struct_register_value(CONTEXT *con
         #endif
 
         default: {
-            ASSERT(0);
+            MEMMI_ASSERT(0);
         } break;
     }
 
@@ -259,7 +259,7 @@ static void win32_set_context_struct_register_value(CONTEXT *context, memmi_Regi
         #endif
 
         default: {
-            ASSERT(0);
+            MEMMI_ASSERT(0);
         } break;
     }
 }
@@ -271,9 +271,9 @@ typedef struct {
 
 static Win32Context win32_get_thread_context(HANDLE handle)
 {
-    Win32Context result = zero_struct(Win32Context);
+    Win32Context result = memmi_zero_struct(Win32Context);
 
-    CONTEXT context = zero_struct(CONTEXT);
+    CONTEXT context = memmi_zero_struct(CONTEXT);
     context.ContextFlags = CONTEXT_FULL;
 
     BOOL get_context_result = GetThreadContext(handle, &context);
@@ -292,18 +292,18 @@ static Win32Context win32_get_thread_context(HANDLE handle)
 /**********************/
 static memmi_String memmi_win32_get_module_name(HANDLE proc_handle, HMODULE module, memmi_Allocator allocator)
 {
-    memmi_String result = zero_struct(memmi_String);
+    memmi_String result = memmi_zero_struct(memmi_String);
 
     char proc_name_buf[MAX_PATH];
 
     DWORD module_name_chars_written = GetModuleBaseNameA(
-        proc_handle, module, proc_name_buf, ARRAY_COUNT(proc_name_buf));
+        proc_handle, module, proc_name_buf, MEMMI_ARRAY_COUNT(proc_name_buf));
 
-    ASSERT((module_name_chars_written > 0) && "TODO: how to handle this? Just ignore?");
+    MEMMI_ASSERT((module_name_chars_written > 0) && "TODO: how to handle this? Just ignore?");
 
     if (module_name_chars_written > 0) {
         memmi_String proc_name = {proc_name_buf, module_name_chars_written};
-        result = str_copy(proc_name, allocator);
+        result = memmi_str_copy(proc_name, allocator);
     }
 
     return result;
@@ -311,7 +311,7 @@ static memmi_String memmi_win32_get_module_name(HANDLE proc_handle, HMODULE modu
 
 static memmi_String get_process_name(DWORD pid, memmi_Allocator allocator)
 {
-    memmi_String result = zero_struct(memmi_String);
+    memmi_String result = memmi_zero_struct(memmi_String);
 
     // TODO: is PROCESS_VM_READ really needed here?
     HANDLE proc_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
@@ -339,12 +339,12 @@ static memmi_String get_process_name(DWORD pid, memmi_Allocator allocator)
 
 memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 {
-    memmi_ProcessList result = zero_struct(memmi_ProcessList);
+    memmi_ProcessList result = memmi_zero_struct(memmi_ProcessList);
 
-    ProcessDynArray procs = zero_struct(ProcessDynArray);
+    ProcessDynArray procs = memmi_zero_struct(ProcessDynArray);
 
     DWORD pids_count = 1024;
-    DWORD *pids = allocate(allocator, DWORD, pids_count);
+    DWORD *pids = memmi_allocate(allocator, DWORD, pids_count);
 
     if (!pids) {
         result.status = MEMMI_ALLOCATION_FAILED;
@@ -365,7 +365,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                 // The array may have been too small to contain all pids,
                 // retry again with a larger array.
                 DWORD new_pids_count = pids_count * 2;
-                DWORD *new_pids = reallocate(allocator, pids, pids_count, new_pids_count);
+                DWORD *new_pids = memmi_reallocate(allocator, pids, pids_count, new_pids_count);
 
                 if (!new_pids) {
                     result.status = MEMMI_ALLOCATION_FAILED;
@@ -375,7 +375,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                     pids = new_pids;
                 }
             } else {
-                ASSERT(bytes_returned > 0);
+                MEMMI_ASSERT(bytes_returned > 0);
 
                 DWORD processes_returned = (DWORD)(bytes_returned / (DWORD)sizeof(*pids));
 
@@ -406,14 +406,14 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     result.data = procs.data;
     result.count = procs.count;
 
-    deallocate(allocator, pids, pids_count);
+    memmi_deallocate(allocator, pids, pids_count);
 
     return result;
 }
 
 memmi_OpenProcess memmi_open_process(memmi_PID pid)
 {
-    memmi_OpenProcess result = zero_struct(memmi_OpenProcess);
+    memmi_OpenProcess result = memmi_zero_struct(memmi_OpenProcess);
 
     DWORD access =
     /*   PROCESS_QUERY_INFORMATION */
@@ -443,7 +443,7 @@ void memmi_close_process(memmi_Process process)
 
 memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t address, size_t size)
 {
-    memmi_ReadMemory result = zero_struct(memmi_ReadMemory);
+    memmi_ReadMemory result = memmi_zero_struct(memmi_ReadMemory);
 
     HANDLE handle = win32_get_process_handle(process);
     
@@ -471,7 +471,7 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t a
 
 memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size)
 {
-    memmi_WriteMemory result = zero_struct(memmi_WriteMemory);
+    memmi_WriteMemory result = memmi_zero_struct(memmi_WriteMemory);
 
     HANDLE handle = win32_get_process_handle(process);
     SIZE_T bytes_written = 0;
@@ -544,7 +544,7 @@ static memmi_MemoryRegionPermission page_protection_to_memmi_permissions(DWORD p
         } break;
 
         default: {
-            ASSERT(0);
+            MEMMI_ASSERT(0);
         } break;
     }
 
@@ -553,8 +553,8 @@ static memmi_MemoryRegionPermission page_protection_to_memmi_permissions(DWORD p
 
 memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator)
 {
-    memmi_MemoryRegions result = zero_struct(memmi_MemoryRegions);
-    RegionDynArray regions = zero_struct(RegionDynArray);
+    memmi_MemoryRegions result = memmi_zero_struct(memmi_MemoryRegions);
+    RegionDynArray regions = memmi_zero_struct(RegionDynArray);
 
     HANDLE handle = win32_get_process_handle(process);
 
@@ -583,14 +583,14 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
 
             done = true;
         } else {
-            ASSERT((size_t)info.BaseAddress == current_base_address);
+            MEMMI_ASSERT((size_t)info.BaseAddress == current_base_address);
 
             // We are only interested in pages that have actually been commited by
             // the process, not just reserved. Additionally, we'll skip pages which are
             // PAGE_NOACCESS as they can't be used in any way by the process.
             // TODO: make it so that Linux skips non-commited pages too if possible?
             if ((info.State == MEM_COMMIT) && (info.Protect != PAGE_NOACCESS)) {
-                memmi_MemoryRegion region = zero_struct(memmi_MemoryRegion);
+                memmi_MemoryRegion region = memmi_zero_struct(memmi_MemoryRegion);
                 region.base_address = (uintptr_t)info.BaseAddress;
                 region.size = info.RegionSize;
                 region.permissions = page_protection_to_memmi_permissions(info.Protect);
@@ -605,16 +605,16 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
                         handle,
                         (void *)region.base_address,
                         filename,
-                        ARRAY_COUNT(filename)
+                        MEMMI_ARRAY_COUNT(filename)
                     );
                     
-                    ASSERT(get_filename_result > 0);
+                    MEMMI_ASSERT(get_filename_result > 0);
                     
                     if (get_filename_result == 0) {
                         result.status = windows_error_to_memmi_status(GetLastError());
                     } else {
                         memmi_String filename_str = {filename, get_filename_result};
-                        region.backing_file_name = str_copy(filename_str, allocator);
+                        region.backing_file_name = memmi_str_copy(filename_str, allocator);
                     }
                 } else {
                     region.kind = MEMMI_REGION_NORMAL;
@@ -668,11 +668,11 @@ ForEachThreadResult collect_threads_cb(void *user_data, DWORD tid)
 
 memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
 {
-    memmi_ThreadList result = zero_struct(memmi_ThreadList);
+    memmi_ThreadList result = memmi_zero_struct(memmi_ThreadList);
 
     DWORD pid = win32_get_native_pid(process);
 
-    CollectThreadsContext cb_context = zero_struct(CollectThreadsContext);
+    CollectThreadsContext cb_context = memmi_zero_struct(CollectThreadsContext);
     cb_context.allocator = allocator;
 
     memmi_Status for_each_thread_result = for_each_thread(pid, &cb_context, collect_threads_cb);
@@ -757,7 +757,7 @@ memmi_Status memmi_resume_process(memmi_Process process)
 
     DWORD pid = win32_get_native_pid(process);
 
-    ResumeThreadsContext cb_context = zero_struct(ResumeThreadsContext);
+    ResumeThreadsContext cb_context = memmi_zero_struct(ResumeThreadsContext);
     memmi_Status for_each_thread_result = for_each_thread(pid, &cb_context, resume_thread_cb);
 
     if (for_each_thread_result != MEMMI_OK) {
@@ -839,7 +839,7 @@ memmi_Status memmi_suspend_process(memmi_Process process)
 
             if (last_suspended_thread_count == 0) {
                 result = cb_context.statuses;
-                ASSERT(result != MEMMI_OK);
+                MEMMI_ASSERT(result != MEMMI_OK);
             } else {
                 uint32_t statuses_excluding_no_such_process =
                     (uint32_t)((uint32_t)cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS);
@@ -862,14 +862,14 @@ typedef struct {
 // TODO: we may want to pass the event via pointer in case the struct is very large
 static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event)
 {
-    Win32EventResult result = zero_struct(Win32EventResult);
+    Win32EventResult result = memmi_zero_struct(Win32EventResult);
 
     switch (win32_event.dwDebugEventCode) {
         case EXCEPTION_DEBUG_EVENT: {
             switch(win32_event.u.Exception.ExceptionRecord.ExceptionCode) {
                 case EXCEPTION_ACCESS_VIOLATION: {
                     // segfault
-                    ASSERT(0 && "Unimplemented");
+                    MEMMI_ASSERT(0 && "Unimplemented");
                 } break;
 
                 case EXCEPTION_BREAKPOINT: {
@@ -884,7 +884,7 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event)
                     if (regs.status != MEMMI_OK) {
                         result.status = regs.status;
                     } else if (breakpoint_index == -1) {
-                        ASSERT(0 && "Should never happen");
+                        MEMMI_ASSERT(0 && "Should never happen");
                         result.status  = MEMMI_OTHER_ERROR;
                     } else {
                         memmi_Register ip_register = 
@@ -901,12 +901,12 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event)
 
                 case EXCEPTION_DATATYPE_MISALIGNMENT: {
                     // TODO: is there something similar for Linux?
-                    ASSERT(0 && "Unimplemented");
+                    MEMMI_ASSERT(0 && "Unimplemented");
                 } break;
 
                 case EXCEPTION_SINGLE_STEP: {
                     // TODO: how to report?
-                    ASSERT(0 && "Unimplemented");
+                    MEMMI_ASSERT(0 && "Unimplemented");
                 } break;
 
                 case DBG_CONTROL_C: {
@@ -914,7 +914,7 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event)
                 } break;
 
                 default: {
-                    ASSERT(0);
+                    MEMMI_ASSERT(0);
                     result.should_ignore = true;
                 } break;
             }
@@ -926,9 +926,9 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event)
             result.event.kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
 
             HANDLE thread_handle = win32_event.u.CreateThread.hThread;
-            ASSERT(thread_handle);
+            MEMMI_ASSERT(thread_handle);
             DWORD tid = GetThreadId(thread_handle);
-            ASSERT(tid != 0);
+            MEMMI_ASSERT(tid != 0);
 
             result.event.as.new_thread.id = (int64_t)tid;
 
@@ -970,7 +970,7 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event)
         } break;
 
         default: {
-            ASSERT(0);
+            MEMMI_ASSERT(0);
             result.should_ignore = true;
         } break;
     }
@@ -984,14 +984,14 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
     // TODO: what is the EXCEPTION_BREAKPOINT being triggered?
     // TODO: allow timeouts
 
-    memmi_EventList result = zero_struct(memmi_EventList);
+    memmi_EventList result = memmi_zero_struct(memmi_EventList);
 
     DWORD pid = win32_get_native_pid(process);
 
     if (!process_exists(pid)) {
         result.status = MEMMI_NO_SUCH_PROCESS;
     } else {
-        DEBUG_EVENT win32_event = zero_struct(DEBUG_EVENT);
+        DEBUG_EVENT win32_event = memmi_zero_struct(DEBUG_EVENT);
         BOOL wait_for_event_result = WaitForDebugEvent(&win32_event, INFINITE);
 
         if (!wait_for_event_result) {
@@ -1007,13 +1007,13 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
                 if (event_result.status != MEMMI_OK) {
                     result.status = event_result.status;
                 } else if (!event_result.should_ignore) {
-                    memmi_DebugEvent *event_node = allocate(allocator, memmi_DebugEvent, 1);
+                    memmi_DebugEvent *event_node = memmi_allocate(allocator, memmi_DebugEvent, 1);
                     *event_node = event_result.event;
                     
-                    sl_push_back(&result, event_node);
+                    memmi_sl_push_back(&result, event_node);
                 }
             } else {
-                ASSERT(0 && "Can this happen?");
+                MEMMI_ASSERT(0 && "Can this happen?");
             }
         }
     }
@@ -1031,7 +1031,7 @@ memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_Even
 
     if (!continue_result) {
         result = windows_error_to_memmi_status(GetLastError());
-        ASSERT(0);
+        MEMMI_ASSERT(0);
     }
 
     return result;
@@ -1039,7 +1039,7 @@ memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_Even
 
 memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 {
-    memmi_Registers result = zero_struct(memmi_Registers);
+    memmi_Registers result = memmi_zero_struct(memmi_Registers);
 
     DWORD native_tid = (DWORD)tid;
     Win32Handle handle = win32_open_thread_handle(native_tid);
@@ -1150,7 +1150,7 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
 
     DWORD pid = win32_get_native_pid(process);
 
-    SetBreakpointContext cb_context = zero_struct(SetBreakpointContext);
+    SetBreakpointContext cb_context = memmi_zero_struct(SetBreakpointContext);
     cb_context.address = address;
     cb_context.index = index;
     cb_context.cond = condition;
@@ -1164,13 +1164,13 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
 
 memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator allocator)
 {
-    memmi_ObjectList result = zero_struct(memmi_ObjectList);
-    memmi_ObjectDynArray objects = zero_struct(memmi_ObjectDynArray);
+    memmi_ObjectList result = memmi_zero_struct(memmi_ObjectList);
+    memmi_ObjectDynArray objects = memmi_zero_struct(memmi_ObjectDynArray);
 
     HANDLE handle = win32_get_process_handle(proc);
 
     DWORD module_count = 512;
-    HMODULE *modules = allocate(allocator, HMODULE, module_count);
+    HMODULE *modules = memmi_allocate(allocator, HMODULE, module_count);
 
     if (!modules) {
         result.status = MEMMI_ALLOCATION_FAILED;
@@ -1195,7 +1195,7 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
             } else if (bytes_needed > modules_size_in_bytes) {
                 // The array was too small, try again.
                 DWORD new_module_count = bytes_needed / sizeof(*modules);
-                HMODULE *new_modules = reallocate(allocator, modules, module_count, new_module_count);
+                HMODULE *new_modules = memmi_reallocate(allocator, modules, module_count, new_module_count);
 
                 if (!new_modules) {
                     result.status = MEMMI_ALLOCATION_FAILED;
@@ -1205,14 +1205,14 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
                 }
             } else {
                 for (size_t i = 0; i < module_count; ++i) {
-                    MODULEINFO module_info = zero_struct(MODULEINFO);
+                    MODULEINFO module_info = memmi_zero_struct(MODULEINFO);
 
                     if (GetModuleInformation(handle, modules[i], &module_info, sizeof(module_info))) {
-                        memmi_Object object = zero_struct(memmi_Object);
+                        memmi_Object object = memmi_zero_struct(memmi_Object);
                         object.path = memmi_win32_get_module_name(handle, modules[i], allocator);
 
                         if (object.path.data) {
-                            ASSERT((uintptr_t)module_info.lpBaseOfDll == (uintptr_t)modules[i]);
+                            MEMMI_ASSERT((uintptr_t)module_info.lpBaseOfDll == (uintptr_t)modules[i]);
                             object.base_address = (uintptr_t)module_info.lpBaseOfDll;
                             object.size = module_info.SizeOfImage;
 
