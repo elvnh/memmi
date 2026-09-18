@@ -24,6 +24,25 @@ typedef struct {
     bool ok;
 } ProcessName;
 
+/* _GNU_SOURCE needs to be defined before including any headers. If the user is compiling memmi in
+ * their project as a single translation unit, it can't be guaranteed that they include memmi.c
+ * before including any headers. This will lead to warnings about missing a prototype for
+ * process_vm_readv() and process_vm_writev(), so we'll provide those prototypes here.
+ */
+ssize_t process_vm_readv(pid_t pid,
+    const struct iovec *local_iov,
+    unsigned long liovcnt,
+    const struct iovec *remote_iov,
+    unsigned long riovcnt,
+    unsigned long flags);
+
+ssize_t process_vm_writev(pid_t pid,
+    const struct iovec *local_iov,
+    unsigned long liovcnt,
+    const struct iovec *remote_iov,
+    unsigned long riovcnt,
+    unsigned long flags);
+
 /***************************/
 /* Common helper functions */
 /***************************/
