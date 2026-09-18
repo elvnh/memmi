@@ -350,11 +350,11 @@ static memmi_String memmi_str_copy(memmi_String str, memmi_Allocator allocator)
 #elif MEMMI_MSVC
 // TODO: these can be simplified
 // TODO: are these even needed for win32?
-#    define MEMMI_SAFE_ADD_S64(a, b, result_ptr)   safe_add_s64_impl((a), (b), (result_ptr))
-#    define MEMMI_SAFE_ADD_U64(a, b, result_ptr)   safe_add_u64_impl((a), (b), (result_ptr))
-#    define MEMMI_SAFE_MUL_S64(a, b, result_ptr)   safe_mul_s64_impl((a), (b), (result_ptr))
-#    define MEMMI_SAFE_MUL_U64(a, b, result_ptr)   safe_mul_u64_impl((a), (b), (result_ptr))
-#    define MEMMI_SAFE_MUL_USIZE(a, b, result_ptr) safe_mul_usize_impl((a), (b), (result_ptr))
+#    define MEMMI_SAFE_ADD_S64(a, b, result_ptr)   memmi_safe_add_s64_impl((a), (b), (result_ptr))
+#    define MEMMI_SAFE_ADD_U64(a, b, result_ptr)   memmi_safe_add_u64_impl((a), (b), (result_ptr))
+#    define MEMMI_SAFE_MUL_S64(a, b, result_ptr)   memmi_safe_mul_s64_impl((a), (b), (result_ptr))
+#    define MEMMI_SAFE_MUL_U64(a, b, result_ptr)   memmi_safe_mul_u64_impl((a), (b), (result_ptr))
+#    define MEMMI_SAFE_MUL_USIZE(a, b, result_ptr) memmi_safe_mul_usize_impl((a), (b), (result_ptr))
 // Thanks MSVC, I'll do it myself.
 // TODO: use macros to generate the various types of these
 // TODO: the implementations of these are so simple that maybe

@@ -22,7 +22,7 @@
 typedef struct {
     memmi_String value;
     bool ok;
-} ProcessName;
+} memmi_lnx_ProcessName;
 
 /* _GNU_SOURCE needs to be defined before including any headers. If the user is compiling memmi in
  * their project as a single translation unit, it can't be guaranteed that they include memmi.c
@@ -46,16 +46,16 @@ ssize_t process_vm_writev(pid_t pid,
 /***************************/
 /* Common helper functions */
 /***************************/
-static pid_t get_native_pid(memmi_Process proc)
+static pid_t memmi_lnx_get_native_pid(memmi_Process proc)
 {
     pid_t result = (pid_t)proc.pid;
 
     return result;
 }
 
-static ProcessName get_process_name(int proc_dir_fd, memmi_Allocator allocator)
+static memmi_lnx_ProcessName memmi_lnx_get_process_name(int proc_dir_fd, memmi_Allocator allocator)
 {
-    ProcessName result = memmi_zero_struct(ProcessName);
+    memmi_lnx_ProcessName result = memmi_zero_struct(memmi_lnx_ProcessName);
 
     size_t name_buffer_size = PATH_MAX + 1;
     char *name_buffer = memmi_allocate(allocator, char, name_buffer_size);
@@ -87,7 +87,7 @@ static ProcessName get_process_name(int proc_dir_fd, memmi_Allocator allocator)
     return result;
 }
 
-static memmi_Status errno_to_memmi_status(int errno_value)
+static memmi_Status memmi_lnx_errno_to_memmi_status(int errno_value)
 {
     memmi_Status result = MEMMI_OK;
 
@@ -122,7 +122,7 @@ static memmi_Status errno_to_memmi_status(int errno_value)
     return result;
 }
 
-static memmi_Status proc_fs_errno_to_memmi_status(int errno_value)
+static memmi_Status memmi_lnx_proc_fs_errno_to_memmi_status(int errno_value)
 {
     memmi_Status result = MEMMI_OK;
 
@@ -168,17 +168,17 @@ static memmi_Status proc_fs_errno_to_memmi_status(int errno_value)
 typedef struct {
     memmi_Status status;
     int fd;
-} ProcessDirFd;
+} memmi_lnx_ProcessDirFd;
 
-static ProcessDirFd get_process_directory_fd(pid_t pid)
+static memmi_lnx_ProcessDirFd memmi_lnx_get_process_directory_fd(pid_t pid)
 {
-    ProcessDirFd result = memmi_zero_struct(ProcessDirFd);
+    memmi_lnx_ProcessDirFd result = memmi_zero_struct(memmi_lnx_ProcessDirFd);
     result.fd = -1;
 
     DIR *proc_dir = opendir("/proc");
 
     if (!proc_dir) {
-        result.status = proc_fs_errno_to_memmi_status(errno);
+        result.status = memmi_lnx_proc_fs_errno_to_memmi_status(errno);
     } else {
         // Gets closed by closedir.
         int proc_dir_fd = dirfd(proc_dir);
@@ -193,7 +193,7 @@ static ProcessDirFd get_process_directory_fd(pid_t pid)
             result.fd = openat(proc_dir_fd, buf, O_RDONLY);
 
             if (result.fd == -1) {
-                result.status = proc_fs_errno_to_memmi_status(errno);
+                result.status = memmi_lnx_proc_fs_errno_to_memmi_status(errno);
             }
         }
     }
@@ -203,9 +203,8 @@ static ProcessDirFd get_process_directory_fd(pid_t pid)
     return result;
 }
 
-static memmi_Status pid_exists(pid_t pid)
+static memmi_Status memmi_lnx_pid_exists(pid_t pid)
 {
-    // TODO: error check and return memmi_Status
     memmi_Status result = MEMMI_OK;
 
     DIR *proc_dir = opendir("/proc");
@@ -222,7 +221,7 @@ static memmi_Status pid_exists(pid_t pid)
         int stat_result = fstatat(proc_dir_fd, pid_str, &stat_buf, 0);
 
         if (stat_result == -1) {
-            result = proc_fs_errno_to_memmi_status(errno);
+            result = memmi_lnx_proc_fs_errno_to_memmi_status(errno);
         }
 
     }
@@ -264,10 +263,10 @@ static memmi_lnx_ProcFsFile memmi_lnx_open_proc_fs_file(pid_t pid, const char *f
 
     int saved_errno = errno;
 
-    if (pid_exists(pid) != MEMMI_OK) {
+    if (memmi_lnx_pid_exists(pid) != MEMMI_OK) {
         result.status = MEMMI_NO_SUCH_PROCESS;
     } else {
-        ProcessDirFd proc_dir_fd = get_process_directory_fd(pid);
+        memmi_lnx_ProcessDirFd proc_dir_fd = memmi_lnx_get_process_directory_fd(pid);
 
         if (proc_dir_fd.status != MEMMI_OK) {
             result.status = proc_dir_fd.status;
@@ -278,12 +277,12 @@ static memmi_lnx_ProcFsFile memmi_lnx_open_proc_fs_file(pid_t pid, const char *f
             result.fd = openat(proc_dir_fd.fd, file_name, O_RDONLY);
 
             if (result.fd == -1) {
-                result.status = proc_fs_errno_to_memmi_status(errno);
+                result.status = memmi_lnx_proc_fs_errno_to_memmi_status(errno);
             } else {
                 result.libc_file_handle = fdopen(result.fd, "r");
 
                 if (!result.libc_file_handle) {
-                    result.status = proc_fs_errno_to_memmi_status(errno);
+                    result.status = memmi_lnx_proc_fs_errno_to_memmi_status(errno);
                 }
             }
         }
@@ -300,14 +299,14 @@ static memmi_lnx_ProcFsFile memmi_lnx_open_proc_fs_file(pid_t pid, const char *f
 
 // TODO: this isn't needed?
 typedef enum {
-    FOR_EACH_THREAD_RES_CONTINUE,
-    FOR_EACH_THREAD_RES_BREAK,
-} ForEachThreadResult;
+    MEMMI_LNX_FOR_EACH_THREAD_RES_CONTINUE,
+    MEMMI_LNX_FOR_EACH_THREAD_RES_BREAK,
+} memmi_lnx_ForEachThreadResult;
 
-typedef ForEachThreadResult (*ForEachThreadFn)(void *user_data, pid_t tid);
+typedef memmi_lnx_ForEachThreadResult (*memmi_lnx_ForEachThreadFn)(void *user_data, pid_t tid);
 
 // TODO: generalize this?
-static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn fn)
+static memmi_Status memmi_lnx_for_each_thread(pid_t pid, void *user_data, memmi_lnx_ForEachThreadFn fn)
 {
     memmi_Status result = MEMMI_OK;
 
@@ -321,7 +320,7 @@ static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn 
         DIR *task_dir = fdopendir(task_dir_fd.fd);
 
         if (!task_dir) {
-            result = proc_fs_errno_to_memmi_status(errno);
+            result = memmi_lnx_proc_fs_errno_to_memmi_status(errno);
         } else {
             struct dirent *subdir_entry = 0;
 
@@ -347,12 +346,12 @@ static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn 
 
                         int saved_errno = errno;
 
-                        ForEachThreadResult cb_result = fn(user_data, tid);
+                        memmi_lnx_ForEachThreadResult cb_result = fn(user_data, tid);
 
                         // We don't want the callback to affect our errno checking after the loop.
                         errno = saved_errno;
 
-                        if (cb_result == FOR_EACH_THREAD_RES_BREAK) {
+                        if (cb_result == MEMMI_LNX_FOR_EACH_THREAD_RES_BREAK) {
                             break;
                         }
                     }
@@ -360,7 +359,7 @@ static memmi_Status for_each_thread(pid_t pid, void *user_data, ForEachThreadFn 
             }
 
             if (errno != 0) {
-                result = proc_fs_errno_to_memmi_status(errno);
+                result = memmi_lnx_proc_fs_errno_to_memmi_status(errno);
             }
         }
 
@@ -383,13 +382,13 @@ typedef struct {
     memmi_Status status;
     char data[256];
     size_t count;
-} StatusFileRow;
+} memmi_lnx_StatusFileRow;
 
-static StatusFileRow get_proc_status_file_row(pid_t tid, memmi_String row_name)
+static memmi_lnx_StatusFileRow memmi_lnx_get_proc_status_file_row(pid_t tid, memmi_String row_name)
 {
-    StatusFileRow result = memmi_zero_struct(StatusFileRow);
+    memmi_lnx_StatusFileRow result = memmi_zero_struct(memmi_lnx_StatusFileRow);
 
-    ProcessDirFd proc_dir_fd = get_process_directory_fd(tid);
+    memmi_lnx_ProcessDirFd proc_dir_fd = memmi_lnx_get_process_directory_fd(tid);
 
     if (proc_dir_fd.status != MEMMI_OK) {
         result.status = proc_dir_fd.status;
@@ -400,12 +399,12 @@ static StatusFileRow get_proc_status_file_row(pid_t tid, memmi_String row_name)
         int status_fd = openat(proc_dir_fd.fd, "status", O_RDONLY);
 
         if (status_fd == -1) {
-            result.status = proc_fs_errno_to_memmi_status(errno);
+            result.status = memmi_lnx_proc_fs_errno_to_memmi_status(errno);
         } else {
             FILE *status_file = fdopen(status_fd, "r");
 
             if (!status_file) {
-                result.status = proc_fs_errno_to_memmi_status(errno);
+                result.status = memmi_lnx_proc_fs_errno_to_memmi_status(errno);
             } else {
                 while (fgets(result.data, MEMMI_ARRAY_COUNT(result.data), status_file)) {
                     memmi_String line = memmi_str_from_c_str(result.data);
@@ -441,14 +440,14 @@ static StatusFileRow get_proc_status_file_row(pid_t tid, memmi_String row_name)
 typedef struct {
     memmi_Status status;
     pid_t pid;
-} PidResult;
+} memmi_lnx_PidResult;
 
-static PidResult get_pid_of_tracing_process(pid_t tid)
+static memmi_lnx_PidResult memmi_lnx_get_pid_of_tracing_process(pid_t tid)
 {
-    PidResult result = memmi_zero_struct(PidResult);
+    memmi_lnx_PidResult result = memmi_zero_struct(memmi_lnx_PidResult);
 
     memmi_String tracer_pid_lit = memmi_str_lit("TracerPid");
-    StatusFileRow entry = get_proc_status_file_row(tid, tracer_pid_lit);
+    memmi_lnx_StatusFileRow entry = memmi_lnx_get_proc_status_file_row(tid, tracer_pid_lit);
 
     if (entry.status != MEMMI_OK) {
         result.status = entry.status;
@@ -464,10 +463,10 @@ static PidResult get_pid_of_tracing_process(pid_t tid)
     return result;
 }
 
-static bool thread_is_traced_by_us(pid_t pid)
+static bool memmi_lnx_thread_is_traced_by_us(pid_t pid)
 {
     bool result = false;
-    PidResult tracer_pid = get_pid_of_tracing_process(pid);
+    memmi_lnx_PidResult tracer_pid = memmi_lnx_get_pid_of_tracing_process(pid);
 
     if (tracer_pid.status == MEMMI_OK) {
         result = tracer_pid.pid == getpid();
@@ -476,12 +475,12 @@ static bool thread_is_traced_by_us(pid_t pid)
     return result;
 }
 
-static PidResult get_thread_group_id(pid_t tid)
+static memmi_lnx_PidResult memmi_lnx_get_thread_group_id(pid_t tid)
 {
-    PidResult result = memmi_zero_struct(PidResult);
+    memmi_lnx_PidResult result = memmi_zero_struct(memmi_lnx_PidResult);
 
     memmi_String tgid_lit = memmi_str_lit("Tgid");
-    StatusFileRow entry = get_proc_status_file_row(tid, tgid_lit);
+    memmi_lnx_StatusFileRow entry = memmi_lnx_get_proc_status_file_row(tid, tgid_lit);
 
     if (entry.status != MEMMI_OK) {
         result.status = entry.status;
@@ -498,7 +497,7 @@ static PidResult get_thread_group_id(pid_t tid)
     return result;
 }
 
-static int get_signal_from_wait_status(int status)
+static int memmi_lnx_get_signal_from_wait_status(int status)
 {
     int result = 0;
 
@@ -517,7 +516,7 @@ static int get_signal_from_wait_status(int status)
     return result;
 }
 
-static size_t get_debug_register_user_struct_index(memmi_Register reg)
+static size_t memmi_lnx_get_debug_register_user_struct_index(memmi_Register reg)
 {
     size_t result = 0;
 
@@ -534,10 +533,11 @@ static size_t get_debug_register_user_struct_index(memmi_Register reg)
     return result;
 }
 
-static size_t get_user_struct_debug_register_offset(memmi_Register reg)
+static size_t memmi_lnx_get_user_struct_debug_register_offset(memmi_Register reg)
 {
     struct user u = memmi_zero_struct(struct user);
-    size_t reg_index = get_debug_register_user_struct_index(reg);
+
+    size_t reg_index = memmi_lnx_get_debug_register_user_struct_index(reg);
     size_t regs_base = offsetof(struct user, u_debugreg);
     size_t reg_offset = reg_index * sizeof(*u.u_debugreg);
 
@@ -547,14 +547,14 @@ static size_t get_user_struct_debug_register_offset(memmi_Register reg)
 }
 
 #if MEMMI_X64
-typedef unsigned long long memmi_UserRegsStructMember;
+typedef unsigned long long memmi_lnx_UserRegsStructMember;
 #elif MEMMI_X86
-typedef long memmi_UserRegsStructMember;
+typedef long memmi_lnx_UserRegsStructMember;
 #endif
 
-static memmi_UserRegsStructMember *get_user_regs_member_pointer(struct user_regs_struct *regs, memmi_Register reg)
+static memmi_lnx_UserRegsStructMember *memmi_lnx_get_user_regs_member_pointer(struct user_regs_struct *regs, memmi_Register reg)
 {
-    memmi_UserRegsStructMember *result = 0;
+    memmi_lnx_UserRegsStructMember *result = 0;
 
     switch (reg) {
 #define MEMMI_REGISTER(upper, lower) case MEMMI_REG_##upper: { result = &regs->lower; } break;
@@ -628,7 +628,7 @@ static memmi_UserRegsStructMember *get_user_regs_member_pointer(struct user_regs
     return result;
 }
 
-static void get_thread_user_registers(pid_t tid, memmi_Registers *out)
+static void memmi_lnx_get_thread_user_registers(pid_t tid, memmi_Registers *out)
 {
     struct user_regs_struct regs = memmi_zero_struct(struct user_regs_struct);
 
@@ -636,18 +636,18 @@ static void get_thread_user_registers(pid_t tid, memmi_Registers *out)
     int get_regs_errno = errno;
 
     if (get_regs_result == -1) {
-        memmi_set_flag(out->status, errno_to_memmi_status(get_regs_errno));
+        memmi_set_flag(out->status, memmi_lnx_errno_to_memmi_status(get_regs_errno));
     }
 
     for (memmi_Register reg = memmi_zero_enum(memmi_Register); reg < MEMMI_REG_DR0; memmi_inc_enum(reg)) {
-        out->values[reg] = (memmi_RegisterValue)*get_user_regs_member_pointer(&regs, reg);
+        out->values[reg] = (memmi_RegisterValue)*memmi_lnx_get_user_regs_member_pointer(&regs, reg);
     }
 }
 
-static void get_thread_debug_registers(pid_t tid, memmi_Registers *out)
+static void memmi_lnx_get_thread_debug_registers(pid_t tid, memmi_Registers *out)
 {
     for (memmi_Register reg = MEMMI_REG_DR0; reg < MEMMI_REG_COUNT; memmi_inc_enum(reg)) {
-        size_t reg_offset = get_user_struct_debug_register_offset(reg);
+        size_t reg_offset = memmi_lnx_get_user_struct_debug_register_offset(reg);
 
         // PTRACE_PEEKUSER does not return -1 on error, so errno must be checked, and therefore also
         // cleared before each call.
@@ -655,7 +655,7 @@ static void get_thread_debug_registers(pid_t tid, memmi_Registers *out)
         long value = ptrace(PTRACE_PEEKUSER, tid, reg_offset, 0);
 
         if (errno != 0) {
-            memmi_set_flag(out->status, errno_to_memmi_status(errno));
+            memmi_set_flag(out->status, memmi_lnx_errno_to_memmi_status(errno));
             break;
         } else {
             out->values[reg] = (memmi_RegisterValue)value;
@@ -663,7 +663,7 @@ static void get_thread_debug_registers(pid_t tid, memmi_Registers *out)
     }
 }
 
-static memmi_Status set_thread_user_register(pid_t tid, memmi_Register reg, memmi_RegisterValue value)
+static memmi_Status memmi_lnx_set_thread_user_register(pid_t tid, memmi_Register reg, memmi_RegisterValue value)
 {
     memmi_Status result = MEMMI_OK;
 
@@ -671,29 +671,29 @@ static memmi_Status set_thread_user_register(pid_t tid, memmi_Register reg, memm
     long get_regs_result = ptrace(PTRACE_GETREGS, tid, 0, &regs);
 
     if (get_regs_result == -1) {
-        result = errno_to_memmi_status(errno);
+        result = memmi_lnx_errno_to_memmi_status(errno);
     } else {
-        *get_user_regs_member_pointer(&regs, reg) = (memmi_UserRegsStructMember)value;
+        *memmi_lnx_get_user_regs_member_pointer(&regs, reg) = (memmi_lnx_UserRegsStructMember)value;
 
         long set_regs_result = ptrace(PTRACE_SETREGS, tid, 0, &regs);
 
         if (set_regs_result == -1) {
-            result = errno_to_memmi_status(errno);
+            result = memmi_lnx_errno_to_memmi_status(errno);
         }
     }
 
     return result;
 }
 
-static memmi_Status set_thread_debug_register(pid_t tid, memmi_Register reg, memmi_RegisterValue value)
+static memmi_Status memmi_lnx_set_thread_debug_register(pid_t tid, memmi_Register reg, memmi_RegisterValue value)
 {
     MEMMI_ASSERT(reg <= MEMMI_REG_DR0);
 
     memmi_Status result = MEMMI_OK;
-    size_t debug_reg_offset = get_user_struct_debug_register_offset(reg);
+    size_t debug_reg_offset = memmi_lnx_get_user_struct_debug_register_offset(reg);
 
     if (ptrace(PTRACE_POKEUSER, tid, debug_reg_offset, value) == -1) {
-        result = errno_to_memmi_status(errno);
+        result = memmi_lnx_errno_to_memmi_status(errno);
     }
 
     return result;
@@ -732,8 +732,7 @@ typedef struct {
     memmi_String pathname_view; // NOTE: Only a view into string provided, not a copy
 } memmi_lnx_Region;
 
-// TODO: make this take a cstr instead
-static memmi_lnx_Region parse_memory_region(char *line, size_t length)
+static memmi_lnx_Region memmi_lnx_parse_memory_region(char *line, size_t length)
 {
     // Replace the trailing newline with a null terminator.
     line[length - 1] = '\0';
@@ -820,7 +819,7 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid)
 {
     memmi_OpenProcess result = memmi_zero_struct(memmi_OpenProcess);
 
-    memmi_Status pid_exists_result = pid_exists((pid_t)pid);
+    memmi_Status pid_exists_result = memmi_lnx_pid_exists((pid_t)pid);
 
     if (pid_exists_result != MEMMI_OK) {
         result.status = pid_exists_result;
@@ -838,14 +837,14 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
 
     memmi_ObjectDynArray objects = memmi_zero_struct(memmi_ObjectDynArray);
 
-    pid_t native_pid = get_native_pid(proc);
+    pid_t native_pid = memmi_lnx_get_native_pid(proc);
 
     memmi_lnx_ProcFsFile maps_file = memmi_lnx_open_proc_fs_file(native_pid, "maps");
 
     if (maps_file.status != MEMMI_OK) {
         result.status = maps_file.status;
     } else {
-        memmi_String proc_name = get_process_name(maps_file.proc_subdir_fd, allocator).value;
+        memmi_String proc_name = memmi_lnx_get_process_name(maps_file.proc_subdir_fd, allocator).value;
 
         memmi_Object current_object = memmi_zero_struct(memmi_Object);
         bool is_parsing_object = false;
@@ -854,7 +853,7 @@ memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator al
 
         while (fgets(buffer, MEMMI_ARRAY_COUNT(buffer), maps_file.libc_file_handle)) {
             size_t line_length = strlen(buffer);
-            memmi_lnx_Region lnx_region = parse_memory_region(buffer, line_length);
+            memmi_lnx_Region lnx_region = memmi_lnx_parse_memory_region(buffer, line_length);
 
             bool should_begin_new_object =
                 memmi_lnx_path_is_potential_object(lnx_region.pathname_view)
@@ -928,7 +927,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     DIR *proc_dir = opendir("/proc");
 
     if (!proc_dir) {
-        result.status = proc_fs_errno_to_memmi_status(errno);
+        result.status = memmi_lnx_proc_fs_errno_to_memmi_status(errno);
     } else {
         int proc_dir_fd = dirfd(proc_dir); // Automatically closed by closedir
         MEMMI_ASSERT(proc_dir_fd != -1);
@@ -947,7 +946,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                     memmi_MaybeS64 number_opt = memmi_str_to_s64(dir_name, MEMMI_NUM_BASE_DEC);
 
                     if (number_opt.ok) {
-                        ProcessName proc_name = get_process_name(subdir_fd, allocator);
+                        memmi_lnx_ProcessName proc_name = memmi_lnx_get_process_name(subdir_fd, allocator);
 
                         if (proc_name.ok) {
                             MEMMI_ASSERT(proc_name.value.count > 0);
@@ -996,7 +995,7 @@ void memmi_close_process(memmi_Process process)
 
 memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t address, size_t size)
 {
-    pid_t pid = get_native_pid(process);
+    pid_t pid = memmi_lnx_get_native_pid(process);
 
     memmi_ReadMemory result = memmi_zero_struct(memmi_ReadMemory);
 
@@ -1017,7 +1016,7 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t a
             if (errno == EFAULT) {
                 result.status = MEMMI_INSUFFICIENT_PERMISSIONS;
             } else {
-                result.status = errno_to_memmi_status(errno);
+                result.status = memmi_lnx_errno_to_memmi_status(errno);
             }
         } else {
             result.bytes_read = (size_t)bytes_read;
@@ -1033,7 +1032,7 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t a
 
 memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size)
 {
-    pid_t pid = get_native_pid(process);
+    pid_t pid = memmi_lnx_get_native_pid(process);
     memmi_WriteMemory result = memmi_zero_struct(memmi_WriteMemory);
 
     if (src_size > (size_t)SSIZE_MAX) {
@@ -1053,7 +1052,7 @@ memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void 
             if (errno == EFAULT) {
                 result.status = MEMMI_INSUFFICIENT_PERMISSIONS;
             } else {
-                result.status = errno_to_memmi_status(errno);
+                result.status = memmi_lnx_errno_to_memmi_status(errno);
             }
         } else {
             result.bytes_written = (size_t)bytes_written;
@@ -1072,7 +1071,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
     memmi_MemoryRegions result = memmi_zero_struct(memmi_MemoryRegions);
     memmi_RegionDynArray regions = memmi_zero_struct(memmi_RegionDynArray);
 
-    pid_t native_pid = get_native_pid(process);
+    pid_t native_pid = memmi_lnx_get_native_pid(process);
 
     memmi_lnx_ProcFsFile maps_file = memmi_lnx_open_proc_fs_file(native_pid, "maps");
 
@@ -1085,7 +1084,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
             // TODO: skip ones that have zero size
             size_t line_length = strlen(buffer);
 
-            memmi_lnx_Region lnx_region = parse_memory_region(buffer, line_length);
+            memmi_lnx_Region lnx_region = memmi_lnx_parse_memory_region(buffer, line_length);
 
             if (lnx_region.region_info.kind == MEMMI_REGION_MAPPED_FILE) {
                 lnx_region.region_info.backing_file_name = memmi_str_copy(lnx_region.pathname_view, allocator);
@@ -1110,7 +1109,7 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
     return result;
 }
 
-static memmi_Status resume_thread(pid_t tid)
+static memmi_Status memmi_lnx_resume_thread(pid_t tid)
 {
     // TODO: Do we need to waitpid for the signal to be received?
 
@@ -1119,7 +1118,7 @@ static memmi_Status resume_thread(pid_t tid)
     // TODO: If the process exists and is traced but isn't in ptrace-stop, this
     // will report a ESRCH. Can we detect this somehow?
     if (ptrace(PTRACE_CONT, tid, 0, 0) == -1)  {
-        result = errno_to_memmi_status(errno);
+        result = memmi_lnx_errno_to_memmi_status(errno);
     }
 
     return result;
@@ -1128,24 +1127,24 @@ static memmi_Status resume_thread(pid_t tid)
 typedef struct {
     pid_t parent_pid;
     memmi_Status statuses;
-} ResumeThreadsContext;
+} memmi_lnx_ResumeThreadsContext;
 
-static ForEachThreadResult resume_thread_cb(void *user_data, pid_t tid)
+static memmi_lnx_ForEachThreadResult memmi_lnx_resume_thread_cb(void *user_data, pid_t tid)
 {
-    ResumeThreadsContext *context = (ResumeThreadsContext *)user_data;
+    memmi_lnx_ResumeThreadsContext *context = (memmi_lnx_ResumeThreadsContext *)user_data;
 
     if (tid != context->parent_pid) {
-        memmi_Status resume_result = resume_thread(tid);
+        memmi_Status resume_result = memmi_lnx_resume_thread(tid);
         memmi_set_flag(context->statuses, resume_result);
     }
 
     // TODO: maybe this return code isn't really needed
-    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
+    memmi_lnx_ForEachThreadResult result = MEMMI_LNX_FOR_EACH_THREAD_RES_CONTINUE;
 
     return result;
 }
 
-static memmi_Status attach_to_thread(pid_t tid)
+static memmi_Status memmi_lnx_attach_to_thread(pid_t tid)
 {
     memmi_Status result = MEMMI_OK;
 
@@ -1156,7 +1155,7 @@ static memmi_Status attach_to_thread(pid_t tid)
     if (seize_result == -1) {
         // We failed to seize the thread, which must either be because we lack
         // the permissions to do so, or because the thread has died.
-        result = errno_to_memmi_status(errno);
+        result = memmi_lnx_errno_to_memmi_status(errno);
     } else {
         long interrupt_result = ptrace(PTRACE_INTERRUPT, tid, 0, 0);
 
@@ -1168,7 +1167,7 @@ static memmi_Status attach_to_thread(pid_t tid)
             // these two calls to ptrace.
             MEMMI_ASSERT(errno != EPERM && "Process lost permissions inbetween calls to ptrace");
 
-            result = errno_to_memmi_status(errno);
+            result = memmi_lnx_errno_to_memmi_status(errno);
         } else {
             // We successfully seized the thread and sent a stopping signal to
             // it, now we have to wait for it to actually receive the signal.
@@ -1177,20 +1176,20 @@ static memmi_Status attach_to_thread(pid_t tid)
                 int waitpid_result = waitpid(tid, &status, __WALL);
 
                 if (waitpid_result == -1) {
-                    result = errno_to_memmi_status(errno);
+                    result = memmi_lnx_errno_to_memmi_status(errno);
                     break;
                 } else if (WIFSTOPPED(status)) {
                     // The thread was successfully suspended, we're done here.
                     break;
                 } else {
                     // The thread received another signal, reinject it and try again.
-                    int signal = get_signal_from_wait_status(signal);
+                    int signal = memmi_lnx_get_signal_from_wait_status(signal);
                     long reinject_result = ptrace(PTRACE_CONT, tid, 0, signal);
 
                     if (reinject_result == -1) {
                         // Reinjecting the signal failed, either because the
                         // thread died or because we lost our permissions.
-                        result = errno_to_memmi_status(errno);
+                        result = memmi_lnx_errno_to_memmi_status(errno);
 
                         break;
                     }
@@ -1205,18 +1204,18 @@ static memmi_Status attach_to_thread(pid_t tid)
 typedef struct {
     memmi_Status statuses;
     int32_t suspended_thread_count;
-} AttachThreadsContext;
+} memmi_lnx_AttachThreadsContext;
 
-static ForEachThreadResult attach_to_thread_cb(void *user_data, pid_t tid)
+static memmi_lnx_ForEachThreadResult memmi_lnx_attach_to_thread_cb(void *user_data, pid_t tid)
 {
-    AttachThreadsContext *context = (AttachThreadsContext *)user_data;
+    memmi_lnx_AttachThreadsContext *context = (memmi_lnx_AttachThreadsContext *)user_data;
 
     bool is_attached = false;
 
-    if (thread_is_traced_by_us(tid)) {
+    if (memmi_lnx_thread_is_traced_by_us(tid)) {
         is_attached = true;
     } else {
-        memmi_Status attach_result = attach_to_thread(tid);
+        memmi_Status attach_result = memmi_lnx_attach_to_thread(tid);
         memmi_set_flag(context->statuses, attach_result);
 
         if (attach_result == MEMMI_OK) {
@@ -1228,7 +1227,7 @@ static ForEachThreadResult attach_to_thread_cb(void *user_data, pid_t tid)
         ++context->suspended_thread_count;
     }
 
-    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
+    memmi_lnx_ForEachThreadResult result = MEMMI_LNX_FOR_EACH_THREAD_RES_CONTINUE;
 
     return result;
 }
@@ -1237,14 +1236,14 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
 {
     memmi_Status result = MEMMI_OK;
 
-    pid_t native_pid = get_native_pid(process);
+    pid_t native_pid = memmi_lnx_get_native_pid(process);
 
-    memmi_Status pid_exists_result = pid_exists(native_pid);
+    memmi_Status pid_exists_result = memmi_lnx_pid_exists(native_pid);
 
     if (pid_exists_result != MEMMI_OK) {
         result = pid_exists_result;
     } else {
-        memmi_Status main_thread_attach_result = attach_to_thread(native_pid);
+        memmi_Status main_thread_attach_result = memmi_lnx_attach_to_thread(native_pid);
 
         if (main_thread_attach_result != MEMMI_OK) {
             result = main_thread_attach_result;
@@ -1256,7 +1255,9 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
             // we lack the permissions to attach to a thread. However, as we managed
             // to attach to the main thread, we will still count this as a partial success.
             int32_t last_attached_thread_count = 0;
-            AttachThreadsContext cb_context = memmi_zero_struct(AttachThreadsContext);
+
+            memmi_lnx_AttachThreadsContext cb_context = memmi_zero_struct(memmi_lnx_AttachThreadsContext);
+
             bool suspended_thread_count_is_stable = false;
 
             // Attach to each thread in process until the number of attached threads
@@ -1264,7 +1265,8 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
             while (!suspended_thread_count_is_stable && (result == MEMMI_OK)) {
                 cb_context.suspended_thread_count = 0;
 
-                memmi_Status for_each_thread_result = for_each_thread(native_pid, &cb_context, attach_to_thread_cb);
+                memmi_Status for_each_thread_result = memmi_lnx_for_each_thread(
+                    native_pid, &cb_context, memmi_lnx_attach_to_thread_cb);
 
                 if (for_each_thread_result != MEMMI_OK) {
                     result = for_each_thread_result;
@@ -1303,17 +1305,17 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
 
 typedef struct {
     memmi_Status statuses;
-} DetachContext;
+} memmi_lnx_DetachContext;
 
-static ForEachThreadResult detach_from_thread_cb(void *user_data, pid_t tid)
+static memmi_lnx_ForEachThreadResult memmi_lnx_detach_from_thread_cb(void *user_data, pid_t tid)
 {
-    DetachContext *context = (DetachContext *)user_data;
+    memmi_lnx_DetachContext *context = (memmi_lnx_DetachContext *)user_data;
 
     if (ptrace(PTRACE_DETACH, tid, 0, 0) == -1) {
-        memmi_set_flag(context->statuses, errno_to_memmi_status(errno));
+        memmi_set_flag(context->statuses, memmi_lnx_errno_to_memmi_status(errno));
     }
 
-    return FOR_EACH_THREAD_RES_CONTINUE;
+    return MEMMI_LNX_FOR_EACH_THREAD_RES_CONTINUE;
 }
 
 memmi_Status memmi_detach_from_process(memmi_Process process)
@@ -1322,14 +1324,14 @@ memmi_Status memmi_detach_from_process(memmi_Process process)
     // TODO: clear breakpoints etc?
     memmi_Status result = MEMMI_OK;
 
-    pid_t native_pid = get_native_pid(process);
-    memmi_Status pid_exists_result = pid_exists(native_pid);
+    pid_t native_pid = memmi_lnx_get_native_pid(process);
+    memmi_Status pid_exists_result = memmi_lnx_pid_exists(native_pid);
 
     if (pid_exists_result != MEMMI_OK) {
         result = pid_exists_result;
     } else {
-        DetachContext cb_context = memmi_zero_struct(DetachContext);
-        memmi_Status for_each_result = for_each_thread(native_pid, &cb_context, detach_from_thread_cb);
+        memmi_lnx_DetachContext cb_context = memmi_zero_struct(memmi_lnx_DetachContext);
+        memmi_Status for_each_result = memmi_lnx_for_each_thread(native_pid, &cb_context, memmi_lnx_detach_from_thread_cb);
 
         if (for_each_result != MEMMI_OK) {
             result = for_each_result;
@@ -1349,21 +1351,21 @@ memmi_Status memmi_detach_from_process(memmi_Process process)
 
 memmi_Status memmi_resume_process(memmi_Process process)
 {
-    pid_t native_pid = get_native_pid(process);
+    pid_t native_pid = memmi_lnx_get_native_pid(process);
 
     memmi_Status result = MEMMI_OK;
 
-    memmi_Status main_thread_resume_result = resume_thread(native_pid);
+    memmi_Status main_thread_resume_result = memmi_lnx_resume_thread(native_pid);
 
     if (main_thread_resume_result != MEMMI_OK) {
         // If we failed to resume the main thread, count this as a complete failure.
         result = main_thread_resume_result;
     } else {
         // Resuming the main thread succeeded, now try to resume the rest of the threads.
-        ResumeThreadsContext resume_cb_context = memmi_zero_struct(ResumeThreadsContext);
+        memmi_lnx_ResumeThreadsContext resume_cb_context = memmi_zero_struct(memmi_lnx_ResumeThreadsContext);
         resume_cb_context.parent_pid = native_pid;
 
-        memmi_Status for_each_result = for_each_thread(native_pid, &resume_cb_context, resume_thread_cb);
+        memmi_Status for_each_result = memmi_lnx_for_each_thread(native_pid, &resume_cb_context, memmi_lnx_resume_thread_cb);
 
         if (for_each_result != MEMMI_OK) {
             result = for_each_result;
@@ -1381,21 +1383,21 @@ memmi_Status memmi_resume_process(memmi_Process process)
     return result;
 }
 
-static memmi_Status suspend_thread(pid_t tid)
+static memmi_Status memmi_lnx_suspend_thread(pid_t tid)
 {
     memmi_Status result = MEMMI_OK;
 
     long interrupt_result = ptrace(PTRACE_INTERRUPT, tid, 0, 0);
 
     if (interrupt_result == -1) {
-        result = errno_to_memmi_status(errno);
+        result = memmi_lnx_errno_to_memmi_status(errno);
     } else {
         int status = 0;
         // TODO: prevent hanging if process is already suspended
         int waitpid_result = waitpid(tid, &status, __WALL);
 
         if (waitpid_result == -1) {
-            result = errno_to_memmi_status(errno);
+            result = memmi_lnx_errno_to_memmi_status(errno);
         } else {
             if (WIFSTOPPED(status)) {
                 // Success!
@@ -1413,15 +1415,15 @@ static memmi_Status suspend_thread(pid_t tid)
 typedef struct {
     memmi_Status statuses;
     int32_t suspended_thread_count;
-} SuspendThreadsContext;
+} memmi_lnx_SuspendThreadsContext;
 
-static ForEachThreadResult suspend_thread_cb(void *user_data, pid_t tid)
+static memmi_lnx_ForEachThreadResult memmi_lnx_suspend_thread_cb(void *user_data, pid_t tid)
 {
-    SuspendThreadsContext *context = (SuspendThreadsContext *)user_data;
+    memmi_lnx_SuspendThreadsContext *context = (memmi_lnx_SuspendThreadsContext *)user_data;
 
     bool is_suspended = false;
     memmi_String state_lit = memmi_str_lit("State");
-    StatusFileRow state_entry = get_proc_status_file_row(tid, state_lit);
+    memmi_lnx_StatusFileRow state_entry = memmi_lnx_get_proc_status_file_row(tid, state_lit);
 
     if (state_entry.status != MEMMI_OK) {
         memmi_set_flag(context->statuses, state_entry.status);
@@ -1434,7 +1436,7 @@ static ForEachThreadResult suspend_thread_cb(void *user_data, pid_t tid)
             || memmi_str_starts_with(state_entry_str, lower_t_lit);
 
         if (!is_suspended) {
-            memmi_Status suspend_result = suspend_thread(tid);
+            memmi_Status suspend_result = memmi_lnx_suspend_thread(tid);
 
             if (suspend_result == MEMMI_OK) {
                 is_suspended = true;
@@ -1448,7 +1450,7 @@ static ForEachThreadResult suspend_thread_cb(void *user_data, pid_t tid)
         ++context->suspended_thread_count;
     }
 
-    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
+    memmi_lnx_ForEachThreadResult result = MEMMI_LNX_FOR_EACH_THREAD_RES_CONTINUE;
 
     return result;
 }
@@ -1457,9 +1459,9 @@ memmi_Status memmi_suspend_process(memmi_Process process)
 {
     memmi_Status result = MEMMI_OK;
 
-    pid_t native_pid = get_native_pid(process);
+    pid_t native_pid = memmi_lnx_get_native_pid(process);
 
-    memmi_Status main_thread_suspend_result = suspend_thread(native_pid);
+    memmi_Status main_thread_suspend_result = memmi_lnx_suspend_thread(native_pid);
 
     // TODO: code duplication between this and memmi_attach_to_process
     if (main_thread_suspend_result != MEMMI_OK) {
@@ -1467,7 +1469,7 @@ memmi_Status memmi_suspend_process(memmi_Process process)
         result = main_thread_suspend_result;
     } else {
         int32_t last_suspended_thread_count = 0;
-        SuspendThreadsContext cb_context = memmi_zero_struct(SuspendThreadsContext);
+        memmi_lnx_SuspendThreadsContext cb_context = memmi_zero_struct(memmi_lnx_SuspendThreadsContext);
         bool suspended_thread_count_is_stable = false;
 
         while (!suspended_thread_count_is_stable && (result == MEMMI_OK)) {
@@ -1475,7 +1477,7 @@ memmi_Status memmi_suspend_process(memmi_Process process)
             // has stabilized.
             cb_context.suspended_thread_count = 0;
 
-            memmi_Status for_each_result = for_each_thread(native_pid, &cb_context, suspend_thread_cb);
+            memmi_Status for_each_result = memmi_lnx_for_each_thread(native_pid, &cb_context, memmi_lnx_suspend_thread_cb);
 
             if (for_each_result != MEMMI_OK) {
                 result = for_each_result;
@@ -1506,20 +1508,20 @@ typedef struct {
     memmi_Status statuses;
     memmi_ThreadDynArray thread_list;
     memmi_Allocator allocator;
-} CollectThreadsContext;
+} memmi_lnx_CollectThreadsContext;
 
-static ForEachThreadResult collect_threads(void *user_data, pid_t tid)
+static memmi_lnx_ForEachThreadResult memmi_lnx_collect_threads(void *user_data, pid_t tid)
 {
-    ForEachThreadResult result = FOR_EACH_THREAD_RES_CONTINUE;
+    memmi_lnx_ForEachThreadResult result = MEMMI_LNX_FOR_EACH_THREAD_RES_CONTINUE;
 
-    CollectThreadsContext *context = (CollectThreadsContext *)user_data;
+    memmi_lnx_CollectThreadsContext *context = (memmi_lnx_CollectThreadsContext *)user_data;
 
     memmi_TID library_tid = {tid};
     memmi_DynArray new_thread_list = memmi_dyn_arr_push(&context->thread_list, library_tid, context->allocator);
 
     if (!new_thread_list.data) {
         memmi_set_flag(context->statuses, MEMMI_ALLOCATION_FAILED);
-        result = FOR_EACH_THREAD_RES_BREAK;
+        result = MEMMI_LNX_FOR_EACH_THREAD_RES_BREAK;
     } else {
         memmi_dyn_arr_assign(&context->thread_list, new_thread_list);
     }
@@ -1531,13 +1533,13 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
 {
     memmi_ThreadList result = memmi_zero_struct(memmi_ThreadList);
 
-    pid_t native_pid = get_native_pid(process);
+    pid_t native_pid = memmi_lnx_get_native_pid(process);
 
-    CollectThreadsContext context = memmi_zero_struct(CollectThreadsContext);
+    memmi_lnx_CollectThreadsContext context = memmi_zero_struct(memmi_lnx_CollectThreadsContext);
     context.allocator = allocator;
 
     // TODO: handle for_each_thread results similarly elsewhere too
-    memmi_Status for_each_thread_result = for_each_thread(native_pid, &context, collect_threads);
+    memmi_Status for_each_thread_result = memmi_lnx_for_each_thread(native_pid, &context, memmi_lnx_collect_threads);
     result.status = (memmi_Status)(for_each_thread_result | context.statuses);
 
     if (result.status == MEMMI_OK) {
@@ -1549,24 +1551,24 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
 }
 
 typedef enum {
-    WAITPID_HANG,
-    WAITPID_NO_HANG,
-} WaitpidHang;
+    MEMMI_LNX_WAITPID_HANG,
+    MEMMI_LNX_WAITPID_NO_HANG,
+} memmi_lnx_WaitpidHang;
 
 typedef struct {
     memmi_Status status;
     bool should_ignore;
     memmi_DebugEvent data;
-} DebugEventResult;
+} memmi_lnx_DebugEventResult;
 
 #define ptrace_event_code(e) (SIGTRAP | ((unsigned int)(e)) << 8)
 
-static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int waitpid_status,
+static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process proc, int waitpid_status,
     siginfo_t sig_info, pid_t id_of_affected_thread)
 {
-    DebugEventResult result = memmi_zero_struct(DebugEventResult);
+    memmi_lnx_DebugEventResult result = memmi_zero_struct(memmi_lnx_DebugEventResult);
 
-    pid_t native_pid = get_native_pid(proc);
+    pid_t native_pid = memmi_lnx_get_native_pid(proc);
 
     switch (sig_info.si_code) {
         // ptrace events
@@ -1579,7 +1581,7 @@ static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int wai
             long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &new_thread_id);
 
             if (get_msg_result == -1) {
-                result.status = errno_to_memmi_status(errno);
+                result.status = memmi_lnx_errno_to_memmi_status(errno);
             } else {
                 result.data.kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
                 result.data.as.new_thread.id = (memmi_TID)new_thread_id;
@@ -1595,7 +1597,7 @@ static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int wai
             long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &exit_code);
 
             if (get_msg_result == -1) {
-                result.status = errno_to_memmi_status(errno);
+                result.status = memmi_lnx_errno_to_memmi_status(errno);
             } else {
                 if (id_of_affected_thread == native_pid) {
                     // The main thread exited, we'll count that as the process exiting.
@@ -1662,15 +1664,15 @@ static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int wai
     return result;
 }
 
-static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang hang)
+static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process proc, memmi_lnx_WaitpidHang hang)
 {
-    DebugEventResult result = memmi_zero_struct(DebugEventResult);
+    memmi_lnx_DebugEventResult result = memmi_zero_struct(memmi_lnx_DebugEventResult);
 
-    pid_t pid = get_native_pid(proc);
+    pid_t pid = memmi_lnx_get_native_pid(proc);
 
     int waitpid_flags = __WALL;
 
-    if (hang == WAITPID_NO_HANG) {
+    if (hang == MEMMI_LNX_WAITPID_NO_HANG) {
         waitpid_flags |= WNOHANG;
     }
 
@@ -1687,7 +1689,7 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
         // waitpid(-1, ...) will wait on any children, not just tracees,
         // including threads of the client process. We'll check that this thread
         // actually belongs to our tracee before reporting any events.
-        PidResult thread_group_id = get_thread_group_id(id_of_affected_thread);
+        memmi_lnx_PidResult thread_group_id = memmi_lnx_get_thread_group_id(id_of_affected_thread);
 
         if (thread_group_id.status != MEMMI_OK) {
             result.status = thread_group_id.status;
@@ -1701,9 +1703,9 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
                 long get_sig_result = ptrace(PTRACE_GETSIGINFO, id_of_affected_thread, 0, &sig_info);
 
                 if (get_sig_result == -1) {
-                    result.status = errno_to_memmi_status(errno);
+                    result.status = memmi_lnx_errno_to_memmi_status(errno);
                 } else {
-                    result = linux_siginfo_to_memmi_event(proc, status, sig_info, id_of_affected_thread);
+                    result = memmi_lnx_siginfo_to_memmi_event(proc, status, sig_info, id_of_affected_thread);
                 }
             }
         }
@@ -1720,20 +1722,20 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
 {
     memmi_EventList result = memmi_zero_struct(memmi_EventList);
 
-    pid_t native_pid = get_native_pid(process);
+    pid_t native_pid = memmi_lnx_get_native_pid(process);
 
-    memmi_Status pid_exists_result = pid_exists(native_pid);
+    memmi_Status pid_exists_result = memmi_lnx_pid_exists(native_pid);
 
     if (pid_exists_result != MEMMI_OK) {
         result.status = pid_exists_result;
     } else {
         // TODO: do we need to check that all threads are traced by us too?
-        if (!thread_is_traced_by_us(native_pid)) {
+        if (!memmi_lnx_thread_is_traced_by_us(native_pid)) {
             MEMMI_ASSERT(0 && "Cannot wait for events in a non-traced process");
         } else {
             memmi_resume_process(process);
 
-            DebugEventResult event_result = wait_for_debug_event(process, WAITPID_HANG);
+            memmi_lnx_DebugEventResult event_result = memmi_lnx_wait_for_debug_event(process, MEMMI_LNX_WAITPID_HANG);
 
             // Keep checking for debug events without hanging in case any more were queued.
 
@@ -1751,7 +1753,7 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
 
                 if (event_result.status == MEMMI_OK) {
                     memmi_DebugEvent prev_event = event_result.data;
-                    event_result = wait_for_debug_event(process, WAITPID_NO_HANG);
+                    event_result = memmi_lnx_wait_for_debug_event(process, MEMMI_LNX_WAITPID_NO_HANG);
 
                     if (event_result.status == MEMMI_OK) {
                         /* ptrace behaves in a kind of weird way when new threads are created. It
@@ -1793,13 +1795,13 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
     memmi_Registers result = memmi_zero_struct(memmi_Registers);
 
     pid_t native_tid = (pid_t)tid;
-    memmi_Status pid_exists_result = pid_exists(native_tid);
+    memmi_Status pid_exists_result = memmi_lnx_pid_exists(native_tid);
 
     if (pid_exists_result != MEMMI_OK) {
         result.status = pid_exists_result;
     } else {
-        get_thread_user_registers(native_tid, &result);
-        get_thread_debug_registers(native_tid, &result);
+        memmi_lnx_get_thread_user_registers(native_tid, &result);
+        memmi_lnx_get_thread_debug_registers(native_tid, &result);
     }
 
     return result;
@@ -1814,22 +1816,22 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_
     memmi_Status result = MEMMI_OK;
 
     pid_t native_tid = (pid_t)tid;
-    memmi_Status pid_exists_result = pid_exists((pid_t)tid);
+    memmi_Status pid_exists_result = memmi_lnx_pid_exists((pid_t)tid);
 
     if (pid_exists_result != MEMMI_OK) {
         result = pid_exists_result;
     } else {
         if (reg < MEMMI_REG_DR0) {
-            result = set_thread_user_register(native_tid, reg, value);
+            result = memmi_lnx_set_thread_user_register(native_tid, reg, value);
         } else {
-            result = set_thread_debug_register(native_tid, reg, value);
+            result = memmi_lnx_set_thread_debug_register(native_tid, reg, value);
         }
     }
 
     return result;
 }
 
-static memmi_Status set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintptr_t address,
+static memmi_Status memmi_lnx_set_hardware_breakpoint_on_thread(pid_t tid, uint32_t index, uintptr_t address,
     memmi_BreakpointCondition cond, memmi_BreakpointLength length)
 {
     memmi_Status result = MEMMI_OK;
@@ -1862,21 +1864,22 @@ typedef struct {
     memmi_BreakpointLength length;
 
     memmi_Status statuses;
-} HardwareBreakpointContext;
+} memmi_lnx_HardwareBreakpointContext;
 
-static ForEachThreadResult set_hardware_breakpoint_on_thread_cb(void *user_data, pid_t tid)
+static memmi_lnx_ForEachThreadResult memmi_lnx_set_hardware_breakpoint_on_thread_cb(void *user_data, pid_t tid)
 {
-    HardwareBreakpointContext *context = (HardwareBreakpointContext *)user_data;
+    memmi_lnx_HardwareBreakpointContext *context = (memmi_lnx_HardwareBreakpointContext *)user_data;
 
-    memmi_Status set_bp_result = set_hardware_breakpoint_on_thread(
+    memmi_Status set_bp_result = memmi_lnx_set_hardware_breakpoint_on_thread(
         tid, context->index, context->address, context->condition, context->length);
     memmi_set_flag(context->statuses, set_bp_result);
 
-    ForEachThreadResult result = memmi_zero_enum(ForEachThreadResult);
+    memmi_lnx_ForEachThreadResult result = memmi_zero_enum(ForEachThreadResult);
+
     if (context->statuses == MEMMI_OK) {
-        result = FOR_EACH_THREAD_RES_CONTINUE;
+        result = MEMMI_LNX_FOR_EACH_THREAD_RES_CONTINUE;
     } else {
-        result = FOR_EACH_THREAD_RES_BREAK;
+        result = MEMMI_LNX_FOR_EACH_THREAD_RES_BREAK;
     }
 
     return result;
@@ -1887,8 +1890,8 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
 {
     memmi_Status result = MEMMI_OK;
 
-    pid_t native_pid = get_native_pid(process);
-    memmi_Status pid_exists_result = pid_exists(native_pid);
+    pid_t native_pid = memmi_lnx_get_native_pid(process);
+    memmi_Status pid_exists_result = memmi_lnx_pid_exists(native_pid);
 
     if (pid_exists_result != MEMMI_OK) {
         result = pid_exists_result;
@@ -1896,19 +1899,20 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
         if (index > 3) {
             result = MEMMI_INVALID_ARGUMENTS;
         } else {
-            memmi_Status main_thread_bp_result = set_hardware_breakpoint_on_thread(
+            memmi_Status main_thread_bp_result = memmi_lnx_set_hardware_breakpoint_on_thread(
                 native_pid, index, address, condition, length);
 
             if (main_thread_bp_result != MEMMI_OK) {
                 result = main_thread_bp_result;
             } else {
-                HardwareBreakpointContext context = memmi_zero_struct(HardwareBreakpointContext);
+                memmi_lnx_HardwareBreakpointContext context = memmi_zero_struct(memmi_lnx_HardwareBreakpointContext);
                 context.index = index;
                 context.address = address;
                 context.condition = condition;
                 context.length = length;
 
-                memmi_Status for_each_result = for_each_thread(native_pid, &context, set_hardware_breakpoint_on_thread_cb);
+                memmi_Status for_each_result = memmi_lnx_for_each_thread(
+                    native_pid, &context, memmi_lnx_set_hardware_breakpoint_on_thread_cb);
 
                 if (for_each_result != MEMMI_OK) {
                     result = for_each_result;
