@@ -39,7 +39,7 @@ static struct {
     struct {
         VariableId next_id;
         Value values[MAX_VARIABLE_COUNT];
-        VariableType types[MAX_VARIABLE_COUNT];
+        ValueType types[MAX_VARIABLE_COUNT];
     } variables;
 } g;
 
