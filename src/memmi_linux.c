@@ -817,6 +817,116 @@ static memmi_lnx_Region memmi_lnx_parse_memory_region(char *line, size_t length)
     return result;
 }
 
+
+typedef struct {
+    memmi_Status status;
+    bool should_ignore;
+    memmi_DebugEvent data;
+} memmi_lnx_DebugEventResult;
+
+#define ptrace_event_code(e) (SIGTRAP | ((unsigned int)(e)) << 8)
+
+static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process proc, int waitpid_status,
+    siginfo_t sig_info, pid_t id_of_affected_thread)
+{
+    memmi_lnx_DebugEventResult result = memmi_zero_struct(memmi_lnx_DebugEventResult);
+
+    pid_t native_pid = memmi_lnx_get_native_pid(proc);
+
+    switch (sig_info.si_code) {
+        // ptrace events
+        case ptrace_event_code(PTRACE_EVENT_STOP): {
+            result.data.kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
+        } break;
+
+        case ptrace_event_code(PTRACE_EVENT_CLONE): {
+            long new_thread_id = 0;
+            long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &new_thread_id);
+
+            if (get_msg_result == -1) {
+                result.status = memmi_lnx_errno_to_memmi_status(errno);
+            } else {
+                result.data.kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
+                result.data.as.new_thread.id = (memmi_TID)new_thread_id;
+            }
+        } break;
+
+        case ptrace_event_code(PTRACE_EVENT_EXIT): {
+            /* There's a bug in the kernel that causes SIGKILL to generate a
+               PTRACE_EVENT_EXIT. As far as I can tell there's no way to differentiate
+               this from a normal exit, so we'll have to simply report it as a normal
+               exit with code 0. Thanks ptrace! */
+            long exit_code = 0;
+            long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &exit_code);
+
+            if (get_msg_result == -1) {
+                result.status = memmi_lnx_errno_to_memmi_status(errno);
+            } else {
+                if (id_of_affected_thread == native_pid) {
+                    // The main thread exited, we'll count that as the process exiting.
+                    result.data.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
+                } else {
+                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+                }
+
+                result.data.as.exit_code = (int)(exit_code >> 8);
+            }
+        } break;
+
+        default: {
+            // Normal signals
+            if (WIFEXITED(waitpid_status)) {
+                MEMMI_ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_EXIT.");
+
+                if (id_of_affected_thread == native_pid) {
+                    // The main thread exited, we'll count that as the process exiting.
+                    result.data.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
+                } else {
+                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
+                }
+
+                result.data.as.exit_code = WEXITSTATUS(waitpid_status);
+            } else if (WIFSIGNALED(waitpid_status)) {
+                result.data.kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
+            } else if (WIFSTOPPED(waitpid_status)) {
+                int signal = WSTOPSIG(waitpid_status);
+
+                if (signal == SIGTRAP) {
+                    // This is a breakpoint.
+                    // TODO: ensure that this works for hardware breakpoints too
+                    result.data.kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
+
+                    memmi_TID tid = {id_of_affected_thread};
+                    memmi_Registers regs = memmi_get_thread_registers(tid);
+
+                    memmi_RegisterValue dr6_value = regs.values[MEMMI_REG_DR6];
+                    int32_t breakpoint_index = memmi_get_dr6_breakpoint_index(dr6_value);
+
+                    if (regs.status != MEMMI_OK) {
+                        result.status = regs.status;
+                    } else if (breakpoint_index == -1) {
+                        MEMMI_ASSERT(0 && "Should never happen");
+                        result.status = MEMMI_OTHER_ERROR;
+                    } else {
+                        result.data.as.breakpoint.breakpoint_index = (uint32_t)breakpoint_index;
+
+                        memmi_Register instr_pointer_reg = MEMMI_16_BIT_TO_32_64_BIT_REGISTER_ENUM(IP);
+                        result.data.as.breakpoint.ip_register = regs.values[instr_pointer_reg];
+                    }
+                } else {
+                    // This is some other kind of stopping signal.
+                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
+                }
+            } else {
+                MEMMI_ASSERT(WIFCONTINUED(waitpid_status));
+                result.should_ignore = true;
+            }
+        } break;
+    }
+
+    return result;
+}
+
 /**********************/
 /* API implementation */
 /**********************/
@@ -1558,115 +1668,6 @@ typedef enum {
     MEMMI_LNX_WAITPID_HANG,
     MEMMI_LNX_WAITPID_NO_HANG,
 } memmi_lnx_WaitpidHang;
-
-typedef struct {
-    memmi_Status status;
-    bool should_ignore;
-    memmi_DebugEvent data;
-} memmi_lnx_DebugEventResult;
-
-#define ptrace_event_code(e) (SIGTRAP | ((unsigned int)(e)) << 8)
-
-static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process proc, int waitpid_status,
-    siginfo_t sig_info, pid_t id_of_affected_thread)
-{
-    memmi_lnx_DebugEventResult result = memmi_zero_struct(memmi_lnx_DebugEventResult);
-
-    pid_t native_pid = memmi_lnx_get_native_pid(proc);
-
-    switch (sig_info.si_code) {
-        // ptrace events
-        case ptrace_event_code(PTRACE_EVENT_STOP): {
-            result.data.kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
-        } break;
-
-        case ptrace_event_code(PTRACE_EVENT_CLONE): {
-            long new_thread_id = 0;
-            long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &new_thread_id);
-
-            if (get_msg_result == -1) {
-                result.status = memmi_lnx_errno_to_memmi_status(errno);
-            } else {
-                result.data.kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
-                result.data.as.new_thread.id = (memmi_TID)new_thread_id;
-            }
-        } break;
-
-        case ptrace_event_code(PTRACE_EVENT_EXIT): {
-            /* There's a bug in the kernel that causes SIGKILL to generate a
-               PTRACE_EVENT_EXIT. As far as I can tell there's no way to differentiate
-               this from a normal exit, so we'll have to simply report it as a normal
-               exit with code 0. Thanks ptrace! */
-            long exit_code = 0;
-            long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &exit_code);
-
-            if (get_msg_result == -1) {
-                result.status = memmi_lnx_errno_to_memmi_status(errno);
-            } else {
-                if (id_of_affected_thread == native_pid) {
-                    // The main thread exited, we'll count that as the process exiting.
-                    result.data.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
-                } else {
-                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                }
-
-                result.data.as.exit_code = (int)(exit_code >> 8);
-            }
-        } break;
-
-        default: {
-            // Normal signals
-            if (WIFEXITED(waitpid_status)) {
-                MEMMI_ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_EXIT.");
-
-                if (id_of_affected_thread == native_pid) {
-                    // The main thread exited, we'll count that as the process exiting.
-                    result.data.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
-                } else {
-                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                }
-
-                result.data.as.exit_code = WEXITSTATUS(waitpid_status);
-            } else if (WIFSIGNALED(waitpid_status)) {
-                result.data.kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
-            } else if (WIFSTOPPED(waitpid_status)) {
-                int signal = WSTOPSIG(waitpid_status);
-
-                if (signal == SIGTRAP) {
-                    // This is a breakpoint.
-                    // TODO: ensure that this works for hardware breakpoints too
-                    result.data.kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
-
-                    memmi_TID tid = {id_of_affected_thread};
-                    memmi_Registers regs = memmi_get_thread_registers(tid);
-
-                    memmi_RegisterValue dr6_value = regs.values[MEMMI_REG_DR6];
-                    int32_t breakpoint_index = memmi_get_dr6_breakpoint_index(dr6_value);
-
-                    if (regs.status != MEMMI_OK) {
-                        result.status = regs.status;
-                    } else if (breakpoint_index == -1) {
-                        MEMMI_ASSERT(0 && "Should never happen");
-                        result.status = MEMMI_OTHER_ERROR;
-                    } else {
-                        result.data.as.breakpoint.breakpoint_index = (uint32_t)breakpoint_index;
-
-                        memmi_Register instr_pointer_reg = MEMMI_16_BIT_TO_32_64_BIT_REGISTER_ENUM(IP);
-                        result.data.as.breakpoint.ip_register = regs.values[instr_pointer_reg];
-                    }
-                } else {
-                    // This is some other kind of stopping signal.
-                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
-                }
-            } else {
-                MEMMI_ASSERT(WIFCONTINUED(waitpid_status));
-                result.should_ignore = true;
-            }
-        } break;
-    }
-
-    return result;
-}
 
 static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process proc, memmi_lnx_WaitpidHang hang)
 {
