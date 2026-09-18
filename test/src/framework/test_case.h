@@ -9,12 +9,6 @@
 #define TEST_OUTPUT_FMT_STRING "%" PRIu64 "/%" PRIu64 "\n"
 
 #if defined(__GNUC__)
-#    define DEBUG_BREAK() __builtin_trap()
-#else
-#    error DEBUG_BREAK() not defined for this compiler
-#endif
-
-#if defined(__GNUC__)
 #    define MAYBE_UNUSED __attribute__((unused))
 #else
 #    error MAYBE_UNUSED not defined for this compiler
@@ -31,3 +25,6 @@
         }                                                       \
         ++g__assertions_ran;                                    \
     } while (0);
+
+#define MEMMI_DEBUG 1
+#include "memmi.c"

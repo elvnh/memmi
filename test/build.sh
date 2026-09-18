@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CC="gcc"
-CFLAGS="-Wall -Wextra -ggdb -I../include/ -Isrc/framework"
+CFLAGS="-Wall -Wextra -ggdb -I../include/memmi -Isrc/framework -I../src/"
 
 BUILD_DIR="build"
 CASES_DIR="${BUILD_DIR}/cases"
