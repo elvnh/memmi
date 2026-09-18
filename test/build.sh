@@ -17,21 +17,32 @@ cd $(dirname $0);
 rm -r ${BUILD_DIR} 2> /dev/null;
 mkdir -p ${CASES_DIR};
 
-${CC} ${CFLAGS} src/test_debuggee.c -o ${DEBUGGEE_PATH};
+${CC} ${CFLAGS} src/test_debuggee.c -o ${DEBUGGEE_PATH} &&
 ${CC} ${CFLAGS} src/test_runner.c  -o ${TEST_RUNNER_PATH} -DDEBUGGEE_EXECUTABLE_NAME="\"${DEBUGGEE_EXE}\"";
 
-for file in src/cases/*.c; do
-    [ -e "$file" ] || continue
+success=$?
 
+
+for file in src/cases/*.c; do
+    if [[ ${success} != 0 ]]; then
+        break
+    fi
+
+    [ -e "$file" ] || continue
     name=$(basename ${file})
     name_without_extension=${name%.*}
     test_case_exe="${CASES_DIR}/${name_without_extension}"
 
-    ${CC} ${CFLAGS} ${file} -o ${test_case_exe};
-    setcap CAP_SYS_PTRACE=eip ${test_case_exe};
+    ${CC} ${CFLAGS} ${file} -o ${test_case_exe} &&
+        setcap CAP_SYS_PTRACE=eip ${test_case_exe};
+    success=$?
 done
 
-# TODO: separate test script
-if [[ "$1" == "run" ]]; then
-    ./${TEST_RUNNER_PATH} ${CASES_DIR}/*
+# TODO: separate test script for running tests so they don't have to be run with sudo
+if [[ ${success} == 0 ]]; then
+    if [[ "$1" == "run" ]]; then
+        ./${TEST_RUNNER_PATH} ${CASES_DIR}/*
+    fi
+else
+    echo "Failed to compile tests."
 fi
