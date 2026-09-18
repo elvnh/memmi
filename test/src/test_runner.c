@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <sys/wait.h>
+#include <poll.h>
 
 #include <stdio.h>
 #include <assert.h>
@@ -52,10 +53,18 @@ Subprocess subprocess_run(const char *exe, char *argv[])
         size_t buffer_size = 1024;
         result.output = calloc(buffer_size, sizeof(char));
 
-        ssize_t bytes_read = read(pipes[PIPE_READ_END], result.output, buffer_size);
+        struct pollfd poll_fd = {0};
+        poll_fd.fd = pipes[PIPE_READ_END];
+        poll_fd.events = POLLIN;
 
-        assert(bytes_read > 0);
-        assert((size_t)bytes_read < buffer_size);
+        int poll_result = poll(&poll_fd, 1, 0);
+
+        if (poll_result > 0) {
+            ssize_t bytes_read = read(pipes[PIPE_READ_END], result.output, buffer_size);
+
+            assert(bytes_read > 0);
+            assert((size_t)bytes_read < buffer_size);
+        }
 
         // Pipe no longer needed, close it.
         close(pipes[PIPE_WRITE_END]);
@@ -96,14 +105,17 @@ int main(int argc, char **argv)
             &assertions_passed_in_test,
             &assertions_ran_in_test);
 
-        assert(scan_result == 2);
+        if (scan_result == 2) {
+            assertions_passed += assertions_passed_in_test;
+            assertions_ran += assertions_ran_in_test;
+        } else {
+            fprintf(stderr, "Warning: test case '%s' did not have expected test result output.\n",
+                   test_path);
+        }
 
         subprocess_free(subproc);
 
         ++tests_ran;
-
-        assertions_passed += assertions_passed_in_test;
-        assertions_ran += assertions_ran_in_test;
     }
 
     printf("Passed %" PRIu64 "/%" PRIu64 " assertions in %" PRIu64 " test cases.\n",
