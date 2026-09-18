@@ -20,8 +20,11 @@ ${CC} ${CFLAGS} src/test_runner.c  -o ${TEST_RUNNER_PATH} -DDEBUGGEE_EXECUTABLE_
 
 success=$?
 
-if [[ $(id -u) != "0" ]]; then
-    echo "In order to set the CAP_SYS_PTRACE permission on the test cases you will need root permissions. Please enter your password: ";
+sudo -n true 2> /dev/null;
+sudo_result=$?
+
+if [[ ${sudo_result} != "0" ]]; then
+   echo "In order to set the CAP_SYS_PTRACE permission on the test cases you will need root permissions. Please enter your password: ";
 fi
 
 for file in src/cases/*.c; do
