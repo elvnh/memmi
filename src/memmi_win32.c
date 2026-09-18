@@ -441,36 +441,29 @@ void memmi_close_process(memmi_Process process)
     CloseHandle(handle);
 }
 
-memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator)
+memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t address, size_t size)
 {
     memmi_ReadMemory result = zero_struct(memmi_ReadMemory);
 
-    void *buffer = (void *)allocate(allocator, uint8_t, size);
+    HANDLE handle = win32_get_process_handle(process);
+    
+    SIZE_T bytes_read = 0;
+    BOOL read_memory_result = ReadProcessMemory(
+        handle,
+        (void *)address,
+        dst,
+        size,
+        &bytes_read
+    );
 
-    if (!buffer) {
-        result.status = MEMMI_ALLOCATION_FAILED;
+    if (!read_memory_result) {
+        result.status = windows_error_to_memmi_status(GetLastError());
     } else {
-        HANDLE handle = win32_get_process_handle(process);
-        
-        SIZE_T bytes_read = 0;
-        BOOL read_memory_result = ReadProcessMemory(
-            handle,
-            (void *)address,
-            buffer,
-            size,
-            &bytes_read
-        );
-
-        if (!read_memory_result) {
-            result.status = windows_error_to_memmi_status(GetLastError());
-        } else {
-            if (bytes_read < size) {
-                result.status = MEMMI_PARTIAL_READ_OR_WRITE;
-            }
-
-            result.memory = (char *)buffer;
-            result.bytes_read = bytes_read;
+        if (bytes_read < size) {
+            result.status = MEMMI_PARTIAL_READ_OR_WRITE;
         }
+
+        result.bytes_read = bytes_read;
     }
 
     return result;

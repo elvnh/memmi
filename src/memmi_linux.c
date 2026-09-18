@@ -975,7 +975,7 @@ void memmi_close_process(memmi_Process process)
     (void)process;
 }
 
-memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, size_t size, memmi_Allocator allocator)
+memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t address, size_t size)
 {
     pid_t pid = get_native_pid(process);
 
@@ -984,43 +984,29 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, uintptr_t address, siz
     if (size > (size_t)SSIZE_MAX) {
         result.status = MEMMI_INVALID_ARGUMENTS;
     } else {
-        // TODO: free this memory on error
-        result.memory = allocate(allocator, char, size);
+        struct iovec local_iov = zero_struct(struct iovec);
+        local_iov.iov_base = dst;
+        local_iov.iov_len = size;
 
-        if (!result.memory) {
-            result.status = MEMMI_ALLOCATION_FAILED;
-        } else {
-            struct iovec local_iov = zero_struct(struct iovec);
-            local_iov.iov_base = result.memory;
-            local_iov.iov_len = size;
+        struct iovec remote_iov = zero_struct(struct iovec);
+        remote_iov.iov_base = (void *)address;
+        remote_iov.iov_len = size;
 
-            struct iovec remote_iov = zero_struct(struct iovec);
-            remote_iov.iov_base = (void *)address;
-            remote_iov.iov_len = size;
+        ssize_t bytes_read = process_vm_readv(pid, &local_iov, 1, &remote_iov, 1, 0);
 
-            ssize_t bytes_read = process_vm_readv(pid, &local_iov, 1, &remote_iov, 1, 0);
-
-            if (bytes_read == -1) {
-                if (errno == EFAULT) {
-                    result.status = MEMMI_INSUFFICIENT_PERMISSIONS;
-                } else {
-                    result.status = errno_to_memmi_status(errno);
-                }
+        if (bytes_read == -1) {
+            if (errno == EFAULT) {
+                result.status = MEMMI_INSUFFICIENT_PERMISSIONS;
             } else {
-                result.bytes_read = (size_t)bytes_read;
+                result.status = errno_to_memmi_status(errno);
+            }
+        } else {
+            result.bytes_read = (size_t)bytes_read;
 
-                if (result.bytes_read < size) {
-                    result.status = MEMMI_PARTIAL_READ_OR_WRITE;
-                }
+            if (result.bytes_read < size) {
+                result.status = MEMMI_PARTIAL_READ_OR_WRITE;
             }
         }
-    }
-
-    if ((result.status != MEMMI_OK) && (result.status != MEMMI_PARTIAL_READ_OR_WRITE)) {
-        deallocate(allocator, result.memory, size);
-
-        result.memory = 0;
-        result.bytes_read = 0;
     }
 
     return result;
