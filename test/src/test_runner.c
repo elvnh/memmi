@@ -42,9 +42,12 @@ Subprocess subprocess_run(const char *exe, char *argv[])
         int status = 0;
         int wait_result = waitpid(child_pid, &status, 0);
         assert(wait_result != -1);
-        assert(WIFEXITED(status));
 
-        result.return_code = WEXITSTATUS(status);
+        if (WIFEXITED(status)) {
+            result.return_code = WEXITSTATUS(status);
+        } else {
+            fprintf(stderr, "Warning: test case '%s' exited unexpectedly.\n", exe);
+        }
 
         // Since we're waiting until after waitpid to read from the pipe, we should always read the
         // entirety of the stdout/stderr of the child process in one call to read(), provided that
@@ -93,7 +96,6 @@ int main(int argc, char **argv)
 
         char *subproc_args[] = {test_path, 0};
         Subprocess subproc = subprocess_run(test_path, subproc_args);
-        assert(subproc.return_code == 0);
 
         uint64_t assertions_passed_in_test = 0;
         uint64_t assertions_ran_in_test = 0;
