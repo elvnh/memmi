@@ -168,11 +168,10 @@ char *get_debuggee_path()
 
     assert(last_slash_index >= 0);
 
-    char s[] = "../" DEBUGGEE_EXECUTABLE_NAME;
-    size_t final_length = (last_slash_index + 1) + sizeof(s);
+    size_t final_length = (last_slash_index + 1) + sizeof(DEBUGGEE_EXECUTABLE_NAME);
     char *result = realloc(self_path, final_length);
 
-    strcpy(result + last_slash_index + 1, s);
+    strcpy(result + last_slash_index + 1, DEBUGGEE_EXECUTABLE_NAME);
 
     return result;
 }
