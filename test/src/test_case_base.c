@@ -35,7 +35,7 @@ int main(int argc, char **argv)
 {
     assert(argc > 1);
     // TODO: don't use atoi
-    Pid pid = atoi(argv[1]);
+    Pid debuggee_pid = atoi(argv[1]);
 
     Ipc ipc = {0};
 
@@ -43,7 +43,7 @@ int main(int argc, char **argv)
         ipc = ipc_connect(IPC_TEST_PORT, sizeof(Message));
     }
 
-    test_case_main(pid, ipc);
+    test_case_main(debuggee_pid, ipc);
     printf(IPC_TEST_OUTPUT_FMT_STRING, g__assertions_passed, g__assertions_ran);
 
     ipc_destroy(ipc);

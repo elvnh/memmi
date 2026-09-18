@@ -98,7 +98,7 @@
             }                                                   \
         } while (0)
 #else
-#    define ASSERT(e)
+#    define ASSERT(e) (void)(e)
 #endif
 
 #define sl_push_back(list, node)                \

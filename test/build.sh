@@ -11,10 +11,8 @@ TEST_RUNNER_PATH="${BUILD_DIR}/test_runner"
 
 cd $(dirname $0);
 
-# TODO: don't remove the directories, this gets weird if the user is inside the
-# directory when it gets removed, just remove all files instead
-# TODO: if sudo when creating dir, it will be write protected
-rm -r ${BUILD_DIR} 2> /dev/null;
+rm -r ${BUILD_DIR}/* 2> /dev/null;
+rm -r ${CASES_DIR}/* 2> /dev/null;
 mkdir -p ${CASES_DIR};
 
 ${CC} ${CFLAGS} src/test_debuggee.c -o ${DEBUGGEE_PATH} &&
@@ -37,12 +35,13 @@ for file in src/cases/*.c; do
     name_without_extension=${name%.*}
     test_case_exe="${CASES_DIR}/${name_without_extension}"
 
-    ${CC} ${CFLAGS} ${file} -o ${test_case_exe} &&
+    test_case_flags="${CFLAGS} -Wno-unused-parameter"
+
+    ${CC} ${test_case_flags} ${file} -o ${test_case_exe} &&
         sudo setcap CAP_SYS_PTRACE=eip ${test_case_exe};
     success=$?
 done
 
-# TODO: separate test script for running tests so they don't have to be run with sudo
 if [[ ${success} == 0 ]]; then
     if [[ "$1" == "run" ]]; then
         ./${TEST_RUNNER_PATH} ${CASES_DIR}/*
