@@ -32,7 +32,7 @@ static memmi_Status windows_error_to_memmi_status(DWORD error_code)
 
 static DWORD win32_get_native_pid(memmi_Process proc)
 {
-    DWORD result = (DWORD)proc.pid.value;
+    DWORD result = (DWORD)proc.pid;
     
     return result;
 }
@@ -385,7 +385,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                     if (proc_name.data) {
                         memmi_ProcessInfo proc_info = {0};
                         proc_info.name = proc_name;
-                        proc_info.pid.value = pids[i];
+                        proc_info.pid = pids[i];
 
                         DynArray new_procs = dyn_arr_push(&procs, proc_info, allocator);
                         
@@ -422,7 +422,7 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid)
     /* | PROCESS_VM_OPERATION */
         PROCESS_ALL_ACCESS;
 
-    HANDLE handle = OpenProcess(access, FALSE, (DWORD)pid.value);
+    HANDLE handle = OpenProcess(access, FALSE, (DWORD)pid);
 
     if (!handle) {
         result.status = windows_error_to_memmi_status(GetLastError());
@@ -930,7 +930,7 @@ static Win32EventResult win32_event_to_memmi_event(DEBUG_EVENT win32_event)
             DWORD tid = GetThreadId(thread_handle);
             ASSERT(tid != 0);
 
-            result.event.as.new_thread.id.value = (int64_t)tid;
+            result.event.as.new_thread.id = (int64_t)tid;
 
             CloseHandle(thread_handle);
         } break;
@@ -1000,7 +1000,7 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
             // We're only interested in this event if the thread that caused it
             // belongs to the traced process.
             if (pid == win32_event.dwProcessId) {
-                result.id_of_affected_thread.value = win32_event.dwThreadId;
+                result.id_of_affected_thread = win32_event.dwThreadId;
 
                 Win32EventResult event_result = win32_event_to_memmi_event(win32_event);
 
@@ -1027,7 +1027,7 @@ memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_Even
 
     DWORD pid = win32_get_native_pid(process);
     BOOL continue_result = ContinueDebugEvent(
-        pid, (DWORD)events.id_of_affected_thread.value, DBG_CONTINUE);
+        pid, (DWORD)events.id_of_affected_thread, DBG_CONTINUE);
 
     if (!continue_result) {
         result = windows_error_to_memmi_status(GetLastError());
@@ -1041,7 +1041,7 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 {
     memmi_Registers result = zero_struct(memmi_Registers);
 
-    DWORD native_tid = (DWORD)tid.value;
+    DWORD native_tid = (DWORD)tid;
     Win32Handle handle = win32_open_thread_handle(native_tid);
 
     if (handle.status != MEMMI_OK) {
@@ -1067,7 +1067,7 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_
 {
     memmi_Status result = zero_enum(memmi_Status);
 
-    DWORD native_tid = (DWORD)tid.value;
+    DWORD native_tid = (DWORD)tid;
 
     Win32Handle handle = win32_open_thread_handle(native_tid);
 

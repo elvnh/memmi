@@ -13,10 +13,10 @@ void test_case_main(Pid pid, Ipc ipc)
     for (size_t i = 0; i < procs.count; ++i) {
         memmi_ProcessInfo info = procs.data[i];
 
-        if (info.pid.value == self_pid) {
+        if (info.pid == self_pid) {
             assert(!found_self);
             found_self = true;
-        } else if (info.pid.value == pid) {
+        } else if (info.pid == pid) {
             assert(!found_debuggee);
             found_debuggee = true;
         }

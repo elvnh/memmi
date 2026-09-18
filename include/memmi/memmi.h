@@ -57,13 +57,8 @@ typedef struct {
   - Letting user spawn a new process as a debuggee rather than just attaching
  */
 
-typedef struct {
-    int64_t value;
-} memmi_PID;
-
-typedef struct {
-    int64_t value;
-} memmi_TID;
+typedef int64_t memmi_PID;
+typedef int64_t memmi_TID;
 
 typedef struct {
     memmi_String name;

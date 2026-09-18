@@ -2,7 +2,7 @@
 
 void test_case_main(Pid pid, Ipc ipc)
 {
-    memmi_Process proc = memmi_open_process((memmi_PID) {pid}).process;
+    memmi_Process proc = memmi_open_process(pid).process;
 
     Response response = send_command(ipc, cmd_get_new_variable(val_int32(123)));
     assert(response.kind == RES_VARIABLE_INFO);

@@ -29,7 +29,7 @@ typedef struct {
 /***************************/
 static pid_t get_native_pid(memmi_Process proc)
 {
-    pid_t result = (pid_t)proc.pid.value;
+    pid_t result = (pid_t)proc.pid;
 
     return result;
 }
@@ -801,7 +801,7 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid)
 {
     memmi_OpenProcess result = zero_struct(memmi_OpenProcess);
 
-    memmi_Status pid_exists_result = pid_exists((pid_t)pid.value);
+    memmi_Status pid_exists_result = pid_exists((pid_t)pid);
 
     if (pid_exists_result != MEMMI_OK) {
         result.status = pid_exists_result;
@@ -935,7 +935,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                             ASSERT(proc_name.value.data);
 
                             int64_t pid_value = number_opt.value;
-                            memmi_ProcessInfo proc = {proc_name.value, {pid_value}};
+                            memmi_ProcessInfo proc = {proc_name.value, pid_value};
 
                             DynArray new_processes = dyn_arr_push(&processes, proc, allocator);
 
@@ -1563,7 +1563,7 @@ static DebugEventResult linux_siginfo_to_memmi_event(memmi_Process proc, int wai
                 result.status = errno_to_memmi_status(errno);
             } else {
                 result.data.kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
-                result.data.as.new_thread.id.value = (int64_t)new_thread_id;
+                result.data.as.new_thread.id = (memmi_TID)new_thread_id;
             }
         } break;
 
@@ -1676,7 +1676,7 @@ static DebugEventResult wait_for_debug_event(memmi_Process proc, WaitpidHang han
             bool thread_belongs_to_traced_process = thread_group_id.pid == pid;
 
             if (thread_belongs_to_traced_process) {
-                result.data.id_of_affected_thread.value = id_of_affected_thread;
+                result.data.id_of_affected_thread = id_of_affected_thread;
 
                 siginfo_t sig_info = zero_struct(siginfo_t);
                 long get_sig_result = ptrace(PTRACE_GETSIGINFO, id_of_affected_thread, 0, &sig_info);
@@ -1773,7 +1773,7 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 {
     memmi_Registers result = zero_struct(memmi_Registers);
 
-    pid_t native_tid = (pid_t)tid.value;
+    pid_t native_tid = (pid_t)tid;
     memmi_Status pid_exists_result = pid_exists(native_tid);
 
     if (pid_exists_result != MEMMI_OK) {
@@ -1794,8 +1794,8 @@ memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_
 
     memmi_Status result = MEMMI_OK;
 
-    pid_t native_tid = (pid_t)tid.value;
-    memmi_Status pid_exists_result = pid_exists((pid_t)tid.value);
+    pid_t native_tid = (pid_t)tid;
+    memmi_Status pid_exists_result = pid_exists((pid_t)tid);
 
     if (pid_exists_result != MEMMI_OK) {
         result = pid_exists_result;
