@@ -11,8 +11,9 @@
 #include "common.h"
 #include "debugger.h"
 
-// TODO: instead make relative to directory of test executable
-#define DEBUGGEE_EXECUTABLE_PATH "build/debuggee"
+#if !defined(DEBUGGEE_EXECUTABLE_NAME)
+#    error Please define the filename of the debuggee executable in the build script.
+#endif
 
 static bool spawn_debuggee_process(Pid *pid);
 
