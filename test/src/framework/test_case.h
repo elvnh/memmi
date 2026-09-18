@@ -1,3 +1,4 @@
+
 #pragma once
 
 /*
@@ -5,6 +6,16 @@
   - Allow tests to define arbitrary names
   - Allow breaking/continuing/stopping on test failure
  */
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+
+#include "command.h"
+#include "response.h"
+#include "common.h"
+#include "ipc.h"
+#include "debugger.h"
 
 #define TEST_OUTPUT_FMT_STRING "%" PRIu64 "/%" PRIu64 "\n"
 
@@ -28,3 +39,10 @@
 
 #define MEMMI_DEBUG 1
 #include "memmi.c"
+
+typedef struct {
+    Debuggee debuggee;
+    memmi_Process process;
+} DebuggeeProcess;
+
+DebuggeeProcess launch_debuggee_and_open();

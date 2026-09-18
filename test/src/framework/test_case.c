@@ -14,3 +14,4 @@ int main()
     test_case_main();
     printf(TEST_OUTPUT_FMT_STRING, g__assertions_passed, g__assertions_ran);
 }
+
