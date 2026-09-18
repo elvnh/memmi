@@ -29,6 +29,7 @@ void     test_case_main(Pid pid, Ipc ipc);
 Response receive_response(Ipc ipc, uint32_t timeout_ms);
 Response send_command_with_timeout(Ipc ipc, Command command, uint32_t timeout_ms);
 Response send_command(Ipc ipc, Command command);
+Pid      get_self_pid();
 
 int main(int argc, char **argv)
 {
@@ -105,3 +106,13 @@ Response send_command(Ipc ipc, Command command)
 
     return result;
 }
+
+#if defined(__linux__)
+Pid get_self_pid()
+{
+    Pid result = getpid();
+    return result;
+}
+#else
+#    error Test case functions not yet defined for this OS.
+#endif
