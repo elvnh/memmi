@@ -1,10 +1,8 @@
 #include "ipc/ipc_all.c"
 
-#include <unistd.h>
-#include <sys/wait.h>
-#include <poll.h>
-
 #include <string.h>
+
+#define ARRAY_COUNT(a) (sizeof((a)) / sizeof(*(a)))
 
 #if !defined(DEBUGGEE_EXECUTABLE_NAME)
 #    error Please define the filename of the debuggee executable in the build script.
@@ -21,7 +19,7 @@ typedef enum {
     SUBPROC_ASYNC,
 } SubprocessKind;
 
-Subprocess  subprocess_run(const char *exe, char *argv[], SubprocessKind kind);
+Subprocess  subprocess_run(const char *exe, char *args[], size_t arg_count, SubprocessKind kind);
 void        subprocess_destroy(Subprocess subproc);
 char       *get_debuggee_path();
 
@@ -34,21 +32,23 @@ int main(int argc, char **argv)
 
     // TODO: don't hardcode path
     char *debuggee_path = get_debuggee_path();
-    char *debuggee_args[] = {debuggee_path, 0};
 
     for (int i = 1; i < argc; ++i) {
         // First launch the debuggee asynchronously. It will wait for the debugger (the test
         // case we launch later) to connect to it.
-        Subprocess debuggee_subproc = subprocess_run(debuggee_path, debuggee_args, SUBPROC_ASYNC);
+        Subprocess debuggee_subproc = subprocess_run(
+            debuggee_path, 0, 0, SUBPROC_ASYNC);
+
         char pid_str[64] = {0};
         snprintf(pid_str, sizeof(pid_str), "%ld", debuggee_subproc.pid);
 
         // Launch the test case and wait for it to finish. Pass the pid of the debuggee process to
         // it so it can connect to it and start interacting with it.
-        // TODO: rename
         char *test_case_path = argv[i];
-        char *test_case_args[] = {test_case_path, pid_str, 0};
-        Subprocess test_case_subproc = subprocess_run(test_case_path, test_case_args, SUBPROC_SYNC);
+        char *test_case_args[] = {pid_str};
+
+        Subprocess test_case_subproc = subprocess_run(
+            test_case_path, test_case_args, ARRAY_COUNT(test_case_args), SUBPROC_SYNC);
 
         uint32_t assertions_passed_in_test = 0;
         uint32_t assertions_ran_in_test = 0;
@@ -81,12 +81,15 @@ int main(int argc, char **argv)
 }
 
 #if defined(__linux__)
-// TODO: make this function a bit nicer to use, automatically provide exe name as first arg
+#include <unistd.h>
+#include <sys/wait.h>
+#include <poll.h>
+
 
 #define PIPE_READ_END  0
 #define PIPE_WRITE_END 1
 
-Subprocess subprocess_run(const char *exe, char *argv[], SubprocessKind kind)
+Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, SubprocessKind kind)
 {
     Subprocess result = {0};
 
@@ -107,7 +110,18 @@ Subprocess subprocess_run(const char *exe, char *argv[], SubprocessKind kind)
         close(pipes[PIPE_WRITE_END]);
         close(pipes[PIPE_READ_END]);
 
-        execv(exe, argv);
+        // Copy arguments to new array containing executable name and null terminator.
+        size_t final_args_count = arg_count + 2;
+        char **final_args = calloc(final_args_count, sizeof(char *));
+        final_args[0] = (char *)exe;
+        final_args[final_args_count - 1] = 0;
+
+        if (arg_count > 0) {
+            memcpy(final_args + 1, args, arg_count * sizeof(char *));
+        }
+
+        int exec_result = execv(exe, final_args);
+        assert(exec_result != -1);
     } else {
         if (kind == SUBPROC_SYNC) {
             int status = 0;
