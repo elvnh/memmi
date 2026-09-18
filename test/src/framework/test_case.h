@@ -35,14 +35,4 @@
             ++g__assertions_passed;                             \
         }                                                       \
         ++g__assertions_ran;                                    \
-    } while (0);
-
-#define MEMMI_DEBUG 1
-#include "memmi.c"
-
-typedef struct {
-    Debuggee debuggee;
-    memmi_Process process;
-} DebuggeeProcess;
-
-DebuggeeProcess launch_debuggee_and_open();
+    } while (0)

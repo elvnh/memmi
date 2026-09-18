@@ -92,6 +92,12 @@ static Response handle_command(Command cmd)
             VariableInfo info = set_variable(id, cmd.as.get_new_variable);
             result = res_variable_info(info);
         } break;
+
+        case CMD_GET_VARIABLE: {
+            VariableInfo info = get_variable(cmd.as.get_variable);
+
+            result = res_variable_info(info);
+        }
     }
 
     return result;

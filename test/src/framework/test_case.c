@@ -1,6 +1,13 @@
 /* This file should be included by all test case files. */
 
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#    define _GNU_SOURCE
+#endif
+
 #include "test_case.h"
+
+#define MEMMI_DEBUG 1
+#include "memmi.c"
 
 #include "debugger.c"
 

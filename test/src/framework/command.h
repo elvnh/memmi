@@ -5,7 +5,8 @@
 /* Commands - sent from the debugger to the debuggee to make it perform an action */
 typedef enum {
     CMD_DO_NOTHING, /* Used to check if debuggee is alive */
-    CMD_GET_NEW_VARIABLE,
+    CMD_GET_NEW_VARIABLE, // TODO: rename to DECLARE_NEW_VARIABLE
+    CMD_GET_VARIABLE,
 } CommandKind;
 
 typedef struct {
@@ -13,6 +14,7 @@ typedef struct {
 
     union {
         TypedValue get_new_variable;
+        VariableId get_variable;
     } as;
 } Command;
 
@@ -33,3 +35,11 @@ static inline Command cmd_get_new_variable(TypedValue value)
     return result;
 }
 
+static inline Command cmd_get_variable(VariableId id)
+{
+    Command result = {0};
+    result.kind = CMD_GET_VARIABLE;
+    result.as.get_variable = id;
+
+    return result;
+}
