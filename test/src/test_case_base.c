@@ -25,29 +25,20 @@
 #    error Please define the filename of the debuggee executable in the build script.
 #endif
 
-/* Global variables for keeping track of test statistics. */
+/* Global variables */
 static uint32_t g__assertions_passed;
 static uint32_t g__assertions_ran;
 
-static void     test_case_main();
-static bool     spawn_debuggee_process(Pid *pid);
-static Debuggee launch_debuggee();
-static void     destroy_debuggee(Debuggee debuggee);
-static Response receive_response(Debuggee debuggee, uint32_t timeout_ms);
-Response        send_command_with_timeout(Debuggee debuggee, Command command, uint32_t timeout_ms);
-Response        send_command(Debuggee debuggee, Command command);
+static void     test_case_main(Pid pid, Ipc ipc);
+static Response receive_response(Ipc ipc, uint32_t timeout_ms);
+Response        send_command_with_timeout(Ipc ipc, Command command, uint32_t timeout_ms);
+Response        send_command(Ipc ipc, Command command);
 
-int main()
+int main(int argc, char **argv)
 {
-    test_case_main();
-    printf(IPC_TEST_OUTPUT_FMT_STRING, g__assertions_passed, g__assertions_ran);
-}
-
-Debuggee launch_debuggee()
-{
-    Pid pid = 0;
-    bool launch_result = spawn_debuggee_process(&pid);
-    assert(launch_result);
+    assert(argc > 1);
+    // TODO: don't use atoi
+    Pid pid = atoi(argv[1]);
 
     Ipc ipc = {0};
 
@@ -55,22 +46,16 @@ Debuggee launch_debuggee()
         ipc = ipc_connect(IPC_TEST_PORT, sizeof(Message));
     }
 
-    Debuggee result = {0};
-    result.pid = pid;
-    result.ipc = ipc;
+    test_case_main(pid, ipc);
+    printf(IPC_TEST_OUTPUT_FMT_STRING, g__assertions_passed, g__assertions_ran);
 
-    return result;
+    ipc_destroy(ipc);
 }
 
-void destroy_debuggee(Debuggee debuggee)
-{
-    ipc_destroy(debuggee.ipc);
-}
-
-static Response receive_response(Debuggee debuggee, uint32_t timeout_ms)
+static Response receive_response(Ipc ipc, uint32_t timeout_ms)
 {
     Message response_msg = {0};
-    IpcReceiveResult receive_result = ipc_receive_with_timeout(debuggee.ipc, &response_msg, timeout_ms);
+    IpcReceiveResult receive_result = ipc_receive_with_timeout(ipc, &response_msg, timeout_ms);
 
     Response result = {0};
 
@@ -99,33 +84,34 @@ static Response receive_response(Debuggee debuggee, uint32_t timeout_ms)
     return result;
 }
 
-Response send_command_with_timeout(Debuggee debuggee, Command command, uint32_t timeout_ms)
+Response send_command_with_timeout(Ipc ipc, Command command, uint32_t timeout_ms)
 {
     Response result = {0};
 
     Message cmd_message = {0};
     cmd_message.command = command;
 
-    bool send_result = ipc_send(debuggee.ipc, &cmd_message);
+    bool send_result = ipc_send(ipc, &cmd_message);
 
     if (!send_result) {
         result.kind = RES_ERROR;
         assert(0);
     } else {
-        result = receive_response(debuggee, timeout_ms);
+        result = receive_response(ipc, timeout_ms);
     }
 
     return result;
 }
 
-Response send_command(Debuggee debuggee, Command command)
+Response send_command(Ipc ipc, Command command)
 {
-    Response result = send_command_with_timeout(debuggee, command, IPC_TIMEOUT_NONE);
+    Response result = send_command_with_timeout(ipc, command, IPC_TIMEOUT_NONE);
 
     return result;
 }
 
-#if defined(__linux)
+#if 0
+#if defined(__linux__)
     static char *lnx_get_debuggee_path()
     {
         char *self_path = realpath("/proc/self/exe", 0);
@@ -147,30 +133,7 @@ Response send_command(Debuggee debuggee, Command command)
 
         return result;
     }
-
-    static bool spawn_debuggee_process(Pid *pid)
-    {
-        assert(pid);
-
-        bool result = false;
-
-        pid_t fork_result = fork();
-
-        if (fork_result == -1) {
-            result = false;
-        } else if (fork_result == 0) {
-            char *debuggee_path = lnx_get_debuggee_path();
-            char *args[] = {debuggee_path, 0};
-
-            execv(debuggee_path, args);
-        } else {
-            *pid = (Pid)fork_result;
-            result = true;
-        }
-
-
-        return result;
-    }
 #else
 #    error spawn_debuggee_process not yet defined for this OS
+#endif
 #endif

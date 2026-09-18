@@ -1,11 +1,10 @@
 #include "test_case_base.c"
 
-void test_case_main()
+void test_case_main(Pid pid, Ipc ipc)
 {
-    Debuggee d = launch_debuggee();
-    memmi_Process proc = memmi_open_process((memmi_PID) {d.pid}).process;
+    memmi_Process proc = memmi_open_process((memmi_PID) {pid}).process;
 
-    Response response = send_command(d, cmd_get_new_variable(val_int32(123)));
+    Response response = send_command(ipc, cmd_get_new_variable(val_int32(123)));
     assert(response.kind == RES_VARIABLE_INFO);
 
     memmi_ReadMemory read_mem_result = memmi_read_memory(
