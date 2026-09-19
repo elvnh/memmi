@@ -2,26 +2,40 @@
 :restart
 setlocal enabledelayedexpansion
 
-:: TODO: make this work for msvc
+:: TODO: rename constants to all caps
+:: TODO: make script change dir to dir of itself
+
+:: TODO: allow user to set some of these options
+set cc=cl
+set arch=x64
 
 set build_dir=build
 set cases_dir=%build_dir%/cases
 
+set msvc_cflags=/Isrc -I../src /I../include/memmi /W4 /wd4100 /wd4702 /wd4127 /nologo ws2_32.lib /Fd"%build_dir%\\" /Fo"%build_dir%\\"
+
+set msvc_cflags_debug=-Zi /DMEMMI_DEBUG=1 /fsanitize=address
+set msvc_cflags_release=
+
+set msvc_cflags=%msvc_cflags% %msvc_cflags_debug%
+
+set cflags=%msvc_cflags%
+
 if not exist "%build_dir%" mkdir "%build_dir%" ||goto error
 if not exist "%cases_dir%" mkdir "%cases_dir%" ||goto error
 
-gcc src/test_debuggee.c -std=c99 -Wall -Wextra -ggdb -o "%build_dir%/debuggee" -lws2_32
-gcc src/test_runner.c -std=c99 -Wall -Wextra -ggdb -o "%build_dir%/test_runner" -DDEBUGGEE_EXECUTABLE_NAME=\"debuggee.exe\" -lws2_32
+call vcvarsall %arch% > nul 2>&1 || goto error
+
+:: TODO: use variable for debuggee name
+%cc% %cflags% src/test_debuggee.c /Fe"%build_dir%/debuggee"
+%cc% %cflags% src/test_runner.c /Fe"%build_dir%/test_runner" /D DEBUGGEE_EXECUTABLE_NAME=\"debuggee.exe\"
 
 for %%f in (src/cases/*) do (
     set name=%%~nf
     set test_case_exe="%cases_dir%/!name!"
 
-    gcc src/cases/%%f -std=c99 -Wall -Wextra -ggdb -o !test_case_exe! -Isrc -I../src -I../include/memmi -lws2_32
+    %cc% %cflags% src/cases/%%f /Fe!test_case_exe!
 )
-endlocal
-
-
 
 exit /b 0
 
