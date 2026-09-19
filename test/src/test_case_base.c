@@ -107,12 +107,12 @@ Response send_command(Ipc ipc, Command command)
     return result;
 }
 
-#if defined(__linux__)
 Pid get_self_pid()
 {
+#if defined(__linux__)
     Pid result = getpid();
+#elif defined(_WIN32)
+    Pid result = (Pid)GetCurrentProcessId();
+#endif
     return result;
 }
-#else
-#    error Test case functions not yet defined for this OS.
-#endif
