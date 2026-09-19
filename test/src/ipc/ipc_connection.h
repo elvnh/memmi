@@ -3,6 +3,9 @@
 #if OS_LINUX
     typedef int ipc_Socket;
 #elif OS_WIN32
+#    define _WINSOCK_DEPRECATED_NO_WARNINGS
+#    include <winsock2.h>
+
     typedef SOCKET ipc_Socket;
 #else
 #    error Unsupported operating system
