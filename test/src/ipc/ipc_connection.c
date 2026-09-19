@@ -14,9 +14,6 @@
     typedef size_t ipc_MsgSizeType;
 
 #elif OS_WIN32
-#    define _WINSOCK_DEPRECATED_NO_WARNINGS
-#    include <winsock2.h>
-
 #    define IPC_INVALID_SOCKET INVALID_SOCKET
 
     // This typedef is needed because Windows send() and recv() defines the size parameter as int.
