@@ -24,7 +24,6 @@
 /* Global variables */
 MAYBE_UNUSED static uint32_t g__assertions_passed;
 MAYBE_UNUSED static uint32_t g__assertions_ran;
-static uint32_t g__foo_bar;
 
 void     test_case_main(Pid pid, Ipc ipc);
 Response receive_response(Ipc ipc, uint32_t timeout_ms);

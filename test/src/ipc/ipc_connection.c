@@ -8,6 +8,8 @@
 #    include <errno.h>
 #    include <poll.h>
 
+#    define IPC_INVALID_SOCKET -1
+
     typedef int ipc_Socket;
     // This typedef is needed because Windows send() and recv() defines the size parameter as int.
     typedef size_t ipc_MsgSizeType;
@@ -15,6 +17,8 @@
 #elif defined(_WIN32)
 #    define _WINSOCK_DEPRECATED_NO_WARNINGS
 #    include <winsock2.h>
+
+#    define IPC_INVALID_SOCKET INVALID_SOCKET
 
     typedef SOCKET ipc_Socket;
     // This typedef is needed because Windows send() and recv() defines the size parameter as int.
@@ -62,7 +66,7 @@ Ipc ipc_accept(int32_t port, size_t message_size)
     ipc.client_socket = accept(ipc.server_socket, 0, 0/*(struct sockaddr *)client_addr, &client_addr_length*/);
 
     // TODO: shouldn't we check client_socket too?
-    if ((ipc.server_socket != -1) && (bind_result != -1) && (listen_result != -1)) {
+    if ((ipc.server_socket != IPC_INVALID_SOCKET) && (bind_result != -1) && (listen_result != -1)) {
         lnx_Ipc *ipc_copy = calloc(1, sizeof(lnx_Ipc));
         *ipc_copy = ipc;
         result.data = ipc_copy;
@@ -88,7 +92,7 @@ Ipc ipc_connect(int32_t port, size_t message_size)
 
     int connect_result = connect(ipc.client_socket, (struct sockaddr *)&client_addr, sizeof(client_addr));
 
-    if ((ipc.client_socket != -1) && (connect_result != -1)) {
+    if ((ipc.client_socket != IPC_INVALID_SOCKET) && (connect_result != -1)) {
         lnx_Ipc *ipc_copy = calloc(1, sizeof(lnx_Ipc));
         *ipc_copy = ipc;
         result.data = ipc_copy;
