@@ -144,6 +144,16 @@
 #    error MEMMI_TYPEOF not defined for this compiler
 #endif
 
+// Some helper functions are not used in all platform implementation files, causing them to
+// emit warnings about being unused. This attribute will be placed on such functions.
+#if MEMMI_GCC
+#    define MEMMI_MAYBE_UNUSED __attribute__((unused))
+#elif MEMMI_MSVC
+#    define MEMMI_MAYBE_UNUSED __pragma(warning(disable: 4189))
+#else
+#    error MEMMI_MAYBE_UNUSED not defined for this compiler
+#endif
+
 /***************************/
 /*         String          */
 /***************************/
@@ -160,6 +170,7 @@ static inline bool memmi_is_whitespace(char ch)
     return result;
 }
 
+MEMMI_MAYBE_UNUSED
 static memmi_String memmi_str_from_c_str(char *str)
 {
     MEMMI_ASSERT(str);
@@ -181,6 +192,7 @@ static bool memmi_str_eq(memmi_String a, memmi_String b)
     return result;
 }
 
+MEMMI_MAYBE_UNUSED
 static bool memmi_str_starts_with(memmi_String str, memmi_String substr)
 {
     bool result = false;
@@ -199,6 +211,7 @@ typedef struct {
     bool   ok;
 } memmi_Cut;
 
+MEMMI_MAYBE_UNUSED
 static memmi_Cut memmi_str_cut(memmi_String str, memmi_String pattern)
 {
     memmi_Cut result = memmi_zero_struct(memmi_Cut);
@@ -228,6 +241,7 @@ static memmi_Cut memmi_str_cut(memmi_String str, memmi_String pattern)
     return result;
 }
 
+MEMMI_MAYBE_UNUSED
 static memmi_String memmi_str_trim_leading_whitespace(memmi_String str)
 {
     memmi_String result = str;
@@ -240,6 +254,7 @@ static memmi_String memmi_str_trim_leading_whitespace(memmi_String str)
     return result;
 }
 
+MEMMI_MAYBE_UNUSED
 static memmi_String memmi_str_trim_trailing_whitespace(memmi_String str)
 {
     memmi_String result = str;
@@ -251,6 +266,7 @@ static memmi_String memmi_str_trim_trailing_whitespace(memmi_String str)
     return result;
 }
 
+MEMMI_MAYBE_UNUSED
 static memmi_String memmi_str_trim_whitespace(memmi_String str)
 {
     memmi_String result = str;
@@ -367,6 +383,7 @@ static bool memmi_str_to_u64(memmi_String str, uint64_t *out)
     return result;
 }
 
+MEMMI_MAYBE_UNUSED
 static bool memmi_str_to_usize(memmi_String str, size_t *out)
 {
     bool result = false;
