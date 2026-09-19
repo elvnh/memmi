@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CC="gcc"
-CFLAGS="-Wall -Wextra -ggdb -I../include/memmi -I../src/ -Isrc"
+CFLAGS="-Wall -Wextra -ggdb -I../include/memmi -I../src/ -Isrc -DMEMMI_DEBUG"
 CLIBS=""
 
 BUILD_DIR="build"
