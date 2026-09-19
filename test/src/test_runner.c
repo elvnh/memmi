@@ -11,7 +11,7 @@
 typedef struct {
     Pid   pid;
     int   return_code;
-    char *stdout;
+    char *output;
 } Subprocess;
 
 typedef enum {
@@ -40,7 +40,7 @@ int main(int argc, char **argv)
             debuggee_path, 0, 0, SUBPROC_ASYNC);
 
         char pid_str[64] = {0};
-        snprintf(pid_str, sizeof(pid_str), "%ld", debuggee_subproc.pid);
+        snprintf(pid_str, sizeof(pid_str), "%" PRId64, debuggee_subproc.pid);
 
         // Launch the test case and wait for it to finish. Pass the pid of the debuggee process to
         // it so it can connect to it and start interacting with it.
@@ -55,7 +55,7 @@ int main(int argc, char **argv)
 
         // Parse the output of the test to see how many assertions were passed and ran.
         int scan_result = sscanf(
-            test_case_subproc.stdout,
+            test_case_subproc.output,
             IPC_TEST_OUTPUT_FMT_STRING,
             &assertions_passed_in_test,
             &assertions_ran_in_test);
@@ -84,7 +84,6 @@ int main(int argc, char **argv)
 #include <unistd.h>
 #include <sys/wait.h>
 #include <poll.h>
-
 
 #define PIPE_READ_END  0
 #define PIPE_WRITE_END 1
@@ -139,7 +138,7 @@ Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, Subpr
             // the buffer is large enough. Since we only print very little from the child process, it
             // should always be large enough.
             size_t buffer_size = 1024;
-            result.stdout = calloc(buffer_size, sizeof(char));
+            result.output = calloc(buffer_size, sizeof(char));
 
             struct pollfd poll_fd = {0};
             poll_fd.fd = pipes[PIPE_READ_END];
@@ -148,7 +147,7 @@ Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, Subpr
             int poll_result = poll(&poll_fd, 1, 0);
 
             if (poll_result > 0) {
-                ssize_t bytes_read = read(pipes[PIPE_READ_END], result.stdout, buffer_size);
+                ssize_t bytes_read = read(pipes[PIPE_READ_END], result.output, buffer_size);
 
                 assert(bytes_read > 0);
                 assert((size_t)bytes_read < buffer_size);
@@ -166,7 +165,7 @@ Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, Subpr
 void subprocess_destroy(Subprocess subproc)
 {
     kill(subproc.pid, SIGKILL);
-    free(subproc.stdout);
+    free(subproc.output);
 }
 
 char *get_debuggee_path()
@@ -190,6 +189,134 @@ char *get_debuggee_path()
     return result;
 }
 
-#else
-#    error Test runner functions not yet defined for this OS.
+#elif defined(_WIN32)
+static char *create_command_line(const char *exe, char *args[], size_t arg_count)
+{
+    size_t total_length = 0;
+    total_length += strlen(exe) + 1;
+
+    for (size_t i = 0; i < arg_count; ++i) {
+        total_length += strlen(args[i]) + 1;
+    }
+
+    ++total_length;
+
+    char *result = calloc(total_length, sizeof(char));
+
+    size_t offset = 0;
+
+    strcpy(result + offset, exe);
+    offset += strlen(exe);
+    result[offset++] = ' ';
+
+    for (size_t i = 0; i < arg_count; ++i) {
+        strcpy(result + offset, args[i]);
+        offset += strlen(args[i]);
+        result[offset++] = ' ';
+    }
+
+    return result;
+}
+
+Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, SubprocessKind kind)
+{
+    Subprocess result = {0};
+
+    SECURITY_ATTRIBUTES security_attributes = {0};
+    security_attributes.nLength = sizeof(SECURITY_ATTRIBUTES);
+    security_attributes.bInheritHandle = TRUE;
+
+    HANDLE write_pipe = 0;
+    HANDLE read_pipe = 0;
+
+    BOOL create_pipe_result = CreatePipe(
+        &read_pipe, &write_pipe, &security_attributes, 0);
+    assert(create_pipe_result);
+
+    BOOL set_handle_info_result = SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0);
+    assert(set_handle_info_result);
+
+    PROCESS_INFORMATION proc_info = {0};
+    STARTUPINFO startup_info = {0};
+    startup_info.cb = sizeof(STARTUPINFO);
+    startup_info.hStdOutput = write_pipe;
+    startup_info.dwFlags |= STARTF_USESTDHANDLES;
+
+    char *cmd_line = create_command_line(exe, args, arg_count);
+
+    BOOL create_proc_result = CreateProcess(
+        0,
+        cmd_line,
+        0,
+        0,
+        TRUE,
+        0,
+        0,
+        0,
+        &startup_info,
+        &proc_info
+    );
+
+    assert(create_proc_result);
+
+    // TODO: close pipes
+    if (kind == SUBPROC_SYNC) {
+        DWORD wait_result = WaitForSingleObject(proc_info.hProcess, INFINITE);
+        assert(wait_result == WAIT_OBJECT_0);
+
+        DWORD return_code = 0;
+        BOOL get_exit_code_result = GetExitCodeProcess(proc_info.hProcess, &return_code);
+        assert(get_exit_code_result);
+
+        result.return_code = (int)return_code;
+
+        // Since we're waiting until after waitpid to read from the pipe, we should always read the
+        // entirety of the stdout/stderr of the child process in one call to read(), provided that
+        // the buffer is large enough. Since we only print very little from the child process, it
+        // should always be large enough.
+        size_t buffer_size = 1024;
+        result.output = calloc(buffer_size, sizeof(char));
+
+        DWORD bytes_written = 0;
+        DWORD bytes_read = 0;
+
+        BOOL read_result = ReadFile(read_pipe, result.output, buffer_size, &bytes_read, 0);
+        assert(read_result);
+    }
+
+    result.pid = (Pid)proc_info.dwProcessId;
+
+    free(cmd_line);
+
+    CloseHandle(proc_info.hProcess);
+    CloseHandle(proc_info.hThread);
+
+    return result;
+}
+
+void subprocess_destroy(Subprocess subproc)
+{
+    HANDLE proc_handle = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)subproc.pid);
+    TerminateProcess(proc_handle, 0);
+    CloseHandle(proc_handle);
+
+    free(subproc.output);
+}
+
+char *get_debuggee_path()
+{
+    // TODO: don't hardcode this
+    return "./debuggee.exe";
+    size_t buffer_length = MAX_PATH;
+    char *result = calloc(MAX_PATH, sizeof(char));
+
+    DWORD bytes_written = GetModuleFileNameA(
+        0, result, sizeof(buffer_length));
+
+    assert(bytes_written > 0);
+    assert(bytes_written < buffer_length);
+
+    return result;
+}
+
 #endif
