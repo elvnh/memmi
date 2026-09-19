@@ -3,7 +3,7 @@
 #if defined(__linux__)
 #    include "ipc_connection_linux.c"
 #else
-#    error IPC not yet defined for this platform
+#    include "ipc_connection_win32.c"
 #endif
 
 bool ipc_ok(Ipc ipc)
