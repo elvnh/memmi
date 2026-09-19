@@ -29,20 +29,20 @@ if not exist "%obj_dir%" mkdir "%obj_dir%" ||goto error
 call vcvarsall %arch% > nul 2>&1 || goto error
 
 :: TODO: use variable for debuggee name
-%cc% %cflags% src/test_debuggee.c /Fe"%build_dir%/debuggee"
-%cc% %cflags% src/test_runner.c /Fe"%build_dir%/test_runner" /D DEBUGGEE_EXECUTABLE_NAME=\"debuggee.exe\"
+%cc% %cflags% src/test_debuggee.c /Fe"%build_dir%/debuggee" ||goto error
+%cc% %cflags% src/test_runner.c /Fe"%build_dir%/test_runner" /D DEBUGGEE_EXECUTABLE_NAME=\"debuggee.exe\" ||goto error
 
 for %%f in (src/cases/*) do (
     set name=%%~nf
     set test_case_exe="%cases_dir%/!name!"
 
-    %cc% %cflags% src/cases/%%f /Fe!test_case_exe!
+    %cc% %cflags% src/cases/%%f /Fe!test_case_exe! ||goto error
 )
 
 if "%1"=="run" (
    set cases=
    for %%f in (%cases_dir%/*.exe) do set cases=!cases! "%cases_dir%/%%f"
-   "%build_dir%/test_runner" !cases!
+   "%build_dir%/test_runner" !cases! ||goto error
 )
 
 exit /b 0
