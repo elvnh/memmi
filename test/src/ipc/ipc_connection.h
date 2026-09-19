@@ -1,10 +1,21 @@
 #pragma once
 
+#if defined(__linux__)
+    typedef int ipc_Socket;
+#elif defined(_WIN32)
+    typedef SOCKET ipc_Socket;
+#else
+#    error Unsupported operating system
+#endif
+
 #define IPC_TIMEOUT_NONE 0
 
+
 typedef struct {
-    void *data;
+    ipc_Socket server_socket;
+    ipc_Socket client_socket; // Either ourselves, or the client from the servers point of view
     size_t message_size;
+    bool ok;
 } Ipc;
 
 typedef enum {

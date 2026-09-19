@@ -10,7 +10,6 @@
 
 #    define IPC_INVALID_SOCKET -1
 
-    typedef int ipc_Socket;
     // This typedef is needed because Windows send() and recv() defines the size parameter as int.
     typedef size_t ipc_MsgSizeType;
 
@@ -20,16 +19,10 @@
 
 #    define IPC_INVALID_SOCKET INVALID_SOCKET
 
-    typedef SOCKET ipc_Socket;
     // This typedef is needed because Windows send() and recv() defines the size parameter as int.
     typedef int ipc_MsgSizeType;
+#    error Unsupported operating system
 #endif
-
-// TODO: doesn't need to be opaque anymore
-typedef struct {
-    ipc_Socket server_socket;
-    ipc_Socket client_socket; // Either ourselves, or the client from the servers point of view
-} lnx_Ipc;
 
 static void ipc_initialize_sockets();
 static void ipc_close_socket(ipc_Socket socket_fd);
@@ -37,7 +30,7 @@ static int  ipc_poll_socket(ipc_Socket socket_fd, uint32_t timeout_ms);
 
 bool ipc_ok(Ipc ipc)
 {
-    bool result = ipc.data != 0;
+    bool result = ipc.ok;
 
     return result;
 }
@@ -50,26 +43,23 @@ Ipc ipc_accept(int32_t port, size_t message_size)
 
     Ipc result = {0};
     result.message_size = message_size;
-
-    lnx_Ipc ipc = {0};
-    ipc.server_socket = socket(PF_INET, SOCK_STREAM, 0);
+    result.server_socket = socket(PF_INET, SOCK_STREAM, 0);
 
     struct sockaddr_in server_addr = {0};
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     server_addr.sin_port = (short)port;
 
-    int bind_result = bind(ipc.server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr));
-    int listen_result = listen(ipc.server_socket, 1);
+    int bind_result = bind(result.server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr));
+    int listen_result = listen(result.server_socket, 1);
 
-    /* socklen_t client_addr_length = sizeof(client_addr); */
-    ipc.client_socket = accept(ipc.server_socket, 0, 0/*(struct sockaddr *)client_addr, &client_addr_length*/);
+    result.client_socket = accept(result.server_socket, 0, 0);
 
-    // TODO: shouldn't we check client_socket too?
-    if ((ipc.server_socket != IPC_INVALID_SOCKET) && (bind_result != -1) && (listen_result != -1)) {
-        lnx_Ipc *ipc_copy = calloc(1, sizeof(lnx_Ipc));
-        *ipc_copy = ipc;
-        result.data = ipc_copy;
+    if ((result.server_socket == IPC_INVALID_SOCKET) || (result.server_socket == IPC_INVALID_SOCKET)
+        || (bind_result == -1) || (listen_result == -1)) {
+        ipc_destroy(result);
+    } else {
+        result.ok = true;
     }
 
     return result;
@@ -77,27 +67,23 @@ Ipc ipc_accept(int32_t port, size_t message_size)
 
 Ipc ipc_connect(int32_t port, size_t message_size)
 {
-    Ipc result = {0};
-    result.message_size = message_size;
-
     ipc_initialize_sockets();
 
-    lnx_Ipc ipc = {0};
-    ipc.client_socket = socket(PF_INET, SOCK_STREAM, 0);
+    Ipc result = {0};
+    result.message_size = message_size;
+    result.client_socket = socket(PF_INET, SOCK_STREAM, 0);
 
     struct sockaddr_in client_addr = {0};
     client_addr.sin_family = AF_INET;
     client_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     client_addr.sin_port = (short)port;
 
-    int connect_result = connect(ipc.client_socket, (struct sockaddr *)&client_addr, sizeof(client_addr));
+    int connect_result = connect(result.client_socket, (struct sockaddr *)&client_addr, sizeof(client_addr));
 
-    if ((ipc.client_socket != IPC_INVALID_SOCKET) && (connect_result != -1)) {
-        lnx_Ipc *ipc_copy = calloc(1, sizeof(lnx_Ipc));
-        *ipc_copy = ipc;
-        result.data = ipc_copy;
+    if ((result.client_socket == IPC_INVALID_SOCKET) || (connect_result == -1)) {
+        ipc_destroy(result);
     } else {
-        ipc_close_socket(ipc.client_socket);
+        result.ok = true;
     }
 
     return result;
@@ -106,25 +92,21 @@ Ipc ipc_connect(int32_t port, size_t message_size)
 
 void ipc_destroy(Ipc ipc)
 {
-    lnx_Ipc *lnx_ipc = ipc.data;
-    ipc_close_socket(lnx_ipc->client_socket);
-    ipc_close_socket(lnx_ipc->server_socket);
-
-    free(ipc.data);
+    ipc_close_socket(ipc.client_socket);
+    ipc_close_socket(ipc.server_socket);
 }
 
 bool ipc_send(Ipc ipc, void *msg)
 {
     assert(ipc.message_size > 0);
-
-    lnx_Ipc *lnx_ipc = ipc.data;
+    assert(ipc_ok(ipc));
 
     size_t bytes_sent = 0;
 
     bool result = true;
 
     while (result && (bytes_sent < ipc.message_size)) {
-        int64_t send_result = send(lnx_ipc->client_socket, msg, (ipc_MsgSizeType)ipc.message_size, 0);
+        int64_t send_result = send(ipc.client_socket, msg, (ipc_MsgSizeType)ipc.message_size, 0);
 
         if (send_result == -1) {
             result = false;
@@ -139,16 +121,15 @@ bool ipc_send(Ipc ipc, void *msg)
 IpcReceiveResult ipc_receive_with_timeout(Ipc ipc, void *msg, uint32_t timeout_ms)
 {
     assert(ipc.message_size > 0);
+    assert(ipc_ok(ipc));
 
     IpcReceiveResult result = IPC_RECEIVE_OK;
-
-    lnx_Ipc *lnx_ipc = ipc.data;
 
     size_t bytes_received = 0;
 
     while ((result == IPC_RECEIVE_OK) && (bytes_received < ipc.message_size)) {
         if (timeout_ms != IPC_TIMEOUT_NONE) {
-            int poll_result = ipc_poll_socket(lnx_ipc->client_socket, timeout_ms);
+            int poll_result = ipc_poll_socket(ipc.client_socket, timeout_ms);
 
             if (poll_result == -1) {
                 result = IPC_RECEIVE_ERROR;
@@ -159,7 +140,7 @@ IpcReceiveResult ipc_receive_with_timeout(Ipc ipc, void *msg, uint32_t timeout_m
 
         char *dst = (char *)msg + bytes_received;
         size_t bytes_to_read = ipc.message_size - bytes_received;
-        int64_t recv_result = recv(lnx_ipc->client_socket, dst, (ipc_MsgSizeType)bytes_to_read, 0);
+        int64_t recv_result = recv(ipc.client_socket, dst, (ipc_MsgSizeType)bytes_to_read, 0);
         assert(bytes_to_read > 0);
 
         if (recv_result == 0) {
@@ -175,7 +156,8 @@ IpcReceiveResult ipc_receive_with_timeout(Ipc ipc, void *msg, uint32_t timeout_m
         }
     }
 
-    assert((result != IPC_RECEIVE_OK) || (bytes_received == ipc.message_size));
+    assert(((result != IPC_RECEIVE_OK) || (bytes_received == ipc.message_size))
+        && "If receiving succeeded, should always receive an entire message.");
 
     return result;
 }
