@@ -7,22 +7,29 @@
 #    include <netinet/in.h>
 #    include <errno.h>
 #    include <poll.h>
+    typedef int ipc_Socket;
+    // This typedef is needed because Windows send() and recv() defines the size parameter as int.
+    typedef size_t ipc_MsgSizeType;
+
 #elif defined(_WIN32)
+#    define _WINSOCK_DEPRECATED_NO_WARNINGS
 #    include <winsock2.h>
+    typedef SOCKET ipc_Socket;
+    // This typedef is needed because Windows send() and recv() defines the size parameter as int.
+    typedef int ipc_MsgSizeType;
 #endif
 
 // TODO: doesn't need to be opaque anymore
 typedef struct {
-    int server_socket;
-    int client_socket; // Either ourselves, or the client from the servers point of view
+    ipc_Socket server_socket;
+    ipc_Socket client_socket; // Either ourselves, or the client from the servers point of view
 } lnx_Ipc;
 
 static void ipc_initialize_sockets();
-static void ipc_close_socket(int socket_fd);
-static int  ipc_poll_socket(int socket_fd, uint32_t timeout_ms);
+static void ipc_close_socket(ipc_Socket socket_fd);
+static int  ipc_poll_socket(ipc_Socket socket_fd, uint32_t timeout_ms);
 
 bool ipc_ok(Ipc ipc)
-
 {
     bool result = ipc.data != 0;
 
@@ -44,7 +51,7 @@ Ipc ipc_accept(int32_t port, size_t message_size)
     struct sockaddr_in server_addr = {0};
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    server_addr.sin_port = port;
+    server_addr.sin_port = (short)port;
 
     int bind_result = bind(ipc.server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr));
     int listen_result = listen(ipc.server_socket, 1);
@@ -75,7 +82,7 @@ Ipc ipc_connect(int32_t port, size_t message_size)
     struct sockaddr_in client_addr = {0};
     client_addr.sin_family = AF_INET;
     client_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    client_addr.sin_port = port;
+    client_addr.sin_port = (short)port;
 
     int connect_result = connect(ipc.client_socket, (struct sockaddr *)&client_addr, sizeof(client_addr));
 
@@ -111,7 +118,7 @@ bool ipc_send(Ipc ipc, void *msg)
     bool result = true;
 
     while (result && (bytes_sent < ipc.message_size)) {
-        ssize_t send_result = send(lnx_ipc->client_socket, msg, ipc.message_size, 0);
+        int64_t send_result = send(lnx_ipc->client_socket, msg, (ipc_MsgSizeType)ipc.message_size, 0);
 
         if (send_result == -1) {
             result = false;
@@ -146,7 +153,7 @@ IpcReceiveResult ipc_receive_with_timeout(Ipc ipc, void *msg, uint32_t timeout_m
 
         char *dst = (char *)msg + bytes_received;
         size_t bytes_to_read = ipc.message_size - bytes_received;
-        ssize_t recv_result = recv(lnx_ipc->client_socket, dst, bytes_to_read, 0);
+        int64_t recv_result = recv(lnx_ipc->client_socket, dst, (ipc_MsgSizeType)bytes_to_read, 0);
         assert(bytes_to_read > 0);
 
         if (recv_result == 0) {
@@ -176,7 +183,7 @@ static void ipc_initialize_sockets()
     #endif
 }
 
-static void ipc_close_socket(int socket_fd)
+static void ipc_close_socket(ipc_Socket socket_fd)
 {
     #if defined(__linux__)
     close(socket_fd);
@@ -185,7 +192,7 @@ static void ipc_close_socket(int socket_fd)
     #endif
 }
 
-static int ipc_poll_socket(int socket_fd, uint32_t timeout_ms)
+static int ipc_poll_socket(ipc_Socket socket_fd, uint32_t timeout_ms)
 {
     struct pollfd poll_fd = {0};
     poll_fd.fd = socket_fd;

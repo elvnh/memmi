@@ -96,7 +96,7 @@
             fprintf(stderr, "\n*** ASSERTION FAILED ***\n"  \
                 "Expression: '%s'\nFunction: %s\n%s:%d:\n", \
                 #e, __func__, __FILE__, __LINE__);          \
-            DEBUG_BREAK;                                    \
+            MEMMI_DEBUG_BREAK;                              \
         }                                                   \
     } while (0)
 #else

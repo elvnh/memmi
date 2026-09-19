@@ -5,8 +5,8 @@
 
 #if defined(__GNUC__)
 #    define MAYBE_UNUSED __attribute__((unused))
-#else
-#    error MAYBE_UNUSED not defined for this compiler
+#elif defined(_MSC_VER)
+#    define MAYBE_UNUSED __pragma(warning(disable: 4189))
 #endif
 
 #define REQUIRE(e)                                              \
@@ -22,8 +22,9 @@
     } while (0)
 
 /* Global variables */
-static uint32_t g__assertions_passed;
-static uint32_t g__assertions_ran;
+MAYBE_UNUSED static uint32_t g__assertions_passed;
+MAYBE_UNUSED static uint32_t g__assertions_ran;
+static uint32_t g__foo_bar;
 
 void     test_case_main(Pid pid, Ipc ipc);
 Response receive_response(Ipc ipc, uint32_t timeout_ms);

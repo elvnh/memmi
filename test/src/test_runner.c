@@ -1,3 +1,7 @@
+#if defined(_MSC_VER)
+#    define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include "ipc/ipc_all.c"
 
 #include <string.h>
@@ -191,7 +195,6 @@ char *get_debuggee_path()
 
 #elif defined(_WIN32)
 #include <psapi.h>
-
 static char *create_command_line(const char *exe, char *args[], size_t arg_count)
 {
     size_t total_length = 0;
@@ -278,7 +281,7 @@ Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, Subpr
         // entirety of the stdout/stderr of the child process in one call to read(), provided that
         // the buffer is large enough. Since we only print very little from the child process, it
         // should always be large enough.
-        size_t buffer_size = 1024;
+        DWORD buffer_size = 1024;
         result.output = calloc(buffer_size, sizeof(char));
 
         DWORD bytes_read = 0;
