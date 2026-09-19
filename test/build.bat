@@ -11,8 +11,9 @@ set arch=x64
 
 set build_dir=build
 set cases_dir=%build_dir%/cases
+set obj_dir=%build_dir%/obj
 
-set msvc_cflags=/Isrc -I../src /I../include/memmi /W4 /wd4100 /wd4702 /wd4127 /nologo ws2_32.lib /Fd"%build_dir%\\" /Fo"%build_dir%\\"
+set msvc_cflags=/Isrc -I../src /I../include/memmi /W4 /wd4100 /wd4702 /wd4127 /nologo ws2_32.lib /Fd"%obj_dir%\\" /Fo"%obj_dir%\\"
 
 set msvc_cflags_debug=-Zi /DMEMMI_DEBUG=1 /fsanitize=address
 set msvc_cflags_release=
@@ -23,6 +24,7 @@ set cflags=%msvc_cflags%
 
 if not exist "%build_dir%" mkdir "%build_dir%" ||goto error
 if not exist "%cases_dir%" mkdir "%cases_dir%" ||goto error
+if not exist "%obj_dir%" mkdir "%obj_dir%" ||goto error
 
 call vcvarsall %arch% > nul 2>&1 || goto error
 
