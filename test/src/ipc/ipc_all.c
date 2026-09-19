@@ -6,6 +6,7 @@
 #include <inttypes.h>
 #include <assert.h>
 
+#include "context.h"
 #include "ipc_variable.c"
 #include "ipc_message.c"
 #include "ipc_connection.c"

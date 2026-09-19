@@ -3,9 +3,9 @@
 #include <string.h>
 #include <memmi.c>
 
-#if defined(__GNUC__)
+#if COMPILER_GCC
 #    define MAYBE_UNUSED __attribute__((unused))
-#elif defined(_MSC_VER)
+#elif COMPILER_MSVC
 #    define MAYBE_UNUSED __pragma(warning(disable: 4189))
 #endif
 
@@ -109,10 +109,10 @@ Response send_command(Ipc ipc, Command command)
 
 Pid get_self_pid()
 {
-#if defined(__linux__)
+    #if OS_LINUX
     Pid result = getpid();
-#elif defined(_WIN32)
+    #elif OS_WIN32
     Pid result = (Pid)GetCurrentProcessId();
-#endif
+    #endif
     return result;
 }

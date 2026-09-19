@@ -1,15 +1,14 @@
 #pragma once
 
-#if defined(__linux__)
+#if OS_LINUX
     typedef int ipc_Socket;
-#elif defined(_WIN32)
+#elif OS_WIN32
     typedef SOCKET ipc_Socket;
 #else
 #    error Unsupported operating system
 #endif
 
 #define IPC_TIMEOUT_NONE 0
-
 
 typedef struct {
     ipc_Socket server_socket;

@@ -2,6 +2,7 @@
 #    define _CRT_SECURE_NO_WARNINGS
 #endif
 
+#include "context.h"
 #include "ipc/ipc_all.c"
 
 #include <string.h>
@@ -84,7 +85,7 @@ int main(int argc, char **argv)
     return 0;
 }
 
-#if defined(__linux__)
+#if OS_LINUX
 #include <unistd.h>
 #include <sys/wait.h>
 #include <poll.h>
@@ -193,7 +194,7 @@ char *get_debuggee_path()
     return result;
 }
 
-#elif defined(_WIN32)
+#elif OS_WIN32
 #include <psapi.h>
 static char *create_command_line(const char *exe, char *args[], size_t arg_count)
 {

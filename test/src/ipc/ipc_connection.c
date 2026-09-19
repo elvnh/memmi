@@ -1,6 +1,6 @@
 #include "ipc_connection.h"
 
-#if defined(__linux__)
+#if OS_LINUX
 #    include <sys/socket.h>
 #    include <arpa/inet.h>
 #    include <unistd.h>
@@ -13,7 +13,7 @@
     // This typedef is needed because Windows send() and recv() defines the size parameter as int.
     typedef size_t ipc_MsgSizeType;
 
-#elif defined(_WIN32)
+#elif OS_WIN32
 #    define _WINSOCK_DEPRECATED_NO_WARNINGS
 #    include <winsock2.h>
 
@@ -21,7 +21,7 @@
 
     // This typedef is needed because Windows send() and recv() defines the size parameter as int.
     typedef int ipc_MsgSizeType;
-#    error Unsupported operating system
+
 #endif
 
 static void ipc_initialize_sockets();
@@ -173,9 +173,9 @@ static void ipc_initialize_sockets()
 
 static void ipc_close_socket(ipc_Socket socket_fd)
 {
-    #if defined(__linux__)
+    #if OS_LINUX
     close(socket_fd);
-    #elif defined(_WIN32)
+    #elif OS_WIN32
     closesocket(socket_fd);
     #endif
 }
@@ -187,9 +187,9 @@ static int ipc_poll_socket(ipc_Socket socket_fd, uint32_t timeout_ms)
     poll_fd.events = POLLIN;
 
     int poll_result =
-    #if defined(__linux__)
+    #if OS_LINUX
         poll(&poll_fd, 1, timeout_ms);
-    #elif defined(_WIN32)
+    #elif OS_WIN32
         WSAPoll(&poll_fd, 1, timeout_ms);
     #endif
 
