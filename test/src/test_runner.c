@@ -226,6 +226,7 @@ Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, Subpr
     security_attributes.nLength = sizeof(SECURITY_ATTRIBUTES);
     security_attributes.bInheritHandle = TRUE;
 
+    // TODO: better names
     HANDLE write_pipe = 0;
     HANDLE read_pipe = 0;
 
@@ -240,6 +241,7 @@ Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, Subpr
     STARTUPINFO startup_info = {0};
     startup_info.cb = sizeof(STARTUPINFO);
     startup_info.hStdOutput = write_pipe;
+    startup_info.hStdError = GetStdHandle(STD_ERROR_HANDLE); // Don't redirect stderr
     startup_info.dwFlags |= STARTF_USESTDHANDLES;
 
     char *cmd_line = create_command_line(exe, args, arg_count);
@@ -277,7 +279,6 @@ Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, Subpr
         size_t buffer_size = 1024;
         result.output = calloc(buffer_size, sizeof(char));
 
-        DWORD bytes_written = 0;
         DWORD bytes_read = 0;
 
         BOOL read_result = ReadFile(read_pipe, result.output, buffer_size, &bytes_read, 0);
