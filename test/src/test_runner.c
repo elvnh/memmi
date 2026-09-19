@@ -190,6 +190,8 @@ char *get_debuggee_path()
 }
 
 #elif defined(_WIN32)
+#include <psapi.h>
+
 static char *create_command_line(const char *exe, char *args[], size_t arg_count)
 {
     size_t total_length = 0;
@@ -306,16 +308,32 @@ void subprocess_destroy(Subprocess subproc)
 
 char *get_debuggee_path()
 {
-    // TODO: don't hardcode this
-    return "./debuggee.exe";
-    size_t buffer_length = MAX_PATH;
-    char *result = calloc(MAX_PATH, sizeof(char));
+    // TODO: Code duplication between this and Linux version
+    DWORD self_path_length = MAX_PATH;
+    char *self_path = calloc(self_path_length, sizeof(char));
 
-    DWORD bytes_written = GetModuleFileNameA(
-        0, result, sizeof(buffer_length));
+    HANDLE self_handle = GetCurrentProcess();
 
-    assert(bytes_written > 0);
-    assert(bytes_written < buffer_length);
+    BOOL query_name_result = QueryFullProcessImageNameA(
+        self_handle,
+        0,
+        self_path,
+        &self_path_length
+    );
+
+    assert(query_name_result);
+
+    int32_t last_slash_index = self_path_length - 1;
+
+    while ((last_slash_index >= 0) && (self_path[last_slash_index] != '\\')) {
+        --last_slash_index;
+    }
+
+    assert(last_slash_index >= 0);
+
+    size_t final_length = (last_slash_index + 1) + sizeof(DEBUGGEE_EXECUTABLE_NAME);
+    char *result = realloc(self_path, final_length);
+    strcpy(result + last_slash_index + 1, DEBUGGEE_EXECUTABLE_NAME);
 
     return result;
 }
