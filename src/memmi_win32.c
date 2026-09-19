@@ -18,12 +18,18 @@ static memmi_Status memmi_win32_error_to_memmi_status(DWORD error_code)
 
     // TODO: fill out more of these errors
     switch (error_code) {
-        case ERROR_NOACCESS: {
+        case ERROR_NOACCESS:
+        case ERROR_ACCESS_DENIED: {
             result = MEMMI_INSUFFICIENT_PERMISSIONS;
+        } break;
+
+        case ERROR_INVALID_PARAMETER: {
+            result = MEMMI_INVALID_ARGUMENTS;
         } break;
 
         default: {
             MEMMI_ASSERT(0);
+            result = MEMMI_OTHER_ERROR;
         } break;
     }
 
@@ -425,6 +431,11 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid)
 
     if (!handle) {
         result.status = memmi_win32_error_to_memmi_status(GetLastError());
+
+        if (result.status == MEMMI_INVALID_ARGUMENTS) {
+            // OpenProcess fails with ERROR_INVALID_PARAMETER if the process doesn't exist.
+            result.status = MEMMI_NO_SUCH_PROCESS;
+        }
     } else {
         result.process.pid = pid;
         result.process.data = handle;
