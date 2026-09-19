@@ -343,7 +343,7 @@ static memmi_Status memmi_lnx_for_each_thread(pid_t pid, void *user_data, memmi_
 
                     uint64_t tid = 0;
 
-                    if (memmi_str_to_u64(name, &tid)) {
+                    if (memmi_str_to_u64(name, 10, &tid)) {
                         int saved_errno = errno;
 
                         memmi_lnx_ForEachThreadResult cb_result = fn(user_data, (pid_t)tid);
@@ -455,7 +455,7 @@ static memmi_lnx_PidResult memmi_lnx_get_pid_of_tracing_process(pid_t tid)
         memmi_String str = memmi_str_from_span(entry);
 
         uint64_t pid_value = 0;
-        bool parse_ok = memmi_str_to_u64(str, &pid_value);
+        bool parse_ok = memmi_str_to_u64(str, 10, &pid_value);
         MEMMI_ASSERT(parse_ok);
 
         result.pid = (pid_t)pid_value;
@@ -493,7 +493,7 @@ static memmi_lnx_PidResult memmi_lnx_get_thread_group_id(pid_t tid)
         memmi_String tgid_str = memmi_str_from_span(entry);
 
         uint64_t tgid = 0;
-        bool tgid_ok = memmi_str_to_u64(tgid_str, &tgid);
+        bool tgid_ok = memmi_str_to_u64(tgid_str, 10, &tgid);
         MEMMI_ASSERT(tgid_ok);
 
         result.pid = (pid_t)tgid;
@@ -776,8 +776,8 @@ static memmi_lnx_Region memmi_lnx_parse_memory_region(char *line, size_t length)
     size_t base_address = 0;
     size_t end_address = 0;
 
-    bool base_address_ok = memmi_str_to_usize(base_address_str, &base_address);
-    bool end_address_ok = memmi_str_to_usize(end_address_str, &end_address);
+    bool base_address_ok = memmi_str_to_usize(base_address_str, 16, &base_address);
+    bool end_address_ok = memmi_str_to_usize(end_address_str, 16, &end_address);
     MEMMI_ASSERT(base_address_ok);
     MEMMI_ASSERT(end_address_ok);
 
@@ -1060,7 +1060,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
                     memmi_String dir_name = memmi_str_from_c_str(subdir_entry->d_name);
                     uint64_t pid = 0;
 
-                    if (memmi_str_to_u64(dir_name, &pid)) {
+                    if (memmi_str_to_u64(dir_name, 10, &pid)) {
                         memmi_lnx_ProcessName proc_name = memmi_lnx_get_process_name(subdir_fd, allocator);
 
                         if (proc_name.ok) {

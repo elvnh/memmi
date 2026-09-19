@@ -345,14 +345,31 @@ static bool memmi_safe_mul_usize(size_t a, size_t b, size_t *out)
 /***************************/
 /*     Integer parsing     */
 /***************************/
-int memmi_parse_digit(char c, uint32_t *out)
+bool memmi_parse_digit(char c, uint32_t base, uint32_t *out)
 {
-    int result = 0;
+    MEMMI_ASSERT((base == 10) || (base == 16));
+
+    bool result = false;
     uint32_t value = 0;
 
-    if ((c >= '0') && (c < ('0' + (char)10))) {
-        value = (uint32_t)((char)c - '0');
-        result = 1;
+    if (base == 10) {
+        if ((c >= '0') && (c < ('0' + (char)base))) {
+            value = (uint32_t)((char)c - '0');
+            result = 1;
+        }
+    } else {
+        if ((c >= 'a') && (c <= 'z')) {
+            // Convert case to upper
+            c -= 'a' - 'A';
+        }
+
+        if ((c >= '0') && (c <= '9')) {
+            value = (uint32_t)((char)c - '0');
+            result = 1;
+        } else if ((c >= 'A') && (c < ('A' + (char)(base - 10)))) {
+            value = (uint32_t)((char)10 + c - 'A');
+            result = 1;
+        }
     }
 
     *out = value;
@@ -360,16 +377,16 @@ int memmi_parse_digit(char c, uint32_t *out)
     return result;
 }
 
-static bool memmi_str_to_u64(memmi_String str, uint64_t *out)
+static bool memmi_str_to_u64(memmi_String str, uint32_t base, uint64_t *out)
 {
     bool result = str.count > 0;
     uint64_t value = 0;
 
     for (size_t i = 0; i < str.count; ++i) {
         uint32_t digit = 0;
-        int digit_ok = memmi_parse_digit(str.data[i], &digit);
+        int digit_ok = memmi_parse_digit(str.data[i], base, &digit);
 
-        int multiply_ok = memmi_safe_mul_u64(value, 10, &value);
+        int multiply_ok = memmi_safe_mul_u64(value, base, &value);
         int add_ok = memmi_safe_add_u64(value, digit, &value);
 
         if (!(digit_ok && multiply_ok && add_ok)) {
@@ -384,16 +401,16 @@ static bool memmi_str_to_u64(memmi_String str, uint64_t *out)
 }
 
 MEMMI_MAYBE_UNUSED
-static bool memmi_str_to_usize(memmi_String str, size_t *out)
+static bool memmi_str_to_usize(memmi_String str, uint32_t base, size_t *out)
 {
     bool result = false;
     uint64_t u64_value = 0;
 
-    if (memmi_str_to_u64(str, &u64_value)) {
+    if (memmi_str_to_u64(str, base, &u64_value)) {
         result = u64_value <= SIZE_MAX;
     }
 
-    *out = u64_value;
+    *out = (size_t)u64_value;
 
     return result;
 }
