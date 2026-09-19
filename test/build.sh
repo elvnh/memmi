@@ -2,6 +2,7 @@
 
 CC="gcc"
 CFLAGS="-Wall -Wextra -ggdb -I../include/memmi -I../src/ -Isrc"
+CLIBS=""
 
 BUILD_DIR="build"
 CASES_DIR="${BUILD_DIR}/cases"
@@ -15,17 +16,22 @@ rm -r ${BUILD_DIR}/* 2> /dev/null;
 rm -r ${CASES_DIR}/* 2> /dev/null;
 mkdir -p ${CASES_DIR};
 
-${CC} ${CFLAGS} src/test_debuggee.c -o ${DEBUGGEE_PATH} &&
-${CC} ${CFLAGS} src/test_runner.c  -o ${TEST_RUNNER_PATH} -DDEBUGGEE_EXECUTABLE_NAME="\"${DEBUGGEE_EXE}\"";
+# Check if user is compiling on MSYS on Windows
+if [[ -n "$MSYSTEM" ]]; then
+    CLIBS="-lws2_32"
+else
+    sudo -n true 2> /dev/null;
+    sudo_result=$?
+
+    if [[ "${sudo_result}" != "0" ]]; then
+        echo "In order to set the CAP_SYS_PTRACE permission on the test cases you will need root permissions. Please enter your password: ";
+    fi
+fi
+
+${CC} ${CFLAGS} src/test_debuggee.c -o ${DEBUGGEE_PATH} ${CLIBS} &&
+${CC} ${CFLAGS} src/test_runner.c  -o ${TEST_RUNNER_PATH} -DDEBUGGEE_EXECUTABLE_NAME="\"${DEBUGGEE_EXE}\"" ${CLIBS};
 
 success=$?
-
-sudo -n true 2> /dev/null;
-sudo_result=$?
-
-if [[ ${sudo_result} != "0" ]]; then
-   echo "In order to set the CAP_SYS_PTRACE permission on the test cases you will need root permissions. Please enter your password: ";
-fi
 
 for file in src/cases/*.c; do
     if [[ ${success} != 0 ]]; then
@@ -40,8 +46,13 @@ for file in src/cases/*.c; do
 
     test_case_flags="${CFLAGS} -Wno-unused-parameter"
 
-    ${CC} ${test_case_flags} ${file} -o ${test_case_exe} &&
+    ${CC} ${test_case_flags} ${file} -o ${test_case_exe} ${CLIBS};
+    success=$?
+
+    if [[ -z "$MSYSTEM" ]]; then
         sudo setcap CAP_SYS_PTRACE=eip ${test_case_exe};
+    fi
+
     success=$?
 done
 
