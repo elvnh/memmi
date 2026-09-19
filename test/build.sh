@@ -58,7 +58,12 @@ done
 
 if [[ ${success} == 0 ]]; then
     if [[ "$1" == "run" ]]; then
-        ./${TEST_RUNNER_PATH} ${CASES_DIR}/*
+        extension=""
+        if [[ -n "$MSYSTEM" ]]; then
+            extension=".exe"
+        fi
+
+        ./${TEST_RUNNER_PATH} ${CASES_DIR}/*${extension}
     fi
 else
     echo "Failed to compile tests."
