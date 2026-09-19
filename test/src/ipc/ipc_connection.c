@@ -7,6 +7,7 @@
 #    include <netinet/in.h>
 #    include <errno.h>
 #    include <poll.h>
+
     typedef int ipc_Socket;
     // This typedef is needed because Windows send() and recv() defines the size parameter as int.
     typedef size_t ipc_MsgSizeType;
@@ -14,6 +15,7 @@
 #elif defined(_WIN32)
 #    define _WINSOCK_DEPRECATED_NO_WARNINGS
 #    include <winsock2.h>
+
     typedef SOCKET ipc_Socket;
     // This typedef is needed because Windows send() and recv() defines the size parameter as int.
     typedef int ipc_MsgSizeType;

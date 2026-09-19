@@ -39,6 +39,12 @@ for %%f in (src/cases/*) do (
     %cc% %cflags% src/cases/%%f /Fe!test_case_exe!
 )
 
+if "%1"=="run" (
+   set cases=
+   for %%f in (%cases_dir%/*.exe) do set cases=!cases! "%cases_dir%/%%f"
+   "%build_dir%/test_runner" !cases!
+)
+
 exit /b 0
 
 :error
