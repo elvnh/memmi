@@ -790,7 +790,7 @@ static memmi_Status memmi_win32_suspend_thread(DWORD tid)
     } else {
         DWORD prev_suspend_count = SuspendThread(handle.data);
 
-        if (prev_suspend_count < 0) {
+        if (prev_suspend_count == (DWORD)-1) {
             result = memmi_win32_error_to_memmi_status(GetLastError());
         }
     }

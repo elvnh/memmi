@@ -2,6 +2,8 @@
 
 void test_case_main(Pid pid, Ipc ipc)
 {
+    (void)ipc;
+
     memmi_ProcessList procs = memmi_get_running_processes(memmi_default_allocator());
     REQUIRE(procs.status == MEMMI_OK);
 
