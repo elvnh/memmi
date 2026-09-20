@@ -12,9 +12,11 @@ void test_case_main(Pid pid, Ipc ipc)
         proc,
         &value,
         response.as.variable_info.address,
-        sizeof(int32_t)
+        sizeof(value)
     );
 
     REQUIRE(read_mem_result.status == MEMMI_OK);
+    REQUIRE(read_mem_result.bytes_read == sizeof(value));
+
     REQUIRE(value == 123);
 }

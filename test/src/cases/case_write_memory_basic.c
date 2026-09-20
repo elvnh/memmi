@@ -13,6 +13,7 @@ void test_case_main(Pid pid, Ipc ipc)
     int32_t new_value = 123;
     memmi_WriteMemory write_result = memmi_write_memory(proc, address, &new_value, sizeof(new_value));
     REQUIRE(write_result.status == MEMMI_OK);
+    REQUIRE(write_result.bytes_written == sizeof(new_value));
 
     Response response2 = send_command(ipc, cmd_get_variable(response.as.variable_info.id));
     assert(response2.kind == RES_VARIABLE_INFO);
