@@ -5,6 +5,7 @@ typedef enum {
     CMD_DO_NOTHING, /* Used to check if debuggee is alive */
     CMD_GET_NEW_VARIABLE, // TODO: rename to DECLARE_NEW_VARIABLE
     CMD_GET_VARIABLE,
+    CMD_MAP_NEW_MEMORY,
 } CommandKind;
 
 typedef struct {
@@ -13,6 +14,7 @@ typedef struct {
     union {
         TypedValue get_new_variable;
         VariableId get_variable;
+        size_t     map_new_memory_size;
     } as;
 } Command;
 
@@ -42,12 +44,21 @@ static inline Command cmd_get_variable(VariableId id)
     return result;
 }
 
+static inline Command cmd_map_new_memory(size_t size)
+{
+    Command result = {0};
+    result.kind = CMD_MAP_NEW_MEMORY;
+    result.as.map_new_memory_size = size;
+
+    return result;
+}
 
 /* Responses - sent back from the debuggee to the debugger as a response to a command */
 typedef enum {
     /* Responses sent by the other process */
     RES_ACK,
     RES_VARIABLE_INFO,
+    RES_VIRTUAL_ALLOCATION,
 
     /* Errors that can occur when receiving response */
     RES_ERROR,
@@ -60,6 +71,7 @@ typedef struct {
 
     union {
         VariableInfo variable_info;
+        uintptr_t    allocation_address;
     } as;
 } Response;
 
@@ -76,6 +88,15 @@ static inline Response res_variable_info(VariableInfo info)
     Response result = {0};
     result.kind = RES_VARIABLE_INFO;
     result.as.variable_info = info;
+
+    return result;
+}
+
+static inline Response res_virtual_allocation(uintptr_t address)
+{
+    Response result = {0};
+    result.kind = RES_VIRTUAL_ALLOCATION;
+    result.as.allocation_address = address;
 
     return result;
 }

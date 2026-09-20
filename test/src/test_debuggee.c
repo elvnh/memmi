@@ -2,10 +2,28 @@
 
 #define MAX_VARIABLE_COUNT 1024
 
-Response handle_command(Command cmd);
+/* Inter-process communication */
 Ipc      accept_debugger_connection(void);
 bool     receive_command(Ipc ipc, Command *cmd);
 bool     send_response(Ipc ipc, Response response);
+
+/* Debuggee actions */
+Response     handle_command(Command cmd);
+VariableInfo get_variable(VariableId id);
+VariableInfo set_variable(VariableId id, TypedValue typed_value);
+VariableId   declare_variable(TypedValue typed_value);
+
+/* Platform functions */
+void *allocate_memory(size_t size);
+
+/* Globals */
+static struct {
+    struct {
+        VariableId next_id;
+        Value values[MAX_VARIABLE_COUNT];
+        ValueType types[MAX_VARIABLE_COUNT];
+    } variables;
+} g;
 
 int main()
 {
@@ -26,15 +44,75 @@ int main()
     ipc_destroy(ipc);
 }
 
-/* Globals */
-static struct {
-    struct {
-        VariableId next_id;
-        Value values[MAX_VARIABLE_COUNT];
-        ValueType types[MAX_VARIABLE_COUNT];
-    } variables;
-} g;
+/* Inter-process communication */
+Ipc accept_debugger_connection(void)
+{
+    Ipc result = ipc_accept(IPC_TEST_PORT, sizeof(Message));
 
+    if (!ipc_ok(result)) {
+        assert(0);
+    }
+
+    return result;
+}
+
+bool receive_command(Ipc ipc, Command *cmd)
+{
+    bool result = false;
+
+    Message message = {0};
+    IpcReceiveResult recv_res = ipc_receive_with_timeout(ipc, &message, IPC_TIMEOUT_NONE);
+
+    if (recv_res == IPC_RECEIVE_OK) {
+        result = true;
+        *cmd = message.command;
+    }
+
+    return result;
+}
+
+bool send_response(Ipc ipc, Response response)
+{
+    Message message = {0};
+    message.response = response;
+
+    bool result = ipc_send(ipc, &message);
+
+    return result;
+}
+
+Response handle_command(Command cmd)
+{
+    Response result = {0};
+
+    switch (cmd.kind) {
+        case CMD_DO_NOTHING: {
+            result = res_ack();
+        } break;
+
+        case CMD_GET_NEW_VARIABLE: {
+            VariableId id = declare_variable(cmd.as.get_new_variable);
+            VariableInfo info = set_variable(id, cmd.as.get_new_variable);
+            result = res_variable_info(info);
+        } break;
+
+        case CMD_GET_VARIABLE: {
+            VariableInfo info = get_variable(cmd.as.get_variable);
+
+            result = res_variable_info(info);
+        } break;
+
+        case CMD_MAP_NEW_MEMORY: {
+            void *memory = allocate_memory(cmd.as.map_new_memory_size);
+
+            result = res_virtual_allocation((uintptr_t)memory);
+        } break;
+    }
+
+    return result;
+}
+
+/* Debuggee actions */
 VariableInfo get_variable(VariableId id)
 {
     assert(id < MAX_VARIABLE_COUNT);
@@ -70,63 +148,30 @@ VariableId declare_variable(TypedValue typed_value)
     return id;
 }
 
-Response handle_command(Command cmd)
+/* Platform functions */
+#if OS_LINUX
+
+#include <sys/mman.h>
+
+void *allocate_memory(size_t size)
 {
-    Response result = {0};
+    void *result = mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    assert(result != MAP_FAILED);
 
-    switch (cmd.kind) {
-        case CMD_DO_NOTHING: {
-            result = res_ack();
-        } break;
+    return result;
+}
+#else
 
-        case CMD_GET_NEW_VARIABLE: {
-            VariableId id = declare_variable(cmd.as.get_new_variable);
-            VariableInfo info = set_variable(id, cmd.as.get_new_variable);
-            result = res_variable_info(info);
-        } break;
+#include <memoryapi.h>
 
-        case CMD_GET_VARIABLE: {
-            VariableInfo info = get_variable(cmd.as.get_variable);
-
-            result = res_variable_info(info);
-        }
-    }
+void *allocate_memory(size_t size)
+{
+    void *result = VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    assert(result != 0);
 
     return result;
 }
 
-bool receive_command(Ipc ipc, Command *cmd)
-{
-    bool result = false;
 
-    Message message = {0};
-    IpcReceiveResult recv_res = ipc_receive_with_timeout(ipc, &message, IPC_TIMEOUT_NONE);
-
-    if (recv_res == IPC_RECEIVE_OK) {
-        result = true;
-        *cmd = message.command;
-    }
-
-    return result;
-}
-
-bool send_response(Ipc ipc, Response response)
-{
-    Message message = {0};
-    message.response = response;
-
-    bool result = ipc_send(ipc, &message);
-
-    return result;
-}
-
-Ipc accept_debugger_connection(void)
-{
-    Ipc result = ipc_accept(IPC_TEST_PORT, sizeof(Message));
-
-    if (!ipc_ok(result)) {
-        assert(0);
-    }
-
-    return result;
-}
+#    error Debuggee platform functions not yet defined for this OS
+#endif
