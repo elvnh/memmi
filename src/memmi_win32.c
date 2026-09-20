@@ -453,6 +453,8 @@ void memmi_close_process(memmi_Process process)
 
 memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t address, size_t size)
 {
+    MEMMI_ASSERT(process.data);
+
     memmi_ReadMemory result = memmi_zero_struct(memmi_ReadMemory);
 
     HANDLE handle = memmi_win32_get_process_handle(process);
@@ -481,6 +483,8 @@ memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t a
 
 memmi_WriteMemory memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size)
 {
+    MEMMI_ASSERT(process.data);
+
     memmi_WriteMemory result = memmi_zero_struct(memmi_WriteMemory);
 
     HANDLE handle = memmi_win32_get_process_handle(process);
@@ -563,6 +567,8 @@ static memmi_MemoryRegionPermission memmi_win32_page_protection_to_memmi_permiss
 
 memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memmi_Allocator allocator)
 {
+    MEMMI_ASSERT(process.data);
+
     memmi_MemoryRegions result = memmi_zero_struct(memmi_MemoryRegions);
     memmi_RegionDynArray regions = memmi_zero_struct(memmi_RegionDynArray);
 
@@ -605,32 +611,26 @@ memmi_MemoryRegions memmi_get_process_memory_regions(memmi_Process process, memm
                 region.size = info.RegionSize;
                 region.permissions = memmi_win32_page_protection_to_memmi_permissions(info.Protect);
 
-                if (info.Type == MEM_MAPPED) {
+                // Check if this region is a memory mapped file.
+                char filename[MAX_PATH];
+                    
+                DWORD get_filename_result = GetMappedFileNameA(
+                    handle,
+                    (void *)region.base_address,
+                    filename,
+                    MEMMI_ARRAY_COUNT(filename)
+                );
+                    
+                if ((get_filename_result != 0) && (info.Type == MEM_MAPPED)) {
+                    // TODO: check that memory mapped files are detected
+                    memmi_String filename_str = {filename, get_filename_result};
+
                     region.kind = MEMMI_REGION_MAPPED_FILE;
-                    
-                    // TODO: verify that this works
-                    char filename[MAX_PATH];
-                    
-                    DWORD get_filename_result = GetMappedFileNameA(
-                        handle,
-                        (void *)region.base_address,
-                        filename,
-                        MEMMI_ARRAY_COUNT(filename)
-                    );
-                    
-                    MEMMI_ASSERT(get_filename_result > 0);
-                    
-                    if (get_filename_result == 0) {
-                        result.status = memmi_win32_error_to_memmi_status(GetLastError());
-                    } else {
-                        memmi_String filename_str = {filename, get_filename_result};
-                        region.backing_file_name = memmi_str_copy(filename_str, allocator);
-                    }
+                    region.backing_file_name = memmi_str_copy(filename_str, allocator);
                 } else {
                     region.kind = MEMMI_REGION_NORMAL;
                 }
 
-                // TODO: check that memmi_dyn_arr_push doesn't fail
                 memmi_DynArray new_regions = memmi_dyn_arr_push(&regions, region, allocator);
                 
                 if (!new_regions.data) {
@@ -678,6 +678,8 @@ memmi_win32_ForEachThreadResult memmi_win32_collect_threads_cb(void *user_data, 
 
 memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator)
 {
+    MEMMI_ASSERT(process.data);
+
     memmi_ThreadList result = memmi_zero_struct(memmi_ThreadList);
 
     DWORD pid = memmi_win32_get_native_pid(process);
@@ -698,6 +700,8 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
 
 memmi_Status memmi_attach_to_process(memmi_Process process)
 {
+    MEMMI_ASSERT(process.data);
+
     memmi_Status result = memmi_zero_enum(memmi_Status);
 
     DWORD pid = memmi_win32_get_native_pid(process);
@@ -720,6 +724,8 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
 
 memmi_Status memmi_detach_from_process(memmi_Process process)
 {
+    MEMMI_ASSERT(process.data);
+
     memmi_Status result = memmi_zero_enum(memmi_Status);
     
     DWORD pid = memmi_win32_get_native_pid(process);
@@ -763,6 +769,8 @@ static memmi_win32_ForEachThreadResult memmi_win32_resume_thread_cb(void *user_d
 
 memmi_Status memmi_resume_process(memmi_Process process)
 {
+    MEMMI_ASSERT(process.data);
+
     memmi_Status result = memmi_zero_enum(memmi_Status);
 
     DWORD pid = memmi_win32_get_native_pid(process);
@@ -822,6 +830,8 @@ static memmi_win32_ForEachThreadResult memmi_win32_suspend_thread_cb(void *user_
 
 memmi_Status memmi_suspend_process(memmi_Process process)
 {
+    MEMMI_ASSERT(process.data);
+
     // TODO: this function is very similar to the linux implementation
     memmi_Status result = memmi_zero_enum(memmi_Status);
 
@@ -990,7 +1000,8 @@ static memmi_win32_EventResult memmi_win32_event_to_memmi_event(DEBUG_EVENT win3
 
 memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator)
 {
-    // TODO: get_native_pid helper function
+    MEMMI_ASSERT(process.data);
+
     // TODO: what is the EXCEPTION_BREAKPOINT being triggered?
     // TODO: allow timeouts
 
@@ -1033,6 +1044,8 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
 
 memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_EventList events)
 {
+    MEMMI_ASSERT(process.data);
+
     memmi_Status result = memmi_zero_enum(memmi_Status);
 
     DWORD pid = memmi_win32_get_native_pid(process);
@@ -1174,6 +1187,8 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
 
 memmi_ObjectList memmi_get_loaded_objects(memmi_Process proc, memmi_Allocator allocator)
 {
+    MEMMI_ASSERT(proc.data);
+
     memmi_ObjectList result = memmi_zero_struct(memmi_ObjectList);
     memmi_ObjectDynArray objects = memmi_zero_struct(memmi_ObjectDynArray);
 
