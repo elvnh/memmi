@@ -135,21 +135,23 @@ IpcReceiveResult ipc_receive_with_timeout(Ipc ipc, void *msg, uint32_t timeout_m
             }
         }
 
-        char *dst = (char *)msg + bytes_received;
-        size_t bytes_to_read = ipc.message_size - bytes_received;
-        int64_t recv_result = recv(ipc.client_socket, dst, (ipc_MsgSizeType)bytes_to_read, 0);
-        assert(bytes_to_read > 0);
+        if (result == IPC_RECEIVE_OK) {
+            char *dst = (char *)msg + bytes_received;
+            size_t bytes_to_read = ipc.message_size - bytes_received;
+            int64_t recv_result = recv(ipc.client_socket, dst, (ipc_MsgSizeType)bytes_to_read, 0);
+            assert(bytes_to_read > 0);
 
-        if (recv_result == 0) {
-            if (bytes_received == 0) {
-                result = IPC_RECEIVE_DONE;
-            } else {
+            if (recv_result == 0) {
+                if (bytes_received == 0) {
+                    result = IPC_RECEIVE_DONE;
+                } else {
+                    result = IPC_RECEIVE_ERROR;
+                }
+            } else if (recv_result == -1) {
                 result = IPC_RECEIVE_ERROR;
+            } else {
+                bytes_received += recv_result;
             }
-        } else if (recv_result == -1) {
-            result = IPC_RECEIVE_ERROR;
-        } else {
-            bytes_received += recv_result;
         }
     }
 
