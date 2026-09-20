@@ -21,6 +21,9 @@
         ++g__assertions_ran;                                    \
     } while (0)
 
+// The default timeout to use when checking whether the debuggee has hung.
+#define TEST_DEFAULT_TIMEOUT_MS 100
+
 /* Global variables */
 MAYBE_UNUSED static uint32_t g__assertions_passed;
 MAYBE_UNUSED static uint32_t g__assertions_ran;
