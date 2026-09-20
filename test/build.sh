@@ -12,8 +12,7 @@ TEST_RUNNER_PATH="${BUILD_DIR}/test_runner"
 
 cd $(dirname $0);
 
-rm -r ${BUILD_DIR}/* 2> /dev/null;
-rm -r ${CASES_DIR}/* 2> /dev/null;
+rm -rf ${BUILD_DIR}/* ${CASES_DIR} 2> /dev/null;
 mkdir -p ${CASES_DIR};
 
 # Check if user is compiling on MSYS on Windows
