@@ -4,7 +4,7 @@ void test_case_main(Pid pid, Ipc ipc)
 {
     memmi_Process proc = memmi_open_process(pid).process;
 
-    Response response = send_command(ipc, cmd_get_new_variable(val_int32(0)));
+    Response response = send_command(ipc, cmd_declare_variable(val_int32(0)));
     assert(response.kind == RES_VARIABLE_INFO);
     assert(response.as.variable_info.value.int32 == 0);
 

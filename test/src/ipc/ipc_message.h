@@ -3,8 +3,8 @@
 /* Commands - sent from the debugger to the debuggee to make it perform an action */
 typedef enum {
     CMD_DO_NOTHING, /* Used to check if debuggee is alive */
-    CMD_GET_NEW_VARIABLE, // TODO: rename to DECLARE_NEW_VARIABLE
-    CMD_GET_VARIABLE,
+    CMD_DECLARE_VARIABLE,
+    CMD_GET_VARIABLE_BY_ID,
     CMD_MAP_NEW_MEMORY,
 } CommandKind;
 
@@ -12,8 +12,8 @@ typedef struct {
     CommandKind kind;
 
     union {
-        TypedValue get_new_variable;
-        VariableId get_variable;
+        TypedValue declare_variable;
+        VariableId get_variable_by_id;
         size_t     map_new_memory_size;
     } as;
 } Command;
@@ -26,11 +26,11 @@ static inline Command cmd_do_nothing()
     return result;
 }
 
-static inline Command cmd_get_new_variable(TypedValue value)
+static inline Command cmd_declare_variable(TypedValue value)
 {
     Command result = {0};
-    result.kind = CMD_GET_NEW_VARIABLE;
-    result.as.get_new_variable = value;
+    result.kind = CMD_DECLARE_VARIABLE;
+    result.as.declare_variable = value;
 
     return result;
 }
@@ -38,8 +38,8 @@ static inline Command cmd_get_new_variable(TypedValue value)
 static inline Command cmd_get_variable(VariableId id)
 {
     Command result = {0};
-    result.kind = CMD_GET_VARIABLE;
-    result.as.get_variable = id;
+    result.kind = CMD_GET_VARIABLE_BY_ID;
+    result.as.get_variable_by_id = id;
 
     return result;
 }
@@ -58,7 +58,7 @@ typedef enum {
     /* Responses sent by the other process */
     RES_ACK,
     RES_VARIABLE_INFO,
-    RES_VIRTUAL_ALLOCATION,
+    RES_DYNAMIC_MEMORY_ALLOCATION,
 
     /* Errors that can occur when receiving response */
     RES_ERROR,
@@ -71,7 +71,7 @@ typedef struct {
 
     union {
         VariableInfo variable_info;
-        uintptr_t    allocation_address;
+        uintptr_t    dynamic_allocation_address;
     } as;
 } Response;
 
@@ -95,8 +95,8 @@ static inline Response res_variable_info(VariableInfo info)
 static inline Response res_virtual_allocation(uintptr_t address)
 {
     Response result = {0};
-    result.kind = RES_VIRTUAL_ALLOCATION;
-    result.as.allocation_address = address;
+    result.kind = RES_DYNAMIC_MEMORY_ALLOCATION;
+    result.as.dynamic_allocation_address = address;
 
     return result;
 }

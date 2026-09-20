@@ -11,9 +11,9 @@ void test_case_main(Pid pid, Ipc ipc)
     // Make a virtual memory allocation.
     size_t allocation_size = 4096;
     Response res = send_command(ipc, cmd_map_new_memory(allocation_size));
-    assert(res.kind == RES_VIRTUAL_ALLOCATION);
+    assert(res.kind == RES_DYNAMIC_MEMORY_ALLOCATION);
 
-    uintptr_t allocation_address = res.as.allocation_address;
+    uintptr_t allocation_address = res.as.dynamic_allocation_address;
 
     // Check that the memory region wasn't found BEFORE the allocation was made.
     for (size_t i = 0; i < regions_before_allocation.count; ++i) {

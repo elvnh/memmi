@@ -90,14 +90,14 @@ Response handle_command(Command cmd)
             result = res_ack();
         } break;
 
-        case CMD_GET_NEW_VARIABLE: {
-            VariableId id = declare_variable(cmd.as.get_new_variable);
-            VariableInfo info = set_variable(id, cmd.as.get_new_variable);
+        case CMD_DECLARE_VARIABLE: {
+            VariableId id = declare_variable(cmd.as.declare_variable);
+            VariableInfo info = set_variable(id, cmd.as.declare_variable);
             result = res_variable_info(info);
         } break;
 
-        case CMD_GET_VARIABLE: {
-            VariableInfo info = get_variable(cmd.as.get_variable);
+        case CMD_GET_VARIABLE_BY_ID: {
+            VariableInfo info = get_variable(cmd.as.get_variable_by_id);
 
             result = res_variable_info(info);
         } break;
