@@ -1504,7 +1504,15 @@ static memmi_Status memmi_lnx_suspend_thread(pid_t tid)
     long interrupt_result = ptrace(PTRACE_INTERRUPT, tid, 0, 0);
 
     if (interrupt_result == -1) {
-        result = memmi_lnx_errno_to_memmi_status(errno);
+        if (errno == ESRCH) {
+            // ptrace sets errno to ESRCH when the process doesn't exist, or isn't traced by the
+            // caller. Since we got to here by looping through the threads of the process, we can be
+            // fairly sure that the process exists, so we'll assume we failed because we weren't attached.
+            // TODO: does this need to be handled like this in more places?
+            result = MEMMI_INSUFFICIENT_PERMISSIONS;
+        } else {
+            result = memmi_lnx_errno_to_memmi_status(errno);
+        }
     } else {
         int status = 0;
         // TODO: prevent hanging if process is already suspended
