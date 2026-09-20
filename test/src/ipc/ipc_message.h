@@ -6,6 +6,7 @@ typedef enum {
     CMD_DECLARE_VARIABLE,
     CMD_GET_VARIABLE_BY_ID,
     CMD_MAP_NEW_MEMORY,
+    CMD_MALLOC,
 } CommandKind;
 
 typedef struct {
@@ -14,7 +15,7 @@ typedef struct {
     union {
         TypedValue declare_variable;
         VariableId get_variable_by_id;
-        size_t     map_new_memory_size;
+        size_t     allocation_size;
     } as;
 } Command;
 
@@ -48,7 +49,16 @@ static inline Command cmd_map_new_memory(size_t size)
 {
     Command result = {0};
     result.kind = CMD_MAP_NEW_MEMORY;
-    result.as.map_new_memory_size = size;
+    result.as.allocation_size = size;
+
+    return result;
+}
+
+static inline Command cmd_malloc(size_t size)
+{
+    Command result = {0};
+    result.kind = CMD_MALLOC;
+    result.as.allocation_size = size;
 
     return result;
 }
@@ -92,7 +102,7 @@ static inline Response res_variable_info(VariableInfo info)
     return result;
 }
 
-static inline Response res_virtual_allocation(uintptr_t address)
+static inline Response res_memory_allocation(uintptr_t address)
 {
     Response result = {0};
     result.kind = RES_DYNAMIC_MEMORY_ALLOCATION;

@@ -9,7 +9,7 @@ void test_case_main(Pid pid, Ipc ipc)
         buffer[i] = (uint8_t)i;
     }
 
-    Response res = send_command(ipc, cmd_map_new_memory(sizeof(buffer)));
+    Response res = send_command(ipc, cmd_malloc(sizeof(buffer)));
     assert(res.kind == RES_DYNAMIC_MEMORY_ALLOCATION);
 
     // Write a certain pattern into the memory just allocated.

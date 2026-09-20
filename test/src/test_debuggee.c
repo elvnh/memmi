@@ -103,9 +103,16 @@ Response handle_command(Command cmd)
         } break;
 
         case CMD_MAP_NEW_MEMORY: {
-            void *memory = allocate_memory(cmd.as.map_new_memory_size);
+            void *memory = allocate_memory(cmd.as.allocation_size);
 
-            result = res_virtual_allocation((uintptr_t)memory);
+            result = res_memory_allocation((uintptr_t)memory);
+        } break;
+
+        case CMD_MALLOC: {
+            void *memory = malloc(cmd.as.allocation_size);
+            assert(memory);
+
+            result = res_memory_allocation((uintptr_t)memory);
         } break;
     }
 
