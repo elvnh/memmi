@@ -32,3 +32,6 @@
 #if !defined(COMPILER_MSVC)
 #    define COMPILER_MSVC 0
 #endif
+
+// As stdout is captured by the test runner, debug prints have to be done to stderr.
+#define LOG(...) fprintf(stderr, __VA_ARGS__)
