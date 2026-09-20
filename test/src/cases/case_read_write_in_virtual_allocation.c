@@ -20,12 +20,10 @@ void test_case_main(Pid pid, Ipc ipc)
 
     uint8_t buffer2[sizeof(buffer)] = {0};
 
-    // Read the memory just written into a new buffer and check that the two bufferrs match.
+    // Read the memory just written into a new buffer and check that the two buffers match.
     memmi_ReadMemory read_result = memmi_read_memory(proc, buffer2, address, sizeof(buffer));
     REQUIRE(read_result.status == MEMMI_OK);
     REQUIRE(read_result.bytes_read == sizeof(buffer));
 
-    for (size_t i = 0; i < sizeof(buffer2); ++i) {
-        REQUIRE(buffer2[i] == buffer[i]);
-    }
+    REQUIRE(memcmp(buffer, buffer2, sizeof(buffer)) == 0);
 }
