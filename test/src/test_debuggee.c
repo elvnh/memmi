@@ -179,6 +179,4 @@ void *allocate_memory(size_t size)
     return result;
 }
 
-
-#    error Debuggee platform functions not yet defined for this OS
 #endif
