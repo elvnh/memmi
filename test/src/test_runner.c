@@ -39,6 +39,8 @@ int main(int argc, char **argv)
     char *debuggee_path = get_debuggee_path();
 
     for (int i = 1; i < argc; ++i) {
+        /* LOG("Running test '%s'\n", argv[i]); */
+
         // First launch the debuggee asynchronously. It will wait for the debugger (the test
         // case we launch later) to connect to it.
         Subprocess debuggee_subproc = subprocess_run(

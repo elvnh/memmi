@@ -22,6 +22,8 @@ set msvc_cflags=%msvc_cflags% %msvc_cflags_debug%
 
 set cflags=%msvc_cflags%
 
+:: if exist %build_dir% RD /S /Q %build_dir% ||goto error
+
 if not exist "%build_dir%" mkdir "%build_dir%" ||goto error
 if not exist "%cases_dir%" mkdir "%cases_dir%" ||goto error
 if not exist "%obj_dir%" mkdir "%obj_dir%" ||goto error

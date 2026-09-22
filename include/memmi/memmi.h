@@ -279,8 +279,6 @@ memmi_MemoryRegions      memmi_get_process_memory_regions(memmi_Process process,
 memmi_ThreadList         memmi_get_process_threads(memmi_Process process, memmi_Allocator allocator);
 memmi_Status             memmi_attach_to_process(memmi_Process process);
 memmi_Status             memmi_detach_from_process(memmi_Process process);
-memmi_Status             memmi_resume_process(memmi_Process process);
-memmi_Status             memmi_suspend_process(memmi_Process process);
 
 // NOTE: Will resume process if suspended then wait. A debug event causes all threads in process to be suspended
 memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
