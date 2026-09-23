@@ -32,6 +32,7 @@ void     test_case_main(Pid pid, Ipc ipc);
 Response receive_response(Ipc ipc, uint32_t timeout_ms);
 Response send_command_with_timeout(Ipc ipc, Command command, uint32_t timeout_ms);
 Response send_command(Ipc ipc, Command command);
+void     send_command_async(Ipc ipc, Command command);
 Pid      get_self_pid();
 
 int main(int argc, char **argv)
@@ -84,21 +85,12 @@ Response receive_response(Ipc ipc, uint32_t timeout_ms)
     return result;
 }
 
+
 Response send_command_with_timeout(Ipc ipc, Command command, uint32_t timeout_ms)
 {
-    Response result = {0};
+    send_command_async(ipc, command);
 
-    Message cmd_message = {0};
-    cmd_message.command = command;
-
-    bool send_result = ipc_send(ipc, &cmd_message);
-
-    if (!send_result) {
-        result.kind = RES_ERROR;
-        assert(0);
-    } else {
-        result = receive_response(ipc, timeout_ms);
-    }
+    Response result = receive_response(ipc, timeout_ms);
 
     return result;
 }
@@ -108,6 +100,15 @@ Response send_command(Ipc ipc, Command command)
     Response result = send_command_with_timeout(ipc, command, IPC_TIMEOUT_NONE);
 
     return result;
+}
+
+void send_command_async(Ipc ipc, Command command)
+{
+    Message cmd_message = {0};
+    cmd_message.command = command;
+
+    bool send_result = ipc_send(ipc, &cmd_message);
+    assert(send_result);
 }
 
 Pid get_self_pid()
