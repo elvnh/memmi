@@ -114,6 +114,10 @@ Response handle_command(Command cmd)
 
             result = res_memory_allocation((uintptr_t)memory);
         } break;
+
+        case CMD_EXIT_PROCESS: {
+            exit(cmd.as.exit_process_with_code);
+        } break;
     }
 
     return result;

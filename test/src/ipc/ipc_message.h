@@ -7,6 +7,7 @@ typedef enum {
     CMD_GET_VARIABLE_BY_ID,
     CMD_MAP_NEW_MEMORY,
     CMD_MALLOC,
+    CMD_EXIT_PROCESS,
 } CommandKind;
 
 typedef struct {
@@ -16,6 +17,7 @@ typedef struct {
         TypedValue declare_variable;
         VariableId get_variable_by_id;
         size_t     allocation_size;
+        int32_t    exit_process_with_code;
     } as;
 } Command;
 
@@ -59,6 +61,15 @@ static inline Command cmd_malloc(size_t size)
     Command result = {0};
     result.kind = CMD_MALLOC;
     result.as.allocation_size = size;
+
+    return result;
+}
+
+static inline Command cmd_exit_process(int32_t exit_code)
+{
+    Command result = {0};
+    result.kind = CMD_EXIT_PROCESS;
+    result.as.exit_process_with_code = exit_code;
 
     return result;
 }
