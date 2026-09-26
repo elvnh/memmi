@@ -729,22 +729,6 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
 
         if (!set_kill_on_exit_result) {
             result = memmi_win32_error_to_memmi_status(GetLastError());
-        } else {
-            // After attaching as a debugger, Windows will send a single CREATE_PROCESS_DEBUG_EVENT,
-            // along with a CREATE_THREAD_DEBUG_EVENT for each thread in the process. Since we're
-            // not interested in these events, we'll just consume them so they don't cause trouble later.
-
-            BOOL wait_for_event_result = false;
-            do {
-                DEBUG_EVENT dbg_event = memmi_zero_struct(DEBUG_EVENT);
-                wait_for_event_result = WaitForDebugEvent(&dbg_event, 0);
-
-                if (wait_for_event_result
-                    && (dbg_event.dwDebugEventCode != CREATE_PROCESS_DEBUG_EVENT)
-                    && (dbg_event.dwDebugEventCode != CREATE_THREAD_DEBUG_EVENT)) {
-                    result = memmi_win32_error_to_memmi_status(GetLastError());
-                }
-            } while (wait_for_event_result);
         }
     }
 
