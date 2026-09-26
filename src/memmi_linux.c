@@ -932,8 +932,10 @@ static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process
 /**********************/
 /* API implementation */
 /**********************/
-memmi_OpenProcess memmi_open_process(memmi_PID pid)
+memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
 {
+    (void)allocator;
+
     memmi_OpenProcess result = memmi_zero_struct(memmi_OpenProcess);
 
     memmi_Status pid_exists_result = memmi_lnx_pid_exists((pid_t)pid);
@@ -1103,10 +1105,11 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     return result;
 }
 
-void memmi_close_process(memmi_Process process)
+void memmi_close_process(memmi_Process process, memmi_Allocator allocator)
 {
     // no-op on Linux
     (void)process;
+    (void)allocator;
 }
 
 memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t address, size_t size)
@@ -1734,10 +1737,8 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
 // TODO: allowing users to pass on events to tracee
 // TODO: get rid of need for returning a list
 // TODO: store previous event in process data
-memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_DebugEvent prev_event)
+memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process)
 {
-    (void)prev_event;
-
     memmi_DebugEvent result = memmi_null_event();
 
     pid_t native_pid = memmi_lnx_get_native_pid(process);
