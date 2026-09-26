@@ -66,8 +66,8 @@ typedef struct {
 } memmi_ProcessInfo;
 
 typedef struct {
-    void *data;
     memmi_PID pid;
+    void *data;
 } memmi_Process;
 
 typedef struct {
@@ -263,8 +263,10 @@ typedef struct {
 // TODO: should new threads start in suspended state?
 // TODO: free_process_list
 memmi_ProcessList        memmi_get_running_processes(memmi_Allocator allocator);
-memmi_OpenProcess        memmi_open_process(memmi_PID pid);
-void                     memmi_close_process(memmi_Process process);
+memmi_OpenProcess        memmi_open_process(memmi_PID pid, memmi_Allocator allocator);
+
+// TODO: hold on to allocator, don't force user to pass it again when closing
+void                     memmi_close_process(memmi_Process process, memmi_Allocator allocator);
 int                      memmi_process_is_null(memmi_Process process);
 memmi_ReadMemory         memmi_read_memory(memmi_Process process, void *dst, uintptr_t address, size_t size);
 memmi_WriteMemory        memmi_write_memory(memmi_Process process, uintptr_t dst, void *src, size_t src_size);

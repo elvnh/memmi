@@ -11,7 +11,10 @@
 /***************************/
 /* Common helper functions */
 /***************************/
-// TODO: use win32 prefix
+typedef struct {
+    HANDLE win32_handle;
+} memmi_win32_ProcessData;
+
 static memmi_Status memmi_win32_error_to_memmi_status(DWORD error_code)
 {
     memmi_Status result = memmi_zero_enum(memmi_Status);
@@ -43,9 +46,18 @@ static DWORD memmi_win32_get_native_pid(memmi_Process proc)
     return result;
 }
 
+static memmi_win32_ProcessData *memmi_win32_get_process_data(memmi_Process proc)
+{
+    MEMMI_ASSERT(proc.data);
+    memmi_win32_ProcessData *result = (memmi_win32_ProcessData *)proc.data;
+
+    return result;
+}
+
+// TODO: this function is unneccessary
 static HANDLE memmi_win32_get_process_handle(memmi_Process proc)
 {
-    HANDLE result = (HANDLE)proc.data;
+    HANDLE result = memmi_win32_get_process_data(proc)->win32_handle;
     
     return result;
 }
@@ -429,7 +441,7 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
     return result;
 }
 
-memmi_OpenProcess memmi_open_process(memmi_PID pid)
+memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
 {
     memmi_OpenProcess result = memmi_zero_struct(memmi_OpenProcess);
 
@@ -440,9 +452,12 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid)
     /* | PROCESS_VM_OPERATION */
         PROCESS_ALL_ACCESS;
 
+    memmi_win32_ProcessData *data = memmi_allocate(allocator, memmi_win32_ProcessData, 1);
     HANDLE handle = OpenProcess(access, FALSE, (DWORD)pid);
 
-    if (!handle) {
+    if (!data) {
+        result.status = MEMMI_ALLOCATION_FAILED;
+    } else if (!handle) {
         result.status = memmi_win32_error_to_memmi_status(GetLastError());
 
         if (result.status == MEMMI_INVALID_ARGUMENTS) {
@@ -450,18 +465,22 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid)
             result.status = MEMMI_NO_SUCH_PROCESS;
         }
     } else {
+        data->win32_handle = handle;
         result.process.pid = pid;
-        result.process.data = handle;
+        result.process.data = data;
     }
 
     return result;
 }
 
-void memmi_close_process(memmi_Process process)
+void memmi_close_process(memmi_Process process, memmi_Allocator allocator)
 {
     // TODO: also detach from process just in case
     HANDLE handle = memmi_win32_get_process_handle(process);
     CloseHandle(handle);
+
+    memmi_win32_ProcessData *proc_data = memmi_win32_get_process_data(process);
+    memmi_deallocate(allocator, proc_data, 1);
 }
 
 memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t address, size_t size)
