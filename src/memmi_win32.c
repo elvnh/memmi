@@ -896,39 +896,47 @@ typedef struct {
 static memmi_win32_EventResult memmi_win32_event_to_memmi_event(DEBUG_EVENT win32_event)
 {
     memmi_win32_EventResult result = memmi_zero_struct(memmi_win32_EventResult);
+    result.event.id_of_affected_thread = win32_event.dwThreadId;
 
     switch (win32_event.dwDebugEventCode) {
         case EXCEPTION_DEBUG_EVENT: {
-            switch(win32_event.u.Exception.ExceptionRecord.ExceptionCode) {
+            switch (win32_event.u.Exception.ExceptionRecord.ExceptionCode) {
                 case EXCEPTION_ACCESS_VIOLATION: {
                     // segfault
                     MEMMI_ASSERT(0 && "Unimplemented");
                 } break;
 
                 case EXCEPTION_BREAKPOINT: {
-                    result.event.kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
+                    // TODO: How can we tell if this is the breakpoint triggered upon attaching?
+                    result.should_ignore = true;
+
+                    // TODO: implement breakpoint events
+                    // TODO: differentiate between hardware and software breakpoints
+                    if (0) {
+                        result.event.kind = MEMMI_DEBUG_EVENT_BREAKPOINT;
                     
-                    memmi_TID tid = {win32_event.dwThreadId};
+                        memmi_TID tid = {win32_event.dwThreadId};
                     
-                    memmi_Registers regs = memmi_get_thread_registers(tid);
+                        memmi_Registers regs = memmi_get_thread_registers(tid);
                     
-                    int32_t breakpoint_index = memmi_get_dr6_breakpoint_index(regs.values[MEMMI_REG_DR6]);
+                        int32_t breakpoint_index = memmi_get_dr6_breakpoint_index(regs.values[MEMMI_REG_DR6]);
  
-                    if (regs.status != MEMMI_OK) {
-                        result.status = regs.status;
-                    } else if (breakpoint_index == -1) {
-                        MEMMI_ASSERT(0 && "Should never happen");
-                        result.status  = MEMMI_OTHER_ERROR;
-                    } else {
-                        memmi_Register ip_register = 
-                            #if MEMMI_X64
+                        if (regs.status != MEMMI_OK) {
+                            result.status = regs.status;
+                        } else if (breakpoint_index == -1) {
+                            MEMMI_ASSERT(0 && "Should never happen");
+                            result.status  = MEMMI_OTHER_ERROR;
+                        } else {
+                            memmi_Register ip_register =
+                                #if MEMMI_X64
                                 MEMMI_REG_RIP
-                            #elif MEMMI_X86
+                                #elif MEMMI_X86
                                 MEMMI_REG_EIP
-                            #endif
-                        ;
-                        result.event.as.breakpoint.breakpoint_index = (uint32_t)breakpoint_index;
-                        result.event.as.breakpoint.ip_register = regs.values[ip_register];
+                                #endif
+                                ;
+                            result.event.as.breakpoint.breakpoint_index = (uint32_t)breakpoint_index;
+                            result.event.as.breakpoint.ip_register = regs.values[ip_register];
+                        }
                     }
                 } break;
 
@@ -954,22 +962,32 @@ static memmi_win32_EventResult memmi_win32_event_to_memmi_event(DEBUG_EVENT win3
         } break;
 
         case CREATE_THREAD_DEBUG_EVENT: {
-            // created thread
-            // TODO: should we close the handles we receive?
-            result.event.kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
+            // A new thread was created. This could either be an actual thread creation event, or it
+            // could be the initial event that Windows creates for each thread in the debuggee when
+            // attaching to the process. The on-attach event sets the lpStartAddress member in the
+            // CREATE_THREAD_DEBUG_EVENT to 0, but not otherwise. We'll use that to differentiate
+            // the two types of this event.
+            if (win32_event.u.CreateThread.lpStartAddress == 0) {
+                result.should_ignore = true;
+            } else {
+                // TODO: should we close the handles we receive?
+                result.event.kind = MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED;
 
-            HANDLE thread_handle = win32_event.u.CreateThread.hThread;
-            MEMMI_ASSERT(thread_handle);
-            DWORD tid = GetThreadId(thread_handle);
-            MEMMI_ASSERT(tid != 0);
+                HANDLE thread_handle = win32_event.u.CreateThread.hThread;
+                MEMMI_ASSERT(thread_handle);
+                DWORD tid = GetThreadId(thread_handle);
+                MEMMI_ASSERT(tid != 0);
 
-            result.event.as.new_thread.id = (int64_t)tid;
+                result.event.as.new_thread.id = (int64_t)tid;
 
-            CloseHandle(thread_handle);
+                CloseHandle(thread_handle);
+            }
         } break;
 
         case CREATE_PROCESS_DEBUG_EVENT: {
-            // is this only created when first attaching? do we even need to handle it?
+            // When attaching to the process, Windows creates an event of this type.  This isn't
+            // terribly interesting as we already know that we attached to the process, so we'll
+            // ignore it.
             result.should_ignore = true;
         } break;
 
@@ -1011,7 +1029,25 @@ static memmi_win32_EventResult memmi_win32_event_to_memmi_event(DEBUG_EVENT win3
     return result;
 }
 
-memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator)
+static memmi_Status memmi_win32_continue_after_debug_event(memmi_Process process, memmi_DebugEvent event)
+{
+    MEMMI_ASSERT(process.data);
+
+    memmi_Status result = memmi_zero_enum(memmi_Status);
+
+    DWORD pid = memmi_win32_get_native_pid(process);
+    BOOL continue_result = ContinueDebugEvent(
+        pid, (DWORD)event.id_of_affected_thread, DBG_CONTINUE);
+
+    if (!continue_result) {
+        result = memmi_win32_error_to_memmi_status(GetLastError());
+        MEMMI_ASSERT(0);
+    }
+
+    return result;
+}
+
+memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_EventList prev_events, memmi_Allocator allocator)
 {
     MEMMI_ASSERT(process.data);
 
@@ -1025,49 +1061,43 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
     if (!memmi_win32_process_exists(pid)) {
         result.status = MEMMI_NO_SUCH_PROCESS;
     } else {
+        if (prev_events.status == MEMMI_OK) {
+            for (memmi_DebugEvent *e = prev_events.first; e; e = e->next) {
+                memmi_Status continue_result = memmi_win32_continue_after_debug_event(process, *e);
+                MEMMI_ASSERT(continue_result == MEMMI_OK);
+            }
+        }
+
+        // TODO: make this into a loop
+      wait_again:
         DEBUG_EVENT win32_event = memmi_zero_struct(DEBUG_EVENT);
+
         BOOL wait_for_event_result = WaitForDebugEvent(&win32_event, INFINITE);
 
         if (!wait_for_event_result) {
             result.status = memmi_win32_error_to_memmi_status(GetLastError());
         } else {
-            // We're only interested in this event if the thread that caused it
-            // belongs to the traced process.
+            // We're only interested in this event if the thread that caused it belongs to the tracee.
             if (pid == win32_event.dwProcessId) {
-                result.id_of_affected_thread = win32_event.dwThreadId;
-
                 memmi_win32_EventResult event_result = memmi_win32_event_to_memmi_event(win32_event);
 
                 if (event_result.status != MEMMI_OK) {
                     result.status = event_result.status;
-                } else if (!event_result.should_ignore) {
+                } else if (event_result.should_ignore) {
+                    BOOL continue_result = ContinueDebugEvent(
+                        pid, (DWORD)event_result.event.id_of_affected_thread, DBG_CONTINUE);
+                    MEMMI_ASSERT(continue_result);
+                    goto wait_again;
+                } else {
                     memmi_DebugEvent *event_node = memmi_allocate(allocator, memmi_DebugEvent, 1);
                     *event_node = event_result.event;
-                    
+
                     memmi_sl_push_back(&result, event_node);
                 }
             } else {
                 MEMMI_ASSERT(0 && "Can this happen?");
             }
         }
-    }
-
-    return result;
-}
-
-memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_EventList events)
-{
-    MEMMI_ASSERT(process.data);
-
-    memmi_Status result = memmi_zero_enum(memmi_Status);
-
-    DWORD pid = memmi_win32_get_native_pid(process);
-    BOOL continue_result = ContinueDebugEvent(
-        pid, (DWORD)events.id_of_affected_thread, DBG_CONTINUE);
-
-    if (!continue_result) {
-        result = memmi_win32_error_to_memmi_status(GetLastError());
-        MEMMI_ASSERT(0);
     }
 
     return result;
