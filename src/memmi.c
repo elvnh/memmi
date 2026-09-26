@@ -726,6 +726,13 @@ int memmi_process_is_null(memmi_Process process)
     return result;
 }
 
+memmi_DebugEvent memmi_null_event()
+{
+    memmi_DebugEvent result = memmi_zero_struct(memmi_DebugEvent);
+
+    return result;
+}
+
 /***************************/
 /* Platform implementation */
 /***************************/

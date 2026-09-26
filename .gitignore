@@ -13,3 +13,4 @@ build/
 *.sln
 *.o
 *.swp
+*~

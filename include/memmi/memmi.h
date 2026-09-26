@@ -124,6 +124,7 @@ typedef struct {
 } memmi_ThreadList;
 
 typedef enum {
+    MEMMI_DEBUG_EVENT_NONE,
     MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED,
     MEMMI_DEBUG_EVENT_BREAKPOINT,
     MEMMI_DEBUG_EVENT_THREAD_STOPPED,
@@ -133,6 +134,7 @@ typedef enum {
 } memmi_DebugEventKind;
 
 typedef struct memmi_DebugEvent {
+    memmi_Status status;
     memmi_DebugEventKind kind;
 
     memmi_TID id_of_affected_thread;
@@ -152,14 +154,6 @@ typedef struct memmi_DebugEvent {
 
     struct memmi_DebugEvent *next;
 } memmi_DebugEvent;
-
-// TODO: it's unfortunate that we have to return a list of events
-// due to ptrace jank. Try to get rid of this.
-typedef struct {
-    memmi_Status      status;
-    memmi_DebugEvent *first;
-    memmi_DebugEvent *last;
-} memmi_EventList;
 
 // TODO: floating point registers
 typedef enum {
@@ -280,7 +274,9 @@ memmi_Status             memmi_attach_to_process(memmi_Process process);
 memmi_Status             memmi_detach_from_process(memmi_Process process);
 
 // NOTE: Will resume process if suspended then wait. A debug event causes all threads in process to be suspended
-memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_EventList prev_events, memmi_Allocator allocator);
+// TODO: store previous event in process data, remote memmi_null_event()
+memmi_DebugEvent         memmi_null_event(void);
+memmi_DebugEvent         memmi_wait_for_debug_event(memmi_Process process, memmi_DebugEvent prev_event);
 memmi_Registers          memmi_get_thread_registers(memmi_TID tid);
 memmi_Status             memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_RegisterValue value);
 memmi_Status             memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,

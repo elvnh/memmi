@@ -1731,11 +1731,12 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
 // TODO: allow waiting for events in specific thread
 // TODO: allowing users to pass on events to tracee
 // TODO: get rid of need for returning a list
-memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_EventList prev_events, memmi_Allocator allocator)
+// TODO: store previous event in process data
+memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_DebugEvent prev_event)
 {
-    (void)prev_events;
+    (void)prev_event;
 
-    memmi_EventList result = memmi_zero_struct(memmi_EventList);
+    memmi_DebugEvent result = memmi_null_event();
 
     pid_t native_pid = memmi_lnx_get_native_pid(process);
 
@@ -1752,8 +1753,15 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_EventLi
 
             memmi_lnx_DebugEventResult event_result = memmi_lnx_wait_for_debug_event(process, MEMMI_LNX_WAITPID_HANG);
 
+            if (event_result.status != MEMMI_OK) {
+                result.status = event_result.status;
+            } else if (!event_result.should_ignore) {
+                result = event_result.data;
+            }
+
+#if 0
             // Keep checking for debug events without hanging in case any more were queued.
-            while (event_result.status == MEMMI_OK) {
+            if (event_result.status == MEMMI_OK) {
                 if (event_result.status != MEMMI_OK) {
                     result.status = event_result.status;
                 } else if (!event_result.should_ignore) {
@@ -1787,17 +1795,9 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_EventLi
                     }
                 }
             }
+#endif
         }
     }
-
-    return result;
-}
-
-memmi_Status memmi_continue_after_debug_events(memmi_Process process, memmi_EventList events)
-{
-    (void)events;
-
-    memmi_Status result = memmi_resume_process(process);
 
     return result;
 }
