@@ -157,7 +157,6 @@ typedef struct memmi_DebugEvent {
 // due to ptrace jank. Try to get rid of this.
 typedef struct {
     memmi_Status      status;
-    memmi_TID         id_of_affected_thread;
     memmi_DebugEvent *first;
     memmi_DebugEvent *last;
 } memmi_EventList;
@@ -281,8 +280,7 @@ memmi_Status             memmi_attach_to_process(memmi_Process process);
 memmi_Status             memmi_detach_from_process(memmi_Process process);
 
 // NOTE: Will resume process if suspended then wait. A debug event causes all threads in process to be suspended
-memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator);
-memmi_Status             memmi_continue_after_debug_events(memmi_Process process, memmi_EventList events);
+memmi_EventList          memmi_wait_for_debug_events(memmi_Process process, memmi_EventList prev_events, memmi_Allocator allocator);
 memmi_Registers          memmi_get_thread_registers(memmi_TID tid);
 memmi_Status             memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_RegisterValue value);
 memmi_Status             memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
