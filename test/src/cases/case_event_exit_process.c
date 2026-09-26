@@ -7,8 +7,8 @@ void test_case_main(Pid pid, Ipc ipc)
 
     // Attaching suspends the process which is why we need to send the command asynchronously.
     send_command_async(ipc, cmd_exit_process(123));
+    memmi_DebugEvent event = memmi_wait_for_debug_event(proc, MEMMI_TIMEOUT_INFINITE);
 
-    memmi_DebugEvent event = memmi_wait_for_debug_event(proc);
     REQUIRE(event.status == MEMMI_OK);
     REQUIRE(event.kind == MEMMI_DEBUG_EVENT_PROCESS_EXITED);
     REQUIRE(event.as.exit_code == 123);
