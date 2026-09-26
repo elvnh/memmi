@@ -823,6 +823,7 @@ static memmi_lnx_Region memmi_lnx_parse_memory_region(char *line, size_t length)
 typedef struct {
     memmi_Status status;
     bool should_ignore;
+    bool timed_out;
     memmi_DebugEvent data;
 } memmi_lnx_DebugEventResult;
 
@@ -1702,7 +1703,8 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
     if (id_of_affected_thread == -1) {
         MEMMI_ASSERT(0 && "TODO: report error");
     } else if (id_of_affected_thread == 0) {
-        result.status = MEMMI_OTHER_ERROR;
+        MEMMI_ASSERT(hang == MEMMI_LNX_WAITPID_NO_HANG);
+        result.timed_out = true;
     } else {
         // waitpid(-1, ...) will wait on any children, not just tracees,
         // including threads of the client process. We'll check that this thread
@@ -1714,6 +1716,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
         } else {
             bool thread_belongs_to_traced_process = thread_group_id.pid == pid;
 
+            // TODO: shouldn't we try to waitpid again if we accidentally waited for a non-traced thread?
             if (thread_belongs_to_traced_process) {
                 result.data.id_of_affected_thread = id_of_affected_thread;
 
@@ -1735,9 +1738,8 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
 
 // TODO: allow waiting for events in specific thread
 // TODO: allowing users to pass on events to tracee
-// TODO: get rid of need for returning a list
-// TODO: store previous event in process data
-memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process)
+// TODO: clean up this function
+memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeout)
 {
     memmi_DebugEvent result = memmi_zero_struct(memmi_DebugEvent);
 
@@ -1754,12 +1756,34 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process)
         } else {
             memmi_resume_process(process);
 
-            memmi_lnx_DebugEventResult event_result = memmi_lnx_wait_for_debug_event(process, MEMMI_LNX_WAITPID_HANG);
+            // TODO: this is a hack to get around the fact that there seemingly is no way to waitpid
+            // with a timeout. Investigate whether this can be done.
+            int32_t poll_frequency_ms = 10;
+            int32_t repeat_count = timeout / poll_frequency_ms;
 
-            if (event_result.status != MEMMI_OK) {
-                result.status = event_result.status;
-            } else if (!event_result.should_ignore) {
-                result = event_result.data;
+            memmi_lnx_WaitpidHang waitpid_mode = memmi_zero_enum(memmi_lnx_WaitpidHang);
+
+            if (timeout == MEMMI_TIMEOUT_INFINITE) {
+                waitpid_mode = MEMMI_LNX_WAITPID_HANG;
+                repeat_count = 1;
+            } else {
+                waitpid_mode = MEMMI_LNX_WAITPID_NO_HANG;
+            }
+
+            for (int32_t i = 0; i < repeat_count; ++i) {
+                memmi_lnx_DebugEventResult event_result = memmi_lnx_wait_for_debug_event(process, waitpid_mode);
+
+                if (!event_result.timed_out) {
+                    if (event_result.status != MEMMI_OK) {
+                        result.status = event_result.status;
+                        break;
+                    } else if (!event_result.should_ignore) {
+                        result = event_result.data;
+                        break;
+                    }
+                } else {
+                    usleep(poll_frequency_ms * 1000);
+                }
             }
 
 #if 0
