@@ -19,6 +19,8 @@
     typedef Elf32_Ehdr memmi_lnx_ElfHeader;
 #endif
 
+#define MEMMI_LNX_WAITPID_FLAGS (__WALL | __WNOTHREAD)
+
 typedef struct {
     memmi_String value;
     bool ok;
@@ -1287,7 +1289,7 @@ static memmi_Status memmi_lnx_attach_to_thread(pid_t tid)
             // it, now we have to wait for it to actually receive the signal.
             while (true) {
                 int status = 0;
-                int waitpid_result = waitpid(tid, &status, __WALL);
+                int waitpid_result = waitpid(tid, &status, MEMMI_LNX_WAITPID_FLAGS);
 
                 if (waitpid_result == -1) {
                     result = memmi_lnx_errno_to_memmi_status(errno);
@@ -1516,7 +1518,7 @@ static memmi_Status memmi_lnx_suspend_thread(pid_t tid)
     } else {
         int status = 0;
         // TODO: prevent hanging if process is already suspended
-        int waitpid_result = waitpid(tid, &status, __WALL);
+        int waitpid_result = waitpid(tid, &status, MEMMI_LNX_WAITPID_FLAGS);
 
         if (waitpid_result == -1) {
             result = memmi_lnx_errno_to_memmi_status(errno);
@@ -1683,7 +1685,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
 
     pid_t pid = memmi_lnx_get_native_pid(proc);
 
-    int waitpid_flags = __WALL;
+    int waitpid_flags = MEMMI_LNX_WAITPID_FLAGS;
 
     if (hang == MEMMI_LNX_WAITPID_NO_HANG) {
         waitpid_flags |= WNOHANG;
