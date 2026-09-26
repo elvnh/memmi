@@ -1731,8 +1731,10 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
 // TODO: allow waiting for events in specific thread
 // TODO: allowing users to pass on events to tracee
 // TODO: get rid of need for returning a list
-memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocator allocator)
+memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_EventList prev_events, memmi_Allocator allocator)
 {
+    (void)prev_events;
+
     memmi_EventList result = memmi_zero_struct(memmi_EventList);
 
     pid_t native_pid = memmi_lnx_get_native_pid(process);
@@ -1751,10 +1753,7 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_Allocat
             memmi_lnx_DebugEventResult event_result = memmi_lnx_wait_for_debug_event(process, MEMMI_LNX_WAITPID_HANG);
 
             // Keep checking for debug events without hanging in case any more were queued.
-
             while (event_result.status == MEMMI_OK) {
-                result.id_of_affected_thread = event_result.data.id_of_affected_thread;
-
                 if (event_result.status != MEMMI_OK) {
                     result.status = event_result.status;
                 } else if (!event_result.should_ignore) {

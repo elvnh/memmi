@@ -12,3 +12,4 @@ build/
 *.bak
 *.sln
 *.o
+*.swp
