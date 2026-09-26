@@ -2,7 +2,7 @@
 
 void test_case_main(Pid pid, Ipc ipc)
 {
-    memmi_Process proc = memmi_open_process(pid).process;
+    memmi_Process proc = memmi_open_process(pid, memmi_default_allocator()).process;
     memmi_ThreadList threads = memmi_get_process_threads(proc, memmi_default_allocator());
     REQUIRE(threads.status == MEMMI_OK);
     REQUIRE(threads.count >= 1);
