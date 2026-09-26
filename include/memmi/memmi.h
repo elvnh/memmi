@@ -278,7 +278,7 @@ memmi_Status             memmi_detach_from_process(memmi_Process process);
 // NOTE: Will resume process if suspended then wait. A debug event causes all threads in process to be suspended
 // TODO: store previous event in process data, remote memmi_null_event()
 memmi_DebugEvent         memmi_null_event(void);
-memmi_DebugEvent         memmi_wait_for_debug_event(memmi_Process process, memmi_DebugEvent prev_event);
+memmi_DebugEvent         memmi_wait_for_debug_event(memmi_Process process);
 memmi_Registers          memmi_get_thread_registers(memmi_TID tid);
 memmi_Status             memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_RegisterValue value);
 memmi_Status             memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t address,
