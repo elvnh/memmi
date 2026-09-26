@@ -1047,25 +1047,23 @@ static memmi_Status memmi_win32_continue_after_debug_event(memmi_Process process
     return result;
 }
 
-memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_EventList prev_events, memmi_Allocator allocator)
+memmi_DebugEvent memmi_wait_for_debug_events(memmi_Process process, memmi_DebugEvent prev_event)
 {
     MEMMI_ASSERT(process.data);
 
     // TODO: what is the EXCEPTION_BREAKPOINT being triggered?
     // TODO: allow timeouts
 
-    memmi_EventList result = memmi_zero_struct(memmi_EventList);
+    memmi_DebugEvent result = memmi_zero_struct(memmi_DebugEvent);
 
     DWORD pid = memmi_win32_get_native_pid(process);
 
     if (!memmi_win32_process_exists(pid)) {
         result.status = MEMMI_NO_SUCH_PROCESS;
     } else {
-        if (prev_events.status == MEMMI_OK) {
-            for (memmi_DebugEvent *e = prev_events.first; e; e = e->next) {
-                memmi_Status continue_result = memmi_win32_continue_after_debug_event(process, *e);
-                MEMMI_ASSERT(continue_result == MEMMI_OK);
-            }
+        if (prev_event.kind != MEMMI_DEBUG_EVENT_NONE) {
+            memmi_Status continue_result = memmi_win32_continue_after_debug_event(process, prev_event);
+            MEMMI_ASSERT(continue_result == MEMMI_OK);
         }
 
         // TODO: make this into a loop
@@ -1089,10 +1087,7 @@ memmi_EventList memmi_wait_for_debug_events(memmi_Process process, memmi_EventLi
                     MEMMI_ASSERT(continue_result);
                     goto wait_again;
                 } else {
-                    memmi_DebugEvent *event_node = memmi_allocate(allocator, memmi_DebugEvent, 1);
-                    *event_node = event_result.event;
-
-                    memmi_sl_push_back(&result, event_node);
+                    result = event_result.event;
                 }
             } else {
                 MEMMI_ASSERT(0 && "Can this happen?");
