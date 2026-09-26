@@ -1068,7 +1068,7 @@ static memmi_Status memmi_win32_continue_after_debug_event(memmi_Process process
     return result;
 }
 
-memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process)
+memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeout)
 {
     MEMMI_ASSERT(process.data);
 
@@ -1091,7 +1091,12 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process)
       wait_again:
         DEBUG_EVENT win32_event = memmi_zero_struct(DEBUG_EVENT);
 
-        BOOL wait_for_event_result = WaitForDebugEvent(&win32_event, INFINITE);
+        DWORD win32_timeout = timeout;
+
+        if (timeout == MEMMI_TIMEOUT_INFINITE) {
+            win32_timeout = INFINITE;
+        }
+        BOOL wait_for_event_result = WaitForDebugEvent(&win32_event, win32_timeout);
 
         if (!wait_for_event_result) {
             result.status = memmi_win32_error_to_memmi_status(GetLastError());
