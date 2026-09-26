@@ -1739,7 +1739,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
 // TODO: store previous event in process data
 memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process)
 {
-    memmi_DebugEvent result = memmi_null_event();
+    memmi_DebugEvent result = memmi_zero_struct(memmi_DebugEvent);
 
     pid_t native_pid = memmi_lnx_get_native_pid(process);
 
