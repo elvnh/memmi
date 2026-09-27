@@ -14,9 +14,9 @@ void test_case_main(Pid pid, Ipc ipc)
 
         memmi_Status detach_result = memmi_detach_from_process(proc);
         REQUIRE(detach_result == MEMMI_OK);
-    }
 
-    // Now that we are detached, the process should respond as normal.
-    Response res = send_command(ipc, cmd_do_nothing());
-    REQUIRE(res.kind == RES_ACK);
+        // Now that we are detached, the process should respond as normal.
+        Response res = send_command(ipc, cmd_do_nothing());
+        REQUIRE(res.kind == RES_ACK);
+    }
 }
