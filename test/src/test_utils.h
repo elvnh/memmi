@@ -41,3 +41,5 @@
 #else
 #    error NO_OPTIMIZE not defined for this compiler
 #endif
+
+#define ARRAY_COUNT(a) (sizeof((a)) / sizeof(*(a)))
