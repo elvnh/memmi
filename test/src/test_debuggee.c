@@ -112,6 +112,15 @@ Response handle_command(Command cmd)
             result = res_variable_info(info);
         } break;
 
+        case CMD_SET_VARIABLE: {
+            VariableId id = cmd.as.set_variable.id;
+            TypedValue value = cmd.as.set_variable.value;
+
+            set_variable(id, value);
+
+            result = res_ack();
+        } break;
+
         case CMD_MAP_NEW_MEMORY: {
             void *memory = allocate_memory(cmd.as.allocation_size);
 

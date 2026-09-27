@@ -5,6 +5,7 @@ typedef enum {
     CMD_DO_NOTHING, /* Used to check if debuggee is alive */
     CMD_DECLARE_VARIABLE,
     CMD_GET_VARIABLE_BY_ID,
+    CMD_SET_VARIABLE,
     CMD_MAP_NEW_MEMORY,
     CMD_MALLOC,
     CMD_EXIT_PROCESS,
@@ -17,6 +18,12 @@ typedef struct {
 
     union {
         TypedValue declare_variable;
+
+        struct {
+            VariableId id;
+            TypedValue value;
+        } set_variable;
+
         VariableId get_variable_by_id;
         size_t     allocation_size;
         int32_t    exit_process_with_code;
@@ -46,6 +53,17 @@ static inline Command cmd_get_variable(VariableId id)
     Command result = {0};
     result.kind = CMD_GET_VARIABLE_BY_ID;
     result.as.get_variable_by_id = id;
+
+    return result;
+}
+
+static inline Command cmd_set_variable(VariableId id, TypedValue value)
+{
+    Command result = {0};
+    result.kind = CMD_SET_VARIABLE;
+    result.as.set_variable.id = id;
+    result.as.set_variable.value = value;
+
 
     return result;
 }
