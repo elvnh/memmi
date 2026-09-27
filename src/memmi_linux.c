@@ -856,8 +856,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process
     siginfo_t sig_info, pid_t id_of_affected_thread)
 {
     memmi_lnx_DebugEventResult result = memmi_zero_struct(memmi_lnx_DebugEventResult);
-
-    pid_t native_pid = memmi_lnx_get_native_pid(proc);
+    result.data.id_of_affected_thread = id_of_affected_thread;
 
     switch (sig_info.si_code) {
         // ptrace events
@@ -898,13 +897,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process
             if (WIFEXITED(waitpid_status)) {
                 MEMMI_ASSERT(0 && "Shouldn't happen, should have generated a PTRACE_EVENT_EXIT.");
 
-                if (id_of_affected_thread == native_pid) {
-                    // The main thread exited, we'll count that as the process exiting.
-                    result.data.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
-                } else {
-                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                }
-
+                result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
                 result.data.as.exit_code = WEXITSTATUS(waitpid_status);
             } else if (WIFSIGNALED(waitpid_status)) {
                 result.data.kind = MEMMI_DEBUG_EVENT_THREAD_KILLED;
@@ -1742,8 +1735,6 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
 
             // TODO: shouldn't we try to waitpid again if we accidentally waited for a non-traced thread?
             if (thread_belongs_to_traced_process) {
-                result.data.id_of_affected_thread = id_of_affected_thread;
-
                 siginfo_t sig_info = memmi_zero_struct(siginfo_t);
                 long get_sig_result = ptrace(PTRACE_GETSIGINFO, id_of_affected_thread, 0, &sig_info);
 
@@ -1849,13 +1840,18 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
                         }
                     }
 
-                    // If this was the main thread that exited, report both the thread and the entire
-                    // process as exiting
-                    if (result.status == MEMMI_OK) {
-                        memmi_DebugEvent queued_event = result;
-                        queued_event.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
-                        proc_data->queued_event.data = queued_event;
-                        proc_data->queued_event.has_value = true;
+                    if ((result.status == MEMMI_OK) && (result.kind == MEMMI_DEBUG_EVENT_THREAD_EXITED)) {
+                        bool main_thread_exited = result.id_of_affected_thread == process.pid;
+
+                        if (main_thread_exited) {
+                            // If this was the main thread that exited, report both the thread and
+                            // the entire process as exiting.
+                            // TODO: helper functions for enqueueing/dequeueing events
+                            memmi_DebugEvent queued_event = result;
+                            queued_event.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
+                            proc_data->queued_event.data = queued_event;
+                            proc_data->queued_event.has_value = true;
+                        }
                     }
                 }
 
