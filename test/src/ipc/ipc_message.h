@@ -8,6 +8,8 @@ typedef enum {
     CMD_MAP_NEW_MEMORY,
     CMD_MALLOC,
     CMD_EXIT_PROCESS,
+    CMD_GET_FUNCTION_PTR,
+    CMD_EXECUTE_FUNCTION_PTR,
 } CommandKind;
 
 typedef struct {
@@ -18,6 +20,7 @@ typedef struct {
         VariableId get_variable_by_id;
         size_t     allocation_size;
         int32_t    exit_process_with_code;
+        uintptr_t  function_address;
     } as;
 } Command;
 
@@ -74,12 +77,30 @@ static inline Command cmd_exit_process(int32_t exit_code)
     return result;
 }
 
+static inline Command cmd_get_function_ptr()
+{
+    Command result = {0};
+    result.kind = CMD_GET_FUNCTION_PTR;
+
+    return result;
+}
+
+static inline Command cmd_execute_function_ptr(uintptr_t address)
+{
+    Command result = {0};
+    result.kind = CMD_EXECUTE_FUNCTION_PTR;
+    result.as.function_address = address;
+
+    return result;
+}
+
 /* Responses - sent back from the debuggee to the debugger as a response to a command */
 typedef enum {
     /* Responses sent by the other process */
     RES_ACK,
     RES_VARIABLE_INFO,
     RES_DYNAMIC_MEMORY_ALLOCATION,
+    RES_FUNCTION_PTR,
 
     /* Errors that can occur when receiving response */
     RES_ERROR,
@@ -93,6 +114,7 @@ typedef struct {
     union {
         VariableInfo variable_info;
         uintptr_t    dynamic_allocation_address;
+        uintptr_t    function_ptr;
     } as;
 } Response;
 
@@ -118,6 +140,15 @@ static inline Response res_memory_allocation(uintptr_t address)
     Response result = {0};
     result.kind = RES_DYNAMIC_MEMORY_ALLOCATION;
     result.as.dynamic_allocation_address = address;
+
+    return result;
+}
+
+static inline Response res_function_ptr(uintptr_t address)
+{
+    Response result = {0};
+    result.kind = RES_FUNCTION_PTR;
+    result.as.function_ptr = address;
 
     return result;
 }

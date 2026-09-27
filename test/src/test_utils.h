@@ -35,3 +35,9 @@
 
 // As stdout is captured by the test runner, debug prints have to be done to stderr.
 #define LOG(...) fprintf(stderr, __VA_ARGS__)
+
+#if COMPILER_GCC
+#    define NO_OPTIMIZE __attribute__((optimize("O0")))
+#else
+#    error NO_OPTIMIZE not defined for this compiler
+#endif

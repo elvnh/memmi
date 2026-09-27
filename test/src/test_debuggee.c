@@ -16,7 +16,7 @@ VariableId   declare_variable(TypedValue typed_value);
 /* Platform functions */
 void *allocate_memory(size_t size);
 
-/* Globals */
+/* Resources */
 static struct {
     struct {
         VariableId next_id;
@@ -24,6 +24,16 @@ static struct {
         ValueType types[MAX_VARIABLE_COUNT];
     } variables;
 } g;
+
+typedef void (*DummyFunction)();
+
+NO_OPTIMIZE
+void dummy_function()
+{
+    static volatile uint32_t i = 0;
+    ++i;
+    LOG("Running dummy function...\n");
+}
 
 int main()
 {
@@ -117,6 +127,16 @@ Response handle_command(Command cmd)
 
         case CMD_EXIT_PROCESS: {
             exit(cmd.as.exit_process_with_code);
+        } break;
+
+        case CMD_GET_FUNCTION_PTR: {
+            result = res_function_ptr((uintptr_t)dummy_function);
+        } break;
+
+        case CMD_EXECUTE_FUNCTION_PTR: {
+            DummyFunction func = (DummyFunction)cmd.as.function_address;
+            func();
+            result = res_ack();
         } break;
     }
 
