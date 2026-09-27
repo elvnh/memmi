@@ -920,7 +920,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process
                     memmi_Registers regs = memmi_get_thread_registers(tid);
 
                     memmi_RegisterValue dr6_value = regs.values[MEMMI_REG_DR6];
-                    int32_t breakpoint_index = memmi_get_dr6_breakpoint_index(dr6_value);
+                    int32_t breakpoint_index = memmi_breakpoint_index_from_dr6_value(dr6_value);
 
                     if (regs.status != MEMMI_OK) {
                         result.status = regs.status;

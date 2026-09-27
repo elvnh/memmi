@@ -351,7 +351,8 @@ static memmi_win32_EventResult memmi_win32_event_to_memmi_event(DEBUG_EVENT win3
 
                         memmi_Registers regs = memmi_get_thread_registers(tid);
 
-                        int32_t breakpoint_index = memmi_get_dr6_breakpoint_index(regs.values[MEMMI_REG_DR6]);
+                        int32_t breakpoint_index =
+                            memmi_breakpoint_index_from_dr6_value(regs.values[MEMMI_REG_DR6]);
 
                         if (regs.status != MEMMI_OK) {
                             result.status = regs.status;

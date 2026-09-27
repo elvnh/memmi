@@ -699,7 +699,7 @@ static memmi_RegisterValue memmi_dr7_set_breakpoint_value(memmi_RegisterValue ol
     return result;
 }
 
-static int32_t memmi_get_dr6_breakpoint_index(memmi_RegisterValue dr6)
+static int32_t memmi_breakpoint_index_from_dr6_value(memmi_RegisterValue dr6)
 {
     int32_t result = -1;
 
