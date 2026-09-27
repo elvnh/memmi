@@ -1782,7 +1782,7 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeo
                         break;
                     }
                 } else {
-                    usleep(poll_frequency_ms * 1000);
+                    usleep((uint32_t)poll_frequency_ms * 1000);
                 }
             }
 
