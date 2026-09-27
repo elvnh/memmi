@@ -22,10 +22,11 @@
 #define MEMMI_LNX_WAITPID_FLAGS (__WALL | __WNOTHREAD)
 
 typedef struct {
-    // TODO: pack all these into struct
-    siginfo_t previous_signal;
-    pid_t previous_signal_receiver;
-    bool previous_signal_has_value;
+    struct {
+        bool has_value;
+        siginfo_t sig_info;
+        pid_t receiver_tid;
+    } previous_signal;
 } memmi_lnx_ProcessData;
 
 typedef struct {
@@ -1433,11 +1434,10 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
                         result = cb_context.statuses;
                         MEMMI_ASSERT(result != MEMMI_OK);
                     } else {
-                        // TODO: no reason to cast this to uint32_t
-                        uint32_t statuses_excluding_no_such_process =
-                            (uint32_t)cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+                        memmi_Status statuses_excluding_no_such_process =
+                            (memmi_Status)((uint32_t)cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS);
 
-                        result = (memmi_Status)statuses_excluding_no_such_process;
+                        result = statuses_excluding_no_such_process;
                     }
                 }
             }
@@ -1753,9 +1753,9 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
                 } else {
                     result = memmi_lnx_siginfo_to_memmi_event(proc, status, sig_info, id_of_affected_thread);
 
-                    proc_data->previous_signal = sig_info;
-                    proc_data->previous_signal_receiver = id_of_affected_thread;
-                    proc_data->previous_signal_has_value = true;
+                    proc_data->previous_signal.has_value = true;
+                    proc_data->previous_signal.sig_info = sig_info;
+                    proc_data->previous_signal.receiver_tid = id_of_affected_thread;
                 }
             }
         }
@@ -1783,11 +1783,11 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
         if (!memmi_lnx_thread_is_traced_by_us(native_pid)) {
             MEMMI_ASSERT(0 && "Cannot wait for events in a non-traced process");
         } else {
-            if ((mode == MEMMI_CONTINUE_UNHANDLED) && proc_data->previous_signal_has_value) {
+            if ((mode == MEMMI_CONTINUE_UNHANDLED) && proc_data->previous_signal.has_value) {
                 // If the last signal was unhandled by the debugger, pass it onto the thread to
                 // which it was sent.
-                pid_t receiver_of_signal = proc_data->previous_signal_receiver;
-                void *sig = (void *)(uintptr_t)proc_data->previous_signal.si_signo;
+                pid_t receiver_of_signal = proc_data->previous_signal.receiver_tid;
+                void *sig = (void *)(uintptr_t)proc_data->previous_signal.sig_info.si_signo;
 
                 ptrace(PTRACE_CONT, receiver_of_signal, 0, sig);
             }
@@ -1820,8 +1820,8 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
             {
                 int exit_signal_code = memmi_lnx_signal_code_from_ptrace_event(PTRACE_EVENT_EXIT);
 
-                process_exited = proc_data->previous_signal_has_value
-                    && (proc_data->previous_signal.si_code == exit_signal_code);
+                process_exited = proc_data->previous_signal.has_value
+                    && (proc_data->previous_signal.sig_info.si_code == exit_signal_code);
             }
             #endif
 
