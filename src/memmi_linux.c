@@ -24,6 +24,11 @@
 typedef struct {
     struct {
         bool has_value;
+        memmi_DebugEvent data;
+    } queued_event;
+
+    struct {
+        bool has_value;
         siginfo_t sig_info;
         pid_t receiver_tid;
     } previous_signal;
@@ -882,14 +887,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process
             if (get_msg_result == -1) {
                 result.status = memmi_lnx_errno_to_memmi_status(errno);
             } else {
-                if (id_of_affected_thread == native_pid) {
-                    // The main thread exited, we'll count that as the process exiting.
-                    // TODO: Create events for both thread and process exiting
-                    result.data.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
-                } else {
-                    result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
-                }
-
+                result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
                 result.data.as.exit_code = (int)(exit_code >> 8);
             }
         } break;
@@ -1772,120 +1770,134 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
     memmi_DebugEvent result = memmi_zero_struct(memmi_DebugEvent);
 
     memmi_lnx_ProcessData *proc_data = memmi_lnx_get_process_data(process);
-    pid_t native_pid = memmi_lnx_get_native_pid(process);
 
-    memmi_Status pid_exists_result = memmi_lnx_pid_exists(native_pid);
-
-    if (pid_exists_result != MEMMI_OK) {
-        result.status = pid_exists_result;
+    if (proc_data->queued_event.has_value) {
+        result = proc_data->queued_event.data;
+        proc_data->queued_event.has_value = false;
     } else {
-        // TODO: do we need to check that all threads are traced by us too?
-        if (!memmi_lnx_thread_is_traced_by_us(native_pid)) {
-            MEMMI_ASSERT(0 && "Cannot wait for events in a non-traced process");
+        pid_t native_pid = memmi_lnx_get_native_pid(process);
+
+        memmi_Status pid_exists_result = memmi_lnx_pid_exists(native_pid);
+
+        if (pid_exists_result != MEMMI_OK) {
+            result.status = pid_exists_result;
         } else {
-            if ((mode == MEMMI_CONTINUE_UNHANDLED) && proc_data->previous_signal.has_value) {
-                // If the last signal was unhandled by the debugger, pass it onto the thread to
-                // which it was sent.
-                pid_t receiver_of_signal = proc_data->previous_signal.receiver_tid;
-                void *sig = (void *)(uintptr_t)proc_data->previous_signal.sig_info.si_signo;
-
-                ptrace(PTRACE_CONT, receiver_of_signal, 0, sig);
-            }
-
-            memmi_resume_process(process);
-
-            // TODO: this is a hack to get around the fact that there seemingly is no way to waitpid
-            // with a timeout. Investigate whether this can be done.
-            int32_t poll_frequency_ms = 10;
-            int32_t repeat_count = timeout / poll_frequency_ms;
-
-            memmi_lnx_WaitpidHang waitpid_mode = memmi_zero_enum(memmi_lnx_WaitpidHang);
-
-            if (timeout == MEMMI_TIMEOUT_INFINITE) {
-                waitpid_mode = MEMMI_LNX_WAITPID_HANG;
-                repeat_count = 1;
+            // TODO: do we need to check that all threads are traced by us too?
+            if (!memmi_lnx_thread_is_traced_by_us(native_pid)) {
+                MEMMI_ASSERT(0 && "Cannot wait for events in a non-traced process");
             } else {
-                waitpid_mode = MEMMI_LNX_WAITPID_NO_HANG;
-            }
+                if ((mode == MEMMI_CONTINUE_UNHANDLED) && proc_data->previous_signal.has_value) {
+                    // If the last signal was unhandled by the debugger, pass it onto the thread to
+                    // which it was sent.
+                    pid_t receiver_of_signal = proc_data->previous_signal.receiver_tid;
+                    void *sig = (void *)(uintptr_t)proc_data->previous_signal.sig_info.si_signo;
 
-            bool process_exited = false;
+                    ptrace(PTRACE_CONT, receiver_of_signal, 0, sig);
+                }
 
-            /* When running test cases via the test runner, there seems to be a bug caused by the
-             * debugger process reaping the zombie debuggee process after it has exited, rather than
-             * the test runner reaping it. This results in the next case that is running failing to
-             * connect to the debuggee process via IPC. I can't figure out what causes this, so to
-             * get around it, we'll avoid reaping the debuggee process if running via the test
-             * runner, and simply report that the process no longer exists. */
-            #if defined(MEMMI_TEST_MODE)
-            {
-                int exit_signal_code = memmi_lnx_signal_code_from_ptrace_event(PTRACE_EVENT_EXIT);
+                memmi_resume_process(process);
 
-                process_exited = proc_data->previous_signal.has_value
-                    && (proc_data->previous_signal.sig_info.si_code == exit_signal_code);
-            }
-            #endif
+                // TODO: this is a hack to get around the fact that there seemingly is no way to waitpid
+                // with a timeout. Investigate whether this can be done.
+                int32_t poll_frequency_ms = 10;
+                int32_t repeat_count = timeout / poll_frequency_ms;
 
-            if (process_exited) {
-                result.status = MEMMI_NO_SUCH_PROCESS;
-            } else {
-                for (int32_t i = 0; i < repeat_count; ++i) {
-                    memmi_lnx_DebugEventResult event_result =
-                        memmi_lnx_wait_for_debug_event(process, waitpid_mode);
+                memmi_lnx_WaitpidHang waitpid_mode = memmi_zero_enum(memmi_lnx_WaitpidHang);
 
-                    if (!event_result.timed_out) {
-                        if (event_result.status != MEMMI_OK) {
-                            result.status = event_result.status;
-                            break;
-                        } else if (!event_result.should_ignore) {
-                            result = event_result.data;
-                            break;
+                if (timeout == MEMMI_TIMEOUT_INFINITE) {
+                    waitpid_mode = MEMMI_LNX_WAITPID_HANG;
+                    repeat_count = 1;
+                } else {
+                    waitpid_mode = MEMMI_LNX_WAITPID_NO_HANG;
+                }
+
+                bool process_exited = false;
+
+                /* When running test cases via the test runner, there seems to be a bug caused by the
+                 * debugger process reaping the zombie debuggee process after it has exited, rather than
+                 * the test runner reaping it. This results in the next case that is running failing to
+                 * connect to the debuggee process via IPC. I can't figure out what causes this, so to
+                 * get around it, we'll avoid reaping the debuggee process if running via the test
+                 * runner, and simply report that the process no longer exists. */
+                #if defined(MEMMI_TEST_MODE)
+                {
+                    int exit_signal_code = memmi_lnx_signal_code_from_ptrace_event(PTRACE_EVENT_EXIT);
+
+                    process_exited = proc_data->previous_signal.has_value
+                        && (proc_data->previous_signal.sig_info.si_code == exit_signal_code);
+                }
+                #endif
+
+                if (process_exited) {
+                    result.status = MEMMI_NO_SUCH_PROCESS;
+                } else {
+                    for (int32_t i = 0; i < repeat_count; ++i) {
+                        memmi_lnx_DebugEventResult event_result =
+                            memmi_lnx_wait_for_debug_event(process, waitpid_mode);
+
+                        if (!event_result.timed_out) {
+                            if (event_result.status != MEMMI_OK) {
+                                result.status = event_result.status;
+                                break;
+                            } else if (!event_result.should_ignore) {
+                                result = event_result.data;
+                                break;
+                            }
+                        } else {
+                            usleep((uint32_t)poll_frequency_ms * 1000);
                         }
-                    } else {
-                        usleep((uint32_t)poll_frequency_ms * 1000);
+                    }
+
+                    // If this was the main thread that exited, report both the thread and the entire
+                    // process as exiting
+                    if (result.status == MEMMI_OK) {
+                        memmi_DebugEvent queued_event = result;
+                        queued_event.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
+                        proc_data->queued_event.data = queued_event;
+                        proc_data->queued_event.has_value = true;
                     }
                 }
-            }
 
-#if 0
-            // Keep checking for debug events without hanging in case any more were queued.
-            if (event_result.status == MEMMI_OK) {
-                if (event_result.status != MEMMI_OK) {
-                    result.status = event_result.status;
-                } else if (!event_result.should_ignore) {
-                    memmi_DebugEvent *event_node = memmi_allocate(allocator, memmi_DebugEvent, 1);
-                    *event_node = event_result.data;
-
-                    memmi_sl_push_back(&result, event_node);
-                }
-
+                #if 0
+                // Keep checking for debug events without hanging in case any more were queued.
                 if (event_result.status == MEMMI_OK) {
-                    memmi_DebugEvent prev_event = event_result.data;
-                    event_result = memmi_lnx_wait_for_debug_event(process, MEMMI_LNX_WAITPID_NO_HANG);
+                    if (event_result.status != MEMMI_OK) {
+                        result.status = event_result.status;
+                    } else if (!event_result.should_ignore) {
+                        memmi_DebugEvent *event_node = memmi_allocate(allocator, memmi_DebugEvent, 1);
+                        *event_node = event_result.data;
+
+                        memmi_sl_push_back(&result, event_node);
+                    }
 
                     if (event_result.status == MEMMI_OK) {
-                        /* ptrace behaves in a kind of weird way when new threads are created. It
-                         * reports both the new thread being created, as well as the new thread
-                         * being suspended (since ptrace causes the new thread to always start in a
-                         * suspended state) as separate events. I believe this is the only instance
-                         * in which ptrace can report multiple events at once. To avoid having to
-                         * report multiple events, if this happens, we'll only report the thread
-                         * creation event.
-                         */
-                        bool is_stopped_new_thread =
-                            ((prev_event.kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
-                                && (event_result.data.kind == MEMMI_DEBUG_EVENT_THREAD_STOPPED))
-                            || ((event_result.data.kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
-                                && (prev_event.kind == MEMMI_DEBUG_EVENT_THREAD_STOPPED));
+                        memmi_DebugEvent prev_event = event_result.data;
+                        event_result = memmi_lnx_wait_for_debug_event(process, MEMMI_LNX_WAITPID_NO_HANG);
 
-                        MEMMI_ASSERT(is_stopped_new_thread
-                            && "Checking to see if ptrace can report multiple events except for this case");
+                        if (event_result.status == MEMMI_OK) {
+                            /* ptrace behaves in a kind of weird way when new threads are created. It
+                             * reports both the new thread being created, as well as the new thread
+                             * being suspended (since ptrace causes the new thread to always start in a
+                             * suspended state) as separate events. I believe this is the only instance
+                             * in which ptrace can report multiple events at once. To avoid having to
+                             * report multiple events, if this happens, we'll only report the thread
+                             * creation event.
+                             */
+                            bool is_stopped_new_thread =
+                                ((prev_event.kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
+                                    && (event_result.data.kind == MEMMI_DEBUG_EVENT_THREAD_STOPPED))
+                                || ((event_result.data.kind == MEMMI_DEBUG_EVENT_NEW_THREAD_CREATED)
+                                    && (prev_event.kind == MEMMI_DEBUG_EVENT_THREAD_STOPPED));
+
+                            MEMMI_ASSERT(is_stopped_new_thread
+                                && "Checking to see if ptrace can report multiple events except for this case");
+                        }
                     }
                 }
+                #endif
             }
-#endif
         }
     }
-
     return result;
 }
 

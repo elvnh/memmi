@@ -8,7 +8,10 @@ void test_case_main(Pid pid, Ipc ipc)
     send_command_async(ipc, cmd_exit_process(123));
 
     memmi_DebugEvent event = memmi_wait_for_debug_event(proc, MEMMI_CONTINUE_UNHANDLED, MEMMI_TIMEOUT_INFINITE);
-    assert(event.status == MEMMI_OK);
+    assert(event.kind == MEMMI_DEBUG_EVENT_THREAD_EXITED);
+
+    event = memmi_wait_for_debug_event(proc, MEMMI_CONTINUE_UNHANDLED, MEMMI_TIMEOUT_INFINITE);
+    assert(event.kind == MEMMI_DEBUG_EVENT_PROCESS_EXITED);
 
     // The process is now dead, so no debug events should be reported.
     event = memmi_wait_for_debug_event(proc, MEMMI_CONTINUE_UNHANDLED, MEMMI_TIMEOUT_INFINITE);
