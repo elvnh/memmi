@@ -1795,7 +1795,7 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
                 // TODO: this is a hack to get around the fact that there seemingly is no way to waitpid
                 // with a timeout. Investigate whether this can be done.
                 int32_t poll_frequency_ms = 10;
-                int32_t repeat_count = timeout / poll_frequency_ms;
+                int32_t repeat_count = MEMMI_MAX(1, timeout / poll_frequency_ms);
 
                 memmi_lnx_WaitpidHang waitpid_mode = memmi_zero_enum(memmi_lnx_WaitpidHang);
 
@@ -1842,13 +1842,14 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
                                 result = event_result.data;
                                 break;
                             }
-                        } else {
+                        } else if (i != (repeat_count - 1)) {
                             usleep((uint32_t)poll_frequency_ms * 1000);
                         }
                     }
 
                     if (timed_out) {
                         // The process should always leave this function in a suspended state.
+                        // TODO: this will create an event
                         result.status = memmi_suspend_process(process);
                     } else if ((result.status == MEMMI_OK) && (result.kind == MEMMI_DEBUG_EVENT_THREAD_EXITED)) {
                         bool main_thread_exited = result.id_of_affected_thread == process.pid;
