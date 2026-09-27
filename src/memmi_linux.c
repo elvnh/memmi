@@ -22,6 +22,11 @@
 #define MEMMI_LNX_WAITPID_FLAGS (__WALL | __WNOTHREAD)
 
 typedef struct {
+    siginfo_t previous_signal;
+    bool previous_signal_has_value;
+} memmi_lnx_ProcessData;
+
+typedef struct {
     memmi_String value;
     bool ok;
 } memmi_lnx_ProcessName;
@@ -48,6 +53,15 @@ ssize_t process_vm_writev(pid_t pid,
 /***************************/
 /* Common helper functions */
 /***************************/
+static memmi_lnx_ProcessData *memmi_lnx_get_process_data(memmi_Process process)
+{
+    MEMMI_ASSERT(process.data);
+
+    memmi_lnx_ProcessData *result = (memmi_lnx_ProcessData *)process.data;
+
+    return result;
+}
+
 static pid_t memmi_lnx_get_native_pid(memmi_Process proc)
 {
     pid_t result = (pid_t)proc.pid;
@@ -935,8 +949,6 @@ static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process
 /**********************/
 memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
 {
-    (void)allocator;
-
     memmi_OpenProcess result = memmi_zero_struct(memmi_OpenProcess);
 
     memmi_Status pid_exists_result = memmi_lnx_pid_exists((pid_t)pid);
@@ -944,7 +956,16 @@ memmi_OpenProcess memmi_open_process(memmi_PID pid, memmi_Allocator allocator)
     if (pid_exists_result != MEMMI_OK) {
         result.status = pid_exists_result;
     } else {
-        result.process.pid = pid;
+        memmi_lnx_ProcessData *proc_data = memmi_allocate(allocator, memmi_lnx_ProcessData, 1);
+
+        if (!proc_data) {
+            result.status = MEMMI_ALLOCATION_FAILED;
+        } else {
+            *proc_data = memmi_zero_struct(memmi_lnx_ProcessData);
+            result.process.data = proc_data;
+            result.process.pid = pid;
+        }
+
     }
 
     return result;
@@ -1687,6 +1708,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
 {
     memmi_lnx_DebugEventResult result = memmi_zero_struct(memmi_lnx_DebugEventResult);
 
+    memmi_lnx_ProcessData *proc_data = memmi_lnx_get_process_data(proc);
     pid_t pid = memmi_lnx_get_native_pid(proc);
 
     int waitpid_flags = MEMMI_LNX_WAITPID_FLAGS;
@@ -1727,10 +1749,12 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
                     result.status = memmi_lnx_errno_to_memmi_status(errno);
                 } else {
                     result = memmi_lnx_siginfo_to_memmi_event(proc, status, sig_info, id_of_affected_thread);
+
+                    proc_data->previous_signal = sig_info;
+                    proc_data->previous_signal_has_value = true;
                 }
             }
         }
-
     }
 
     return result;
@@ -1754,6 +1778,7 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeo
         if (!memmi_lnx_thread_is_traced_by_us(native_pid)) {
             MEMMI_ASSERT(0 && "Cannot wait for events in a non-traced process");
         } else {
+            // TODO: pass on signal to thread
             memmi_resume_process(process);
 
             // TODO: this is a hack to get around the fact that there seemingly is no way to waitpid
