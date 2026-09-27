@@ -23,6 +23,7 @@
 
 typedef struct {
     siginfo_t previous_signal;
+    pid_t previous_signal_receiver;
     bool previous_signal_has_value;
 } memmi_lnx_ProcessData;
 
@@ -1751,6 +1752,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
                     result = memmi_lnx_siginfo_to_memmi_event(proc, status, sig_info, id_of_affected_thread);
 
                     proc_data->previous_signal = sig_info;
+                    proc_data->previous_signal_receiver = id_of_affected_thread;
                     proc_data->previous_signal_has_value = true;
                 }
             }
@@ -1763,10 +1765,11 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
 // TODO: allow waiting for events in specific thread
 // TODO: allowing users to pass on events to tracee
 // TODO: clean up this function
-memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeout)
+memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_ContinueMode mode, int32_t timeout)
 {
     memmi_DebugEvent result = memmi_zero_struct(memmi_DebugEvent);
 
+    memmi_lnx_ProcessData *proc_data = memmi_lnx_get_process_data(process);
     pid_t native_pid = memmi_lnx_get_native_pid(process);
 
     memmi_Status pid_exists_result = memmi_lnx_pid_exists(native_pid);
@@ -1778,7 +1781,14 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeo
         if (!memmi_lnx_thread_is_traced_by_us(native_pid)) {
             MEMMI_ASSERT(0 && "Cannot wait for events in a non-traced process");
         } else {
-            // TODO: pass on signal to thread
+            if ((mode == MEMMI_CONTINUE_UNHANDLED) && proc_data->previous_signal_has_value) {
+                // If the last signal was unhandled by the debugger, pass it onto the thread to which it was sent.
+                pid_t receiver_of_signal = proc_data->previous_signal_receiver;
+                void *sig = (void *)(uintptr_t)proc_data->previous_signal.si_signo;
+
+                ptrace(PTRACE_CONT, receiver_of_signal, 0, sig);
+            }
+
             memmi_resume_process(process);
 
             // TODO: this is a hack to get around the fact that there seemingly is no way to waitpid
