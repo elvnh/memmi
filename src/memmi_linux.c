@@ -22,6 +22,7 @@
 #define MEMMI_LNX_WAITPID_FLAGS (__WALL | __WNOTHREAD)
 
 typedef struct {
+    // TODO: pack all these into struct
     siginfo_t previous_signal;
     pid_t previous_signal_receiver;
     bool previous_signal_has_value;
@@ -842,7 +843,7 @@ typedef struct {
     memmi_DebugEvent data;
 } memmi_lnx_DebugEventResult;
 
-#define ptrace_event_code(e) (SIGTRAP | ((unsigned int)(e)) << 8)
+#define memmi_lnx_signal_code_from_ptrace_event(e) (SIGTRAP | ((unsigned int)(e)) << 8)
 
 static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process proc, int waitpid_status,
     siginfo_t sig_info, pid_t id_of_affected_thread)
@@ -853,11 +854,11 @@ static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process
 
     switch (sig_info.si_code) {
         // ptrace events
-        case ptrace_event_code(PTRACE_EVENT_STOP): {
+        case memmi_lnx_signal_code_from_ptrace_event(PTRACE_EVENT_STOP): {
             result.data.kind = MEMMI_DEBUG_EVENT_THREAD_STOPPED;
         } break;
 
-        case ptrace_event_code(PTRACE_EVENT_CLONE): {
+        case memmi_lnx_signal_code_from_ptrace_event(PTRACE_EVENT_CLONE): {
             long new_thread_id = 0;
             long get_msg_result = ptrace(PTRACE_GETEVENTMSG, id_of_affected_thread, 0, &new_thread_id);
 
@@ -869,7 +870,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process
             }
         } break;
 
-        case ptrace_event_code(PTRACE_EVENT_EXIT): {
+        case memmi_lnx_signal_code_from_ptrace_event(PTRACE_EVENT_EXIT): {
             /* There's a bug in the kernel that causes SIGKILL to generate a
                PTRACE_EVENT_EXIT. As far as I can tell there's no way to differentiate
                this from a normal exit, so we'll have to simply report it as a normal
@@ -882,6 +883,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process
             } else {
                 if (id_of_affected_thread == native_pid) {
                     // The main thread exited, we'll count that as the process exiting.
+                    // TODO: Create events for both thread and process exiting
                     result.data.kind = MEMMI_DEBUG_EVENT_PROCESS_EXITED;
                 } else {
                     result.data.kind = MEMMI_DEBUG_EVENT_THREAD_EXITED;
@@ -1782,7 +1784,8 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
             MEMMI_ASSERT(0 && "Cannot wait for events in a non-traced process");
         } else {
             if ((mode == MEMMI_CONTINUE_UNHANDLED) && proc_data->previous_signal_has_value) {
-                // If the last signal was unhandled by the debugger, pass it onto the thread to which it was sent.
+                // If the last signal was unhandled by the debugger, pass it onto the thread to
+                // which it was sent.
                 pid_t receiver_of_signal = proc_data->previous_signal_receiver;
                 void *sig = (void *)(uintptr_t)proc_data->previous_signal.si_signo;
 
@@ -1805,19 +1808,41 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
                 waitpid_mode = MEMMI_LNX_WAITPID_NO_HANG;
             }
 
-            for (int32_t i = 0; i < repeat_count; ++i) {
-                memmi_lnx_DebugEventResult event_result = memmi_lnx_wait_for_debug_event(process, waitpid_mode);
+            bool process_exited = false;
 
-                if (!event_result.timed_out) {
-                    if (event_result.status != MEMMI_OK) {
-                        result.status = event_result.status;
-                        break;
-                    } else if (!event_result.should_ignore) {
-                        result = event_result.data;
-                        break;
+            /* When running test cases via the test runner, there seems to be a bug caused by the
+             * debugger process reaping the zombie debuggee process after it has exited, rather than
+             * the test runner reaping it. This results in the next case that is running failing to
+             * connect to the debuggee process via IPC. I can't figure out what causes this, so to
+             * get around it, we'll avoid reaping the debuggee process if running via the test
+             * runner, and simply report that the process no longer exists. */
+            #if defined(MEMMI_TEST_MODE)
+            {
+                int exit_signal_code = memmi_lnx_signal_code_from_ptrace_event(PTRACE_EVENT_EXIT);
+
+                process_exited = proc_data->previous_signal_has_value
+                    && (proc_data->previous_signal.si_code == exit_signal_code);
+            }
+            #endif
+
+            if (process_exited) {
+                result.status = MEMMI_NO_SUCH_PROCESS;
+            } else {
+                for (int32_t i = 0; i < repeat_count; ++i) {
+                    memmi_lnx_DebugEventResult event_result =
+                        memmi_lnx_wait_for_debug_event(process, waitpid_mode);
+
+                    if (!event_result.timed_out) {
+                        if (event_result.status != MEMMI_OK) {
+                            result.status = event_result.status;
+                            break;
+                        } else if (!event_result.should_ignore) {
+                            result = event_result.data;
+                            break;
+                        }
+                    } else {
+                        usleep((uint32_t)poll_frequency_ms * 1000);
                     }
-                } else {
-                    usleep((uint32_t)poll_frequency_ms * 1000);
                 }
             }
 

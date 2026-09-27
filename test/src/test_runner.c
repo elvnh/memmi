@@ -39,7 +39,7 @@ int main(int argc, char **argv)
     char *debuggee_path = get_debuggee_path();
 
     for (int i = 1; i < argc; ++i) {
-        /* LOG("Running test '%s'\n", argv[i]); */
+        LOG("Running test '%s'\n", argv[i]);
 
         // First launch the debuggee asynchronously. It will wait for the debugger (the test
         // case we launch later) to connect to it.
@@ -172,6 +172,9 @@ Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, Subpr
 void subprocess_destroy(Subprocess subproc)
 {
     kill(subproc.pid, SIGKILL);
+
+    waitpid(subproc.pid, 0, 0);
+
     free(subproc.output);
 }
 

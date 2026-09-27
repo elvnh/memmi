@@ -78,6 +78,7 @@ Ipc ipc_connect(int32_t port, size_t message_size)
     int connect_result = connect(result.client_socket, (struct sockaddr *)&client_addr, sizeof(client_addr));
 
     if ((result.client_socket == IPC_INVALID_SOCKET) || (connect_result == -1)) {
+        assert(errno == ECONNREFUSED);
         ipc_destroy(result);
     } else {
         result.ok = true;

@@ -1,6 +1,8 @@
 #include "ipc/ipc_all.c"
 
 #include <string.h>
+
+#define MEMMI_TEST_MODE
 #include <memmi.c>
 
 #if COMPILER_GCC
