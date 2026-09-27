@@ -1447,7 +1447,9 @@ static memmi_lnx_ForEachThreadResult memmi_lnx_detach_from_thread_cb(void *user_
 {
     memmi_lnx_DetachContext *context = (memmi_lnx_DetachContext *)user_data;
 
-    if (ptrace(PTRACE_DETACH, tid, 0, 0) == -1) {
+    // TODO: should we reinject the previous signal?
+    if (ptrace(PTRACE_DETACH, tid, 0, SIGCONT) == -1) {
+        /* MEMMI_ASSERT(0); */
         memmi_set_flag(context->statuses, memmi_lnx_errno_to_memmi_status(errno));
     }
 
@@ -1456,7 +1458,6 @@ static memmi_lnx_ForEachThreadResult memmi_lnx_detach_from_thread_cb(void *user_
 
 memmi_Status memmi_detach_from_process(memmi_Process process)
 {
-    // NOTE: we assume that the function is suspended
     // TODO: clear breakpoints etc?
     memmi_Status result = MEMMI_OK;
 
@@ -1467,7 +1468,8 @@ memmi_Status memmi_detach_from_process(memmi_Process process)
         result = pid_exists_result;
     } else {
         memmi_lnx_DetachContext cb_context = memmi_zero_struct(memmi_lnx_DetachContext);
-        memmi_Status for_each_result = memmi_lnx_for_each_thread(native_pid, &cb_context, memmi_lnx_detach_from_thread_cb);
+        memmi_Status for_each_result =
+            memmi_lnx_for_each_thread(native_pid, &cb_context, memmi_lnx_detach_from_thread_cb);
 
         if (for_each_result != MEMMI_OK) {
             result = for_each_result;
@@ -1475,6 +1477,7 @@ memmi_Status memmi_detach_from_process(memmi_Process process)
             // If we failed to detach from any thread for any reason except for the thread dying,
             // count this as a failure. If we failed due to threads dying, we'll ignore that and
             // count it as a success.
+            // TODO: this can be misleading
             uint32_t statuses_excluding_no_such_process =
                 (uint32_t)cb_context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
 
@@ -1776,7 +1779,8 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
         } else {
             // TODO: do we need to check that all threads are traced by us too?
             if (!memmi_lnx_thread_is_traced_by_us(native_pid)) {
-                MEMMI_ASSERT(0 && "Cannot wait for events in a non-traced process");
+                // TODO: special error code for when not attached
+                result.status = MEMMI_INSUFFICIENT_PERMISSIONS;
             } else {
                 if ((mode == MEMMI_CONTINUE_UNHANDLED) && proc_data->previous_signal.has_value) {
                     // If the last signal was unhandled by the debugger, pass it onto the thread to
