@@ -1447,8 +1447,7 @@ static memmi_lnx_ForEachThreadResult memmi_lnx_detach_from_thread_cb(void *user_
 {
     memmi_lnx_DetachContext *context = (memmi_lnx_DetachContext *)user_data;
 
-    // TODO: should we reinject the previous signal?
-    if (ptrace(PTRACE_DETACH, tid, 0, SIGCONT) == -1) {
+    if (ptrace(PTRACE_DETACH, tid, 0, 0) == -1) {
         /* MEMMI_ASSERT(0); */
         memmi_set_flag(context->statuses, memmi_lnx_errno_to_memmi_status(errno));
     }
@@ -1827,9 +1826,13 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
                 if (process_exited) {
                     result.status = MEMMI_NO_SUCH_PROCESS;
                 } else {
+                    bool timed_out = false;
+
                     for (int32_t i = 0; i < repeat_count; ++i) {
                         memmi_lnx_DebugEventResult event_result =
                             memmi_lnx_wait_for_debug_event(process, waitpid_mode);
+
+                        timed_out = event_result.timed_out;
 
                         if (!event_result.timed_out) {
                             if (event_result.status != MEMMI_OK) {
@@ -1844,7 +1847,10 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
                         }
                     }
 
-                    if ((result.status == MEMMI_OK) && (result.kind == MEMMI_DEBUG_EVENT_THREAD_EXITED)) {
+                    if (timed_out) {
+                        // The process should always leave this function in a suspended state.
+                        result.status = memmi_suspend_process(process);
+                    } else if ((result.status == MEMMI_OK) && (result.kind == MEMMI_DEBUG_EVENT_THREAD_EXITED)) {
                         bool main_thread_exited = result.id_of_affected_thread == process.pid;
 
                         if (main_thread_exited) {
