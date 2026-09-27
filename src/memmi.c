@@ -585,6 +585,10 @@ typedef struct {
 #define MEMMI_DR7_SIZE_4_BYTES            0x3u
 #define MEMMI_DR7_SIZE_8_BYTES            0x2u
 
+#define MEMMI_DR7_EXACT_ENABLE_BITS (0x3 << 8u) // Recommended to be set to 1.
+#define MEMMI_DR7_RESERVED_ONE_BIT (0x1 << 10u)
+#define MEMMI_DR7_RESERVED_ZERO_BITS ((0x1 << 12u) | (0x3 << 14u))
+
 static memmi_Register memmi_debug_register_from_index(uint32_t index)
 {
     memmi_Register result = memmi_zero_enum(memmi_Register);
@@ -680,7 +684,8 @@ static memmi_RegisterValue memmi_dr7_length_bits(uint32_t reg_index, memmi_Break
         } break;
     }
 
-    memmi_RegisterValue result = bits << (MEMMI_DR7_LENGTH_BITS_BASE_INDEX + reg_index * MEMMI_DR7_LENGTH_BITS_STRIDE);
+    memmi_RegisterValue result =
+        bits << (MEMMI_DR7_LENGTH_BITS_BASE_INDEX + reg_index * MEMMI_DR7_LENGTH_BITS_STRIDE);
 
     return result;
 }
@@ -694,7 +699,11 @@ static memmi_RegisterValue memmi_dr7_set_breakpoint_value(memmi_RegisterValue ol
         (old_dr7 & ~memmi_dr7_breakpoint_mask(index))
         | memmi_dr7_local_enable_bit(index)
         | memmi_dr7_condition_bits(index, cond)
-        | memmi_dr7_length_bits(index, length);
+        | memmi_dr7_length_bits(index, length)
+        | MEMMI_DR7_EXACT_ENABLE_BITS
+        | MEMMI_DR7_RESERVED_ONE_BIT;
+
+    result &= ~MEMMI_DR7_RESERVED_ZERO_BITS;
 
     return result;
 }
