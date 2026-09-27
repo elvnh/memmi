@@ -13,7 +13,8 @@
 /***************************/
 typedef struct {
     HANDLE win32_handle;
-    memmi_DebugEvent previous_event;
+    memmi_DebugEvent previous_event; // TODO: remove
+    DWORD last_event_thread_id;
 } memmi_win32_ProcessData;
 
 static memmi_Status memmi_win32_error_to_memmi_status(DWORD error_code)
@@ -881,6 +882,8 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
 
     memmi_Status result = memmi_zero_enum(memmi_Status);
 
+    memmi_win32_ProcessData *proc_data = memmi_win32_get_process_data(process);
+
     DWORD pid = memmi_win32_get_native_pid(process);
     BOOL attach_result = DebugActiveProcess(pid);
 
@@ -893,6 +896,33 @@ memmi_Status memmi_attach_to_process(memmi_Process process)
 
         if (!set_kill_on_exit_result) {
             result = memmi_win32_error_to_memmi_status(GetLastError());
+        } else {
+            BOOL wait_for_event_result = false;
+            DEBUG_EVENT win32_event = memmi_zero_struct(DEBUG_EVENT);
+
+            // Wait for all queued events that were created upon attaching.
+            do {
+                wait_for_event_result = WaitForDebugEvent(&win32_event, 0);
+
+                BOOL continue_result = ContinueDebugEvent(pid, win32_event.dwThreadId, DBG_CONTINUE);
+                MEMMI_ASSERT(!wait_for_event_result || continue_result);
+            } while (wait_for_event_result);
+
+            // Wait for the thread that Windows created to trigger a breakpoint.
+            wait_for_event_result = WaitForDebugEvent(&win32_event, INFINITE);
+            ContinueDebugEvent(pid, win32_event.dwThreadId, DBG_CONTINUE);
+            MEMMI_ASSERT(wait_for_event_result);
+            MEMMI_ASSERT(win32_event.dwDebugEventCode == EXCEPTION_DEBUG_EVENT);
+
+            // Wait for the thread that Windows created to exit. This is the last of the on-attach
+            // events, so this time we won't continue as we want the debuggee to remain suspended.
+            wait_for_event_result = WaitForDebugEvent(&win32_event, INFINITE);
+            MEMMI_ASSERT(wait_for_event_result);
+            MEMMI_ASSERT(win32_event.dwDebugEventCode == EXIT_THREAD_DEBUG_EVENT);
+
+            // We'll hold on to the ID of the thread that caused this event since it will be needed
+            // when waiting for the next debug event.
+            proc_data->last_event_thread_id = win32_event.dwThreadId;
         }
     }
 
@@ -1082,13 +1112,10 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeo
     if (!memmi_win32_process_exists(pid)) {
         result.status = MEMMI_NO_SUCH_PROCESS;
     } else {
-        if (proc_data->previous_event.kind != MEMMI_DEBUG_EVENT_NONE) {
-            memmi_Status continue_result = memmi_win32_continue_after_debug_event(process, proc_data->previous_event);
-            MEMMI_ASSERT(continue_result == MEMMI_OK);
-        }
+      wait_again:
+        ContinueDebugEvent(pid, proc_data->last_event_thread_id, DBG_CONTINUE);
 
         // TODO: make this into a loop
-      wait_again:
         DEBUG_EVENT win32_event = memmi_zero_struct(DEBUG_EVENT);
 
         DWORD win32_timeout = timeout;
@@ -1096,6 +1123,7 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeo
         if (timeout == MEMMI_TIMEOUT_INFINITE) {
             win32_timeout = INFINITE;
         }
+
         BOOL wait_for_event_result = WaitForDebugEvent(&win32_event, win32_timeout);
 
         if (!wait_for_event_result) {
@@ -1103,14 +1131,13 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeo
         } else {
             // We're only interested in this event if the thread that caused it belongs to the tracee.
             if (pid == win32_event.dwProcessId) {
+                proc_data->last_event_thread_id = win32_event.dwThreadId;
+
                 memmi_win32_EventResult event_result = memmi_win32_event_to_memmi_event(win32_event);
 
                 if (event_result.status != MEMMI_OK) {
                     result.status = event_result.status;
                 } else if (event_result.should_ignore) {
-                    BOOL continue_result = ContinueDebugEvent(
-                        pid, (DWORD)event_result.event.id_of_affected_thread, DBG_CONTINUE);
-                    MEMMI_ASSERT(continue_result);
                     goto wait_again;
                 } else {
                     result = event_result.event;
