@@ -1098,11 +1098,10 @@ static memmi_Status memmi_win32_continue_after_debug_event(memmi_Process process
     return result;
 }
 
-memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeout)
+memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_ContinueMode mode, int32_t timeout)
 {
     MEMMI_ASSERT(process.data);
-
-    // TODO: allow timeouts
+    MEMMI_ASSERT((timeout >= 0) || (timeout == -1));
 
     memmi_DebugEvent result = memmi_zero_struct(memmi_DebugEvent);
 
@@ -1113,12 +1112,18 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, int32_t timeo
         result.status = MEMMI_NO_SUCH_PROCESS;
     } else {
       wait_again:
-        ContinueDebugEvent(pid, proc_data->last_event_thread_id, DBG_CONTINUE);
+        DWORD continue_code = DBG_CONTINUE;
+
+        if (mode == MEMMI_CONTINUE_UNHANDLED) {
+            continue_code = DBG_EXCEPTION_NOT_HANDLED;
+        }
+
+        ContinueDebugEvent(pid, proc_data->last_event_thread_id, continue_code);
 
         // TODO: make this into a loop
         DEBUG_EVENT win32_event = memmi_zero_struct(DEBUG_EVENT);
 
-        DWORD win32_timeout = timeout;
+        DWORD win32_timeout = (DWORD)timeout;
 
         if (timeout == MEMMI_TIMEOUT_INFINITE) {
             win32_timeout = INFINITE;
