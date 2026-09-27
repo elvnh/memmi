@@ -571,8 +571,8 @@ typedef struct {
 
 #define MEMMI_REGISTER_ENUM(reg) MEMMI_REG_##reg
 
-#define MEMMI_DR7_ENABLE_BIT_BASE_INDEX   16u
-#define MEMMI_DR7_ENABLE_BIT_STRIDE       2u
+#define MEMMI_DR7_ENABLE_BITS_BASE_INDEX  0u
+#define MEMMI_DR7_ENABLE_BITS_STRIDE      2u
 #define MEMMI_DR7_COND_BITS_BASE_INDEX    16u
 #define MEMMI_DR7_COND_BITS_STRIDE        4u
 #define MEMMI_DR7_LENGTH_BITS_BASE_INDEX  18u
@@ -585,9 +585,13 @@ typedef struct {
 #define MEMMI_DR7_SIZE_4_BYTES            0x3u
 #define MEMMI_DR7_SIZE_8_BYTES            0x2u
 
-#define MEMMI_DR7_EXACT_ENABLE_BITS (0x3 << 8u) // Recommended to be set to 1.
-#define MEMMI_DR7_RESERVED_ONE_BIT (0x1 << 10u)
-#define MEMMI_DR7_RESERVED_ZERO_BITS ((0x1 << 12u) | (0x3 << 14u))
+#define MEMMI_DR7_ENABLE_BITS         0x3u
+#define MEMMI_DR7_LOCAL_ENABLE_BIT    0x1u
+#define MEMMI_DR7_COND_BITS           0x3u
+#define MEMMI_DR7_LENGTH_BITS         0x3u
+#define MEMMI_DR7_EXACT_ENABLE_BITS   (0x3u << 8u) // Recommended to be set to 1.
+#define MEMMI_DR7_RESERVED_ONE_BIT    (0x1u << 10u)
+#define MEMMI_DR7_RESERVED_ZERO_BITS  ((0x1u << 12u) | (0x3 << 14u))
 
 static memmi_Register memmi_debug_register_from_index(uint32_t index)
 {
@@ -619,21 +623,20 @@ static memmi_Register memmi_debug_register_from_index(uint32_t index)
     return result;
 }
 
-static memmi_RegisterValue memmi_dr7_breakpoint_mask(uint32_t breakpoint_index)
+static memmi_RegisterValue memmi_dr7_breakpoint_mask(uint32_t index)
 {
     uint32_t result =
-          (0x1u << (MEMMI_DR7_ENABLE_BIT_BASE_INDEX  + breakpoint_index * MEMMI_DR7_ENABLE_BIT_STRIDE))
-        | (0x3u << (MEMMI_DR7_COND_BITS_BASE_INDEX   + breakpoint_index * MEMMI_DR7_COND_BITS_STRIDE))
-        | (0x3u << (MEMMI_DR7_LENGTH_BITS_BASE_INDEX + breakpoint_index * MEMMI_DR7_LENGTH_BITS_STRIDE));
+          (MEMMI_DR7_ENABLE_BITS << (MEMMI_DR7_ENABLE_BITS_BASE_INDEX + index * MEMMI_DR7_ENABLE_BITS_STRIDE))
+        | (MEMMI_DR7_COND_BITS   << (MEMMI_DR7_COND_BITS_BASE_INDEX   + index * MEMMI_DR7_COND_BITS_STRIDE))
+        | (MEMMI_DR7_LENGTH_BITS << (MEMMI_DR7_LENGTH_BITS_BASE_INDEX + index * MEMMI_DR7_LENGTH_BITS_STRIDE));
 
     return result;
 }
 
 static memmi_RegisterValue memmi_dr7_local_enable_bit(uint32_t reg_index)
 {
-    // TODO: get rid of these casts
-    memmi_RegisterValue result = (memmi_RegisterValue)((memmi_RegisterValue)0x1u
-        << ((memmi_RegisterValue)reg_index * (memmi_RegisterValue)MEMMI_DR7_ENABLE_BIT_STRIDE));
+    memmi_RegisterValue result = MEMMI_DR7_LOCAL_ENABLE_BIT
+        << (MEMMI_DR7_ENABLE_BITS_BASE_INDEX + reg_index * MEMMI_DR7_ENABLE_BITS_STRIDE);
 
     return result;
 }
@@ -657,7 +660,8 @@ static memmi_RegisterValue memmi_dr7_condition_bits(uint32_t reg_index, memmi_Br
         } break;
     }
 
-    memmi_RegisterValue result = bits << (MEMMI_DR7_COND_BITS_BASE_INDEX + reg_index * MEMMI_DR7_COND_BITS_STRIDE);
+    memmi_RegisterValue result =
+        bits << (MEMMI_DR7_COND_BITS_BASE_INDEX + reg_index * MEMMI_DR7_COND_BITS_STRIDE);
 
     return result;
 }
