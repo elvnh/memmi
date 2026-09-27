@@ -716,7 +716,8 @@ static memmi_Status memmi_lnx_set_thread_user_register(pid_t tid, memmi_Register
 
 static memmi_Status memmi_lnx_set_thread_debug_register(pid_t tid, memmi_Register reg, memmi_RegisterValue value)
 {
-    MEMMI_ASSERT(reg <= MEMMI_REG_DR0);
+    MEMMI_ASSERT(reg >= MEMMI_REG_DR0);
+    MEMMI_ASSERT(reg <= MEMMI_REG_DR7);
 
     memmi_Status result = MEMMI_OK;
     size_t debug_reg_offset = memmi_lnx_get_user_struct_debug_register_offset(reg);
