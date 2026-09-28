@@ -2014,14 +2014,14 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
 {
     memmi_Status result = MEMMI_OK;
 
-    pid_t native_pid = memmi_lnx_get_native_pid(process);
-    memmi_Status pid_exists_result = memmi_lnx_pid_exists(native_pid);
-
-    if (pid_exists_result != MEMMI_OK) {
-        result = pid_exists_result;
+    if (!memmi_hardware_breakpoint_is_valid(index, condition, length)) {
+        result = MEMMI_INVALID_ARGUMENTS;
     } else {
-        if (index > 3) {
-            result = MEMMI_INVALID_ARGUMENTS;
+        pid_t native_pid = memmi_lnx_get_native_pid(process);
+        memmi_Status pid_exists_result = memmi_lnx_pid_exists(native_pid);
+
+        if (pid_exists_result != MEMMI_OK) {
+            result = pid_exists_result;
         } else {
             memmi_Status main_thread_bp_result = memmi_lnx_set_hardware_breakpoint_on_thread(
                 native_pid, index, address, condition, length);
@@ -2029,7 +2029,8 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
             if (main_thread_bp_result != MEMMI_OK) {
                 result = main_thread_bp_result;
             } else {
-                memmi_lnx_HardwareBreakpointContext context = memmi_zero_struct(memmi_lnx_HardwareBreakpointContext);
+                memmi_lnx_HardwareBreakpointContext context =
+                    memmi_zero_struct(memmi_lnx_HardwareBreakpointContext);
                 context.index = index;
                 context.address = address;
                 context.condition = condition;
@@ -2043,10 +2044,10 @@ memmi_Status memmi_set_hardware_breakpoint(memmi_Process process, uintptr_t addr
                 } else {
                     // If setting a breakpoint on a child thread died due to that thread dying due to a
                     // race, we'll ignore it. Any other error we'll report.
-                    uint32_t statuses_excluding_no_such_process =
-                        (uint32_t)context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS;
+                    memmi_Status statuses_excluding_no_such_process =
+                        (memmi_Status)((uint32_t)context.statuses & ~(uint32_t)MEMMI_NO_SUCH_PROCESS);
 
-                    result = (memmi_Status)statuses_excluding_no_such_process;
+                    result = statuses_excluding_no_such_process;
                 }
             }
         }

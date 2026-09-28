@@ -580,6 +580,8 @@ typedef struct {
 
 #define MEMMI_DR7_READ_WRITE_COND         0x3u
 #define MEMMI_DR7_WRITE_COND              0x1u
+#define MEMMI_DR7_EXECUTE_COND            0x0u
+
 #define MEMMI_DR7_SIZE_1_BYTES            0x0u
 #define MEMMI_DR7_SIZE_2_BYTES            0x1u
 #define MEMMI_DR7_SIZE_4_BYTES            0x3u
@@ -654,6 +656,10 @@ static memmi_RegisterValue memmi_dr7_condition_bits(uint32_t reg_index, memmi_Br
             bits = MEMMI_DR7_WRITE_COND;
         } break;
 
+        case MEMMI_BREAKPOINT_EXECUTE: {
+            bits = MEMMI_DR7_EXECUTE_COND;
+        } break;
+
         default: {
             MEMMI_ASSERT(0);
             bits = MEMMI_DR7_READ_WRITE_COND;
@@ -684,6 +690,7 @@ static memmi_RegisterValue memmi_dr7_length_bits(uint32_t reg_index, memmi_Break
         } break;
 
         case MEMMI_BREAKPOINT_8_BYTES: {
+            // TODO: this should only be valid on x64
             bits = MEMMI_DR7_SIZE_8_BYTES;
         } break;
     }
@@ -724,6 +731,22 @@ static int32_t memmi_breakpoint_index_from_dr6_value(memmi_RegisterValue dr6)
         result = 2;
     } else if (dr6 & 0x8) {
         result = 3;
+    }
+
+    return result;
+}
+
+static bool memmi_hardware_breakpoint_is_valid(uint32_t index,
+    memmi_BreakpointCondition cond, memmi_BreakpointLength length)
+{
+    bool result = false;
+
+    if (index <= 3) {
+        result = true;
+
+        if ((cond == MEMMI_BREAKPOINT_EXECUTE) && (length != MEMMI_BREAKPOINT_1_BYTES)) {
+            result = false;
+        }
     }
 
     return result;

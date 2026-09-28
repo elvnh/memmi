@@ -237,7 +237,7 @@ typedef struct {
 typedef enum {
     MEMMI_BREAKPOINT_READ_WRITE,
     MEMMI_BREAKPOINT_WRITE,
-    /* MEMMI_BREAKPOINT_EXECUTE, */
+    MEMMI_BREAKPOINT_EXECUTE,
 } memmi_BreakpointCondition;
 
 typedef enum {
