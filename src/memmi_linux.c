@@ -1623,7 +1623,8 @@ memmi_Status memmi_suspend_process(memmi_Process process)
             // has stabilized.
             cb_context.suspended_thread_count = 0;
 
-            memmi_Status for_each_result = memmi_lnx_for_each_thread(native_pid, &cb_context, memmi_lnx_suspend_thread_cb);
+            memmi_Status for_each_result = memmi_lnx_for_each_thread(
+                native_pid, &cb_context, memmi_lnx_suspend_thread_cb);
 
             if (for_each_result != MEMMI_OK) {
                 result = for_each_result;
@@ -1685,7 +1686,8 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
     context.allocator = allocator;
 
     // TODO: handle for_each_thread results similarly elsewhere too
-    memmi_Status for_each_thread_result = memmi_lnx_for_each_thread(native_pid, &context, memmi_lnx_collect_threads);
+    memmi_Status for_each_thread_result = memmi_lnx_for_each_thread(
+        native_pid, &context, memmi_lnx_collect_threads);
     result.status = (memmi_Status)(for_each_thread_result | context.statuses);
 
     if (result.status == MEMMI_OK) {
