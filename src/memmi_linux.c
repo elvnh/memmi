@@ -1688,6 +1688,7 @@ memmi_ThreadList memmi_get_process_threads(memmi_Process process, memmi_Allocato
     // TODO: handle for_each_thread results similarly elsewhere too
     memmi_Status for_each_thread_result = memmi_lnx_for_each_thread(
         native_pid, &context, memmi_lnx_collect_threads);
+
     result.status = (memmi_Status)(for_each_thread_result | context.statuses);
 
     if (result.status == MEMMI_OK) {
@@ -1822,12 +1823,14 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
 
                     process_exited = proc_data->previous_signal.has_value
                         && (proc_data->previous_signal.sig_info.si_code == exit_signal_code);
+
+                    if (process_exited) {
+                        result.status = MEMMI_NO_SUCH_PROCESS;
+                    }
                 }
                 #endif
 
-                if (process_exited) {
-                    result.status = MEMMI_NO_SUCH_PROCESS;
-                } else {
+                if (!process_exited) {
                     bool timed_out = false;
 
                     for (int32_t i = 0; i < repeat_count; ++i) {
