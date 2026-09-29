@@ -1934,7 +1934,7 @@ memmi_Registers memmi_get_thread_registers(memmi_TID tid)
 // TODO: allow setting all registers at once
 memmi_Status memmi_set_thread_register(memmi_TID tid, memmi_Register reg, memmi_RegisterValue value)
 {
-    MEMMI_ASSERT(reg >= memmi_zero_enum(memmi_memmi_Register));
+    MEMMI_ASSERT(reg >= memmi_zero_enum(memmi_Register));
     MEMMI_ASSERT(reg < MEMMI_REG_COUNT);
 
     memmi_Status result = MEMMI_OK;
@@ -1998,7 +1998,7 @@ static memmi_lnx_ForEachThreadResult memmi_lnx_set_hardware_breakpoint_on_thread
         tid, context->index, context->address, context->condition, context->length);
     memmi_set_flag(context->statuses, set_bp_result);
 
-    memmi_lnx_ForEachThreadResult result = memmi_zero_enum(ForEachThreadResult);
+    memmi_lnx_ForEachThreadResult result = memmi_zero_enum(memmi_lnx_ForEachThreadResult);
 
     if (context->statuses == MEMMI_OK) {
         result = MEMMI_LNX_FOR_EACH_THREAD_RES_CONTINUE;
