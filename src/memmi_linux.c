@@ -162,13 +162,15 @@ static memmi_Status memmi_lnx_proc_fs_errno_to_memmi_status(int errno_value)
             result = MEMMI_INSUFFICIENT_PERMISSIONS;
         } break;
 
-        case EBADF: {
-            MEMMI_ASSERT(0 && "Should not have happened as fd should already have been verified to be valid.");
-        } break;
-
+        case EBADF:
         case ENFILE:
         case EMFILE: {
-            MEMMI_ASSERT(0 && "TODO: generic MEMMI_OTHER_ERROR");
+            result = MEMMI_OTHER_ERROR;
+        } break;
+
+        case ENOTDIR: {
+            MEMMI_ASSERT(0 && "Should not happen");
+            result = MEMMI_OTHER_ERROR;
         } break;
 
         case ENOENT: {
@@ -179,13 +181,9 @@ static memmi_Status memmi_lnx_proc_fs_errno_to_memmi_status(int errno_value)
             result = MEMMI_ALLOCATION_FAILED;
         } break;
 
-        case ENOTDIR: {
-            // TODO: return generic error here too
-            MEMMI_ASSERT(0 && "Should not happen");
-        } break;
-
         default: {
             MEMMI_ASSERT(0);
+            result = MEMMI_OTHER_ERROR;
         } break;
     }
 
