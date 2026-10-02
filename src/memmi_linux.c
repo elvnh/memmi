@@ -41,8 +41,8 @@ typedef struct {
 
 /* _GNU_SOURCE needs to be defined before including any headers. If the user is compiling memmi in
  * their project as a single translation unit, it can't be guaranteed that they include memmi.c
- * before including any headers. This will lead to warnings about missing a prototype for
- * process_vm_readv() and process_vm_writev(), so we'll provide those prototypes here.
+ * before including any headers. This will lead to warnings about missing a prototype for some
+ * functions, so we'll provide those prototypes here.
  */
 ssize_t process_vm_readv(pid_t pid,
     const struct iovec *local_iov,
@@ -57,6 +57,8 @@ ssize_t process_vm_writev(pid_t pid,
     const struct iovec *remote_iov,
     unsigned long riovcnt,
     unsigned long flags);
+
+pid_t gettid(void);
 
 /***************************/
 /* Common helper functions */
@@ -466,7 +468,7 @@ typedef struct {
     pid_t pid;
 } memmi_lnx_PidResult;
 
-static memmi_lnx_PidResult memmi_lnx_get_pid_of_tracing_process(pid_t tid)
+static memmi_lnx_PidResult memmi_lnx_get_tid_of_tracing_process(pid_t tid)
 {
     memmi_lnx_PidResult result = memmi_zero_struct(memmi_lnx_PidResult);
 
@@ -489,13 +491,14 @@ static memmi_lnx_PidResult memmi_lnx_get_pid_of_tracing_process(pid_t tid)
     return result;
 }
 
-static bool memmi_lnx_thread_is_traced_by_us(pid_t pid)
+// NOTE: This function checks if the calling THREAD, not process, is tracing the thread identified by 'pid'.
+static bool memmi_lnx_thread_is_traced_by_us(pid_t tid)
 {
     bool result = false;
-    memmi_lnx_PidResult tracer_pid = memmi_lnx_get_pid_of_tracing_process(pid);
+    memmi_lnx_PidResult tracer_tid = memmi_lnx_get_tid_of_tracing_process(tid);
 
-    if (tracer_pid.status == MEMMI_OK) {
-        result = tracer_pid.pid == getpid();
+    if (tracer_tid.status == MEMMI_OK) {
+        result = tracer_tid.pid == gettid();
     }
 
     return result;
