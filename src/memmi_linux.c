@@ -230,7 +230,9 @@ static memmi_lnx_ProcessDirFd memmi_lnx_get_process_directory_fd(pid_t pid)
         }
     }
 
-    closedir(proc_dir);
+    if (proc_dir) {
+        closedir(proc_dir);
+    }
 
     return result;
 }
@@ -258,7 +260,9 @@ static memmi_Status memmi_lnx_pid_exists(pid_t pid)
 
     }
 
-    closedir(proc_dir);
+    if (proc_dir) {
+        closedir(proc_dir);
+    }
 
     return result;
 }
@@ -394,7 +398,9 @@ static memmi_Status memmi_lnx_for_each_thread(pid_t pid, void *user_data, memmi_
             }
         }
 
-        closedir(task_dir);
+        if (task_dir) {
+            closedir(task_dir);
+        }
     }
 
     if (!found_thread_dir) {
@@ -1116,7 +1122,9 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
         }
     }
 
-    closedir(proc_dir);
+    if (proc_dir) {
+        closedir(proc_dir);
+    }
 
     result.data = processes.data;
     result.count = processes.count;
