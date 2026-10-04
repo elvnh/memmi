@@ -23,12 +23,18 @@
         ++g__assertions_ran;                                    \
     } while (0)
 
-// The default timeout to use when checking whether the debuggee has hung.
-#define TEST_DEFAULT_TIMEOUT_MS 100
-
 /* Global variables */
+MAYBE_UNUSED static uint32_t g__desired_rerun_count;
 MAYBE_UNUSED static uint32_t g__assertions_passed;
 MAYBE_UNUSED static uint32_t g__assertions_ran;
+
+/* Test settings */
+// The default timeout to use when checking whether the debuggee has hung.
+#define TEST_DEFAULT_TIMEOUT_MS 100
+#define FLAKY_TEST_DEFAULT_RERUN_COUNT 1000
+
+
+void test_rerun_count(uint32_t count); // For flaky tests which need to be rerun.
 
 /* Inter-process communication */
 void     test_case_main(Pid pid, Ipc ipc);
@@ -57,9 +63,18 @@ int main(int argc, char **argv)
     }
 
     test_case_main(debuggee_pid, ipc);
-    printf(IPC_TEST_OUTPUT_FMT_STRING, g__assertions_passed, g__assertions_ran);
+
+    // Print the test output to be parsed by the test runner.
+    printf(IPC_TEST_OUTPUT_FMT_STRING, g__desired_rerun_count, g__assertions_passed, g__assertions_ran);
 
     ipc_destroy(ipc);
+}
+
+/* Test settings */
+void test_rerun_count(uint32_t count)
+{
+    assert(g__desired_rerun_count == 0);
+    g__desired_rerun_count = count;
 }
 
 /* Inter-process communication */

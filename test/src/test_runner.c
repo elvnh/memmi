@@ -39,46 +39,62 @@ int main(int argc, char **argv)
     char *debuggee_path = get_debuggee_path();
 
     for (int i = 1; i < argc; ++i) {
-        LOG("Running test '%s'\n", argv[i]);
+        LOG("Running test '%s'...\n", argv[i]);
 
-        // First launch the debuggee asynchronously. It will wait for the debugger (the test
-        // case we launch later) to connect to it.
-        Subprocess debuggee_subproc = subprocess_run(
-            debuggee_path, 0, 0, SUBPROC_ASYNC);
+        // Will be set later when parsing the test output.
+        uint32_t desired_rerun_count = 0;
+        uint32_t rerun_count = 0;
 
-        char pid_str[64] = {0};
-        snprintf(pid_str, sizeof(pid_str), "%" PRId64, debuggee_subproc.pid);
+        for (; rerun_count <= desired_rerun_count; ++rerun_count) {
+            // First launch the debuggee asynchronously. It will wait for the debugger (the test
+            // case we launch later) to connect to it.
+            Subprocess debuggee_subproc = subprocess_run(
+                debuggee_path, 0, 0, SUBPROC_ASYNC);
 
-        // Launch the test case and wait for it to finish. Pass the pid of the debuggee process to
-        // it so it can connect to it and start interacting with it.
-        char *test_case_path = argv[i];
-        char *test_case_args[] = {pid_str};
+            char pid_str[64] = {0};
+            snprintf(pid_str, sizeof(pid_str), "%" PRId64, debuggee_subproc.pid);
 
-        Subprocess test_case_subproc = subprocess_run(
-            test_case_path, test_case_args, ARRAY_COUNT(test_case_args), SUBPROC_SYNC);
+            // Launch the test case and wait for it to finish. Pass the pid of the debuggee process to
+            // it so it can connect to it and start interacting with it.
+            char *test_case_path = argv[i];
+            char *test_case_args[] = {pid_str};
 
-        uint32_t assertions_passed_in_test = 0;
-        uint32_t assertions_ran_in_test = 0;
+            Subprocess test_case_subproc = subprocess_run(
+                test_case_path, test_case_args, ARRAY_COUNT(test_case_args), SUBPROC_SYNC);
 
-        // Parse the output of the test to see how many assertions were passed and ran.
-        int scan_result = sscanf(
-            test_case_subproc.output,
-            IPC_TEST_OUTPUT_FMT_STRING,
-            &assertions_passed_in_test,
-            &assertions_ran_in_test);
+            uint32_t assertions_passed_in_test = 0;
+            uint32_t assertions_ran_in_test = 0;
 
-        if (scan_result == 2) {
-            assertions_passed += assertions_passed_in_test;
-            assertions_ran += assertions_ran_in_test;
-        } else {
-            fprintf(stderr, "Warning: test case '%s' did not have expected test result output.\n",
-                   test_case_path);
+            // Parse the output of the test to see how many assertions were passed and ran.
+            int scan_result = sscanf(
+                test_case_subproc.output,
+                IPC_TEST_OUTPUT_FMT_STRING,
+                &desired_rerun_count,
+                &assertions_passed_in_test,
+                &assertions_ran_in_test);
+
+            if (scan_result == 3) {
+                assertions_passed += assertions_passed_in_test;
+                assertions_ran += assertions_ran_in_test;
+
+                if ((desired_rerun_count != 0) && (assertions_passed_in_test != assertions_ran_in_test)) {
+                    // If a flaky test fails before all reruns have been done, we'll stop running it.
+                    break;
+                }
+            } else {
+                fprintf(stderr, "Warning: test case '%s' did not have expected test result output.\n",
+                    test_case_path);
+            }
+
+            subprocess_destroy(debuggee_subproc);
+            subprocess_destroy(test_case_subproc);
+        }
+
+        if (desired_rerun_count > 0) {
+            LOG("Ran flaky test %" PRIu32 "/%" PRIu32 " times.\n\n", rerun_count + 1, desired_rerun_count + 1);
         }
 
         ++tests_ran;
-
-        subprocess_destroy(debuggee_subproc);
-        subprocess_destroy(test_case_subproc);
     }
 
     printf("Passed %" PRIu64 "/%" PRIu64 " assertions in %" PRIu64 " test cases.\n",

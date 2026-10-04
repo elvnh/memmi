@@ -2,6 +2,8 @@
 
 void test_case_main(Pid pid, Ipc ipc)
 {
+    test_rerun_count(FLAKY_TEST_DEFAULT_RERUN_COUNT);
+
     memmi_Process proc = memmi_open_process(pid, memmi_default_allocator()).process;
 
     Response res = send_command(ipc, cmd_declare_variable(val_int32(123)));
