@@ -162,9 +162,16 @@ static memmi_Status memmi_lnx_proc_fs_errno_to_memmi_status(int errno_value)
             result = MEMMI_INSUFFICIENT_PERMISSIONS;
         } break;
 
-        case EBADF:
-        case ENFILE:
-        case EMFILE: {
+        case EMFILE:
+        case ENFILE: {
+            MEMMI_ASSERT(0);
+            result = MEMMI_OTHER_ERROR;
+        } break;
+
+        case EBADF: {
+            // TODO: figure out why dirfd sometimes returns a file descriptor that causes EBADF when
+            // passed to openat
+            /* MEMMI_ASSERT(0); */
             result = MEMMI_OTHER_ERROR;
         } break;
 
