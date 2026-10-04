@@ -866,7 +866,7 @@ typedef struct {
 
 #define memmi_lnx_signal_code_from_ptrace_event(e) (SIGTRAP | ((unsigned int)(e)) << 8)
 
-static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(memmi_Process proc, int waitpid_status,
+static memmi_lnx_DebugEventResult memmi_lnx_siginfo_to_memmi_event(int waitpid_status,
     siginfo_t sig_info, pid_t id_of_affected_thread)
 {
     memmi_lnx_DebugEventResult result = memmi_zero_struct(memmi_lnx_DebugEventResult);
@@ -1762,7 +1762,7 @@ static memmi_lnx_DebugEventResult memmi_lnx_wait_for_debug_event(memmi_Process p
                 if (get_sig_result == -1) {
                     result.status = memmi_lnx_errno_to_memmi_status(errno);
                 } else {
-                    result = memmi_lnx_siginfo_to_memmi_event(proc, status, sig_info, id_of_affected_thread);
+                    result = memmi_lnx_siginfo_to_memmi_event(status, sig_info, id_of_affected_thread);
 
                     proc_data->previous_signal.has_value = true;
                     proc_data->previous_signal.sig_info = sig_info;
