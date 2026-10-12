@@ -31,8 +31,7 @@ MAYBE_UNUSED static uint32_t g__assertions_ran;
 /* Test settings */
 // The default timeout to use when checking whether the debuggee has hung.
 #define TEST_DEFAULT_TIMEOUT_MS 100
-#define FLAKY_TEST_DEFAULT_RERUN_COUNT 1000
-
+#define FLAKY_TEST_DEFAULT_RERUN_COUNT 10000
 
 void test_rerun_count(uint32_t count); // For flaky tests which need to be rerun.
 

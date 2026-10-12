@@ -21,9 +21,11 @@ void test_case_main(Pid pid, Ipc ipc)
 
     memmi_DebugEvent event = {0};
 
+    int32_t count = 0;
     // Busy loop with a timeout of 0 until we get the event.
     do {
         event = memmi_wait_for_debug_event(proc, MEMMI_CONTINUE_UNHANDLED, 0);
+        ++count;
     } while (event.kind == MEMMI_DEBUG_EVENT_NONE);
 
     REQUIRE(event.status == MEMMI_OK);

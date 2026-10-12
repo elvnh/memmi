@@ -16,8 +16,8 @@ void test_case_main(Pid pid, Ipc ipc)
     uint32_t index = 0;
     memmi_set_hardware_breakpoint(proc, var.address, MEMMI_BREAKPOINT_WRITE, index, MEMMI_BREAKPOINT_4_BYTES);
 
-    uint32_t counter = 0;
-    uint32_t counter_target = 100; // At which loop iteration we should cause the breakpoint to be triggered
+    int32_t counter = 0;
+    int32_t counter_target = 100; // At which loop iteration we should cause the breakpoint to be triggered
 
     memmi_DebugEvent event = {0};
     while (event.kind != MEMMI_DEBUG_EVENT_BREAKPOINT) {
