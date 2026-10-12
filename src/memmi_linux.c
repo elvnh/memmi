@@ -1474,6 +1474,8 @@ static memmi_lnx_ForEachThreadResult memmi_lnx_detach_from_thread_cb(void *user_
 memmi_Status memmi_detach_from_process(memmi_Process process)
 {
     // TODO: clear breakpoints etc?
+    // TODO: clear queued events
+
     memmi_Status result = MEMMI_OK;
 
     pid_t native_pid = memmi_lnx_get_native_pid(process);
@@ -1519,7 +1521,8 @@ memmi_Status memmi_resume_process(memmi_Process process)
         memmi_lnx_ResumeThreadsContext resume_cb_context = memmi_zero_struct(memmi_lnx_ResumeThreadsContext);
         resume_cb_context.parent_pid = native_pid;
 
-        memmi_Status for_each_result = memmi_lnx_for_each_thread(native_pid, &resume_cb_context, memmi_lnx_resume_thread_cb);
+        memmi_Status for_each_result = memmi_lnx_for_each_thread(
+            native_pid, &resume_cb_context, memmi_lnx_resume_thread_cb);
 
         if (for_each_result != MEMMI_OK) {
             result = for_each_result;
@@ -1537,10 +1540,20 @@ memmi_Status memmi_resume_process(memmi_Process process)
     return result;
 }
 
+static memmi_DebugEvent g_event __attribute__((unused));
+static bool g_event_has_value __attribute__((unused));
+
 static memmi_Status memmi_lnx_suspend_thread(pid_t tid)
 {
     memmi_Status result = MEMMI_OK;
 
+    // TODO: what if a breakpoint in the thread is triggered here, won't our stop overwrite that signal?
+
+    /* Someone else may race with us when stopping the thread, but I believe that this is not a
+     * problem in itself, since it seems that sending a PTRACE_INTERRUPT to a thread that was
+     * already stopped by someone else won't overwrite that signal. However, the signal that we
+     * raced with may produce a debug event, which we'll have to communicate to the user.
+     */
     long interrupt_result = ptrace(PTRACE_INTERRUPT, tid, 0, 0);
 
     if (interrupt_result == -1) {
@@ -1562,10 +1575,31 @@ static memmi_Status memmi_lnx_suspend_thread(pid_t tid)
             result = memmi_lnx_errno_to_memmi_status(errno);
         } else {
             if (WIFSTOPPED(status)) {
-                // Success!
+                /* The thread was stopped, however, it may not be because of us. If the thread was
+                 * stopped because someone else sent a SIGSTOP or something similar, this isn't
+                 * really an important distinction. However, if it was, for example, stopped by a
+                 * breakpoint being triggered, that's a debug event that should be communicated to
+                 * the user.
+                 *
+                 * TODO: instead just call memmi_lnx_wait_for_debug_event
+                 */
+                siginfo_t sig_info = memmi_zero_struct(siginfo_t);
+                long get_sig_result = ptrace(PTRACE_GETSIGINFO, tid, 0, &sig_info);
+                MEMMI_ASSERT(get_sig_result != -1);
+
+                memmi_lnx_DebugEventResult event_result =
+                    memmi_lnx_siginfo_to_memmi_event(status, sig_info, tid);
+                MEMMI_ASSERT(!event_result.should_ignore);
+                MEMMI_ASSERT(event_result.status == MEMMI_OK);
+
+                if (event_result.data.kind != MEMMI_DEBUG_EVENT_THREAD_STOPPED) {
+                    g_event_has_value = true;
+                    g_event = event_result.data;
+                }
             } else {
                 // TODO: Can this occur? Do we need to resend stopping signal until it's seen or is
                 // that only for PTRACE_ATTACH?
+                // TODO: the process may die or be continued or something else
                 MEMMI_ASSERT(0);
             }
         }
@@ -1869,9 +1903,19 @@ memmi_DebugEvent memmi_wait_for_debug_event(memmi_Process process, memmi_Continu
                     }
 
                     if (timed_out) {
-                        // The process should always leave this function in a suspended state.
+                        /* The process should always leave this function in a suspended state, so
+                         * we'll do so now. However, there's a chance that a debug event is created
+                         * before we call waitpid() on a thread that we're suspending, which means
+                         * that it will be delivered in that call to waitpid(). So, when suspending
+                         * the process, we'll also watch out for any debug events that are delivered.
+                        */
+
                         // TODO: this will create an event
                         result.status = memmi_suspend_process(process);
+
+                        if (g_event_has_value) {
+                            result = g_event;
+                        }
                     } else if ((result.status == MEMMI_OK) && (result.kind == MEMMI_DEBUG_EVENT_THREAD_EXITED)) {
                         bool main_thread_exited = result.id_of_affected_thread == process.pid;
 
