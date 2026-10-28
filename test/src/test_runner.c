@@ -37,7 +37,15 @@ char       *get_debuggee_path();
 #    error FORMAT_ATTRIBUTE not defined for this compiler
 #endif
 
-#define RUNNING_TEST_FMT_STRING "Running test '%s'..."
+#define GREEN       "\x1b[32m"
+#define RED         "\x1b[31m"
+#define YELLOW      "\x1b[33m"
+#define CYAN        "\x1b[36m"
+#define RESET_COLOR "\x1b[0m"
+#define NORMAL      "x1b[22m"
+#define BOLD        "\x1b[1m"
+
+#define RUNNING_TEST_FMT_STRING CYAN "Running test '%s'..."
 
 void print_v(const char *fmt, va_list va);
 void print(const char *fmt, ...) FORMAT_ATTRIBUTE;
@@ -102,7 +110,7 @@ int main(int argc, char **argv)
 
                 if (desired_rerun_count > 0) {
                     replace_last_printed_line(
-                        RUNNING_TEST_FMT_STRING " (%d/%d runs)",
+                        RUNNING_TEST_FMT_STRING YELLOW " (%d/%d runs)",
                         test_name,
                         rerun_count + 1,
                         desired_rerun_count + 1);
@@ -110,10 +118,10 @@ int main(int argc, char **argv)
 
                 if (desired_rerun_count == rerun_count) {
                     if (assertions_passed_in_test == assertions_ran_in_test) {
-                        append_to_last_printed_line(" PASSED");
+                        append_to_last_printed_line(GREEN BOLD " PASSED");
                     } else {
                         // TODO: capture stderr and print test output here
-                        append_to_last_printed_line(" FAILED");
+                        append_to_last_printed_line(RED BOLD " FAILED");
                     }
                 }
 
@@ -122,7 +130,7 @@ int main(int argc, char **argv)
                     break;
                 }
             } else {
-                print("Warning: test case '%s' did not have expected test result output.\n", test_case_path);
+                print(YELLOW "Warning: test case '%s' did not have expected test result output.\n", test_case_path);
             }
 
             subprocess_destroy(debuggee_subproc);
@@ -133,8 +141,17 @@ int main(int argc, char **argv)
         ++tests_ran;
     }
 
-    print("\nPassed %" PRIu64 "/%" PRIu64 " assertions in %" PRIu64 " test cases.\n",
-        assertions_passed, assertions_ran, tests_ran);
+    char *pass_count_color = 0;
+
+    if (assertions_passed == assertions_ran) {
+        pass_count_color = GREEN;
+    } else if (assertions_passed == 0) {
+        pass_count_color = RED;
+    }  else {
+        pass_count_color = YELLOW;
+    }
+    print(CYAN "\nPassed %s%" PRIu64 "/%" PRIu64 CYAN " assertions in %" PRIu64 " test cases.\n",
+        pass_count_color, assertions_passed, assertions_ran, tests_ran);
 
     return 0;
 }
@@ -189,7 +206,7 @@ Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, Subpr
             if (WIFEXITED(status)) {
                 result.return_code = WEXITSTATUS(status);
             } else {
-                print("Warning: test case '%s' exited unexpectedly.\n", exe);
+                print(YELLOW "Warning: test case '%s' exited unexpectedly.\n", exe);
             }
 
             // Since we're waiting until after waitpid to read from the pipe, we should always read the
@@ -405,6 +422,7 @@ char *get_debuggee_path()
 void print_v(const char *fmt, va_list va)
 {
     vprintf(fmt, va);
+    printf(RESET_COLOR);
     fflush(stdout);
 }
 
