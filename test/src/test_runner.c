@@ -6,13 +6,11 @@
 #include "ipc/ipc_all.c"
 
 #include <string.h>
+#include <stdarg.h>
 
 #define ARRAY_COUNT(a) (sizeof((a)) / sizeof(*(a)))
 
-#if !defined(DEBUGGEE_EXECUTABLE_NAME)
-#    error Please define the filename of the debuggee executable in the build script.
-#endif
-
+/* Subprocess */
 typedef struct {
     Pid   pid;
     int   return_code;
@@ -24,10 +22,29 @@ typedef enum {
     SUBPROC_ASYNC,
 } SubprocessKind;
 
+#if !defined(DEBUGGEE_EXECUTABLE_NAME)
+#    error Please define the filename of the debuggee executable in the build script.
+#endif
+
 Subprocess  subprocess_run(const char *exe, char *args[], size_t arg_count, SubprocessKind kind);
 void        subprocess_destroy(Subprocess subproc);
 char       *get_debuggee_path();
 
+/* Logging  */
+#if __GNUC__
+#    define FORMAT_ATTRIBUTE __attribute__((format(printf, 1, 2)))
+#else
+#    error FORMAT_ATTRIBUTE not defined for this compiler
+#endif
+
+#define RUNNING_TEST_FMT_STRING "Running test '%s'..."
+
+void print_v(const char *fmt, va_list va);
+void print(const char *fmt, ...) FORMAT_ATTRIBUTE;
+void append_to_last_printed_line(const char *fmt, ...) FORMAT_ATTRIBUTE;
+void replace_last_printed_line(const char *fmt, ...) FORMAT_ATTRIBUTE;
+
+/* Main */
 int main(int argc, char **argv)
 {
     uint64_t tests_ran = 0;
@@ -35,11 +52,17 @@ int main(int argc, char **argv)
     uint64_t assertions_passed = 0;
     uint64_t assertions_ran = 0;
 
-    // TODO: don't hardcode path
     char *debuggee_path = get_debuggee_path();
 
     for (int i = 1; i < argc; ++i) {
-        LOG("Running test '%s'...\n", argv[i]);
+        char *test_name = argv[i];
+
+        if (i == 1) {
+            // Avoid printing a blank line at the start of running tests.
+            append_to_last_printed_line(RUNNING_TEST_FMT_STRING, test_name);
+        } else {
+            print(RUNNING_TEST_FMT_STRING, test_name);
+        }
 
         // Will be set later when parsing the test output.
         uint32_t desired_rerun_count = 0;
@@ -56,7 +79,7 @@ int main(int argc, char **argv)
 
             // Launch the test case and wait for it to finish. Pass the pid of the debuggee process to
             // it so it can connect to it and start interacting with it.
-            char *test_case_path = argv[i];
+            char *test_case_path = test_name;
             char *test_case_args[] = {pid_str};
 
             Subprocess test_case_subproc = subprocess_run(
@@ -77,27 +100,40 @@ int main(int argc, char **argv)
                 assertions_passed += assertions_passed_in_test;
                 assertions_ran += assertions_ran_in_test;
 
+                if (desired_rerun_count > 0) {
+                    replace_last_printed_line(
+                        RUNNING_TEST_FMT_STRING " (%d/%d runs)",
+                        test_name,
+                        rerun_count + 1,
+                        desired_rerun_count + 1);
+                }
+
+                if (desired_rerun_count == rerun_count) {
+                    if (assertions_passed_in_test == assertions_ran_in_test) {
+                        append_to_last_printed_line(" PASSED");
+                    } else {
+                        // TODO: capture stderr and print test output here
+                        append_to_last_printed_line(" FAILED");
+                    }
+                }
+
                 if ((desired_rerun_count != 0) && (assertions_passed_in_test != assertions_ran_in_test)) {
                     // If a flaky test fails before all reruns have been done, we'll stop running it.
                     break;
                 }
             } else {
-                fprintf(stderr, "Warning: test case '%s' did not have expected test result output.\n",
-                    test_case_path);
+                print("Warning: test case '%s' did not have expected test result output.\n", test_case_path);
             }
 
             subprocess_destroy(debuggee_subproc);
             subprocess_destroy(test_case_subproc);
-        }
 
-        if (desired_rerun_count > 0) {
-            LOG("Ran flaky test %" PRIu32 "/%" PRIu32 " times.\n\n", rerun_count + 1, desired_rerun_count + 1);
         }
 
         ++tests_ran;
     }
 
-    printf("Passed %" PRIu64 "/%" PRIu64 " assertions in %" PRIu64 " test cases.\n",
+    print("\nPassed %" PRIu64 "/%" PRIu64 " assertions in %" PRIu64 " test cases.\n",
         assertions_passed, assertions_ran, tests_ran);
 
     return 0;
@@ -153,7 +189,7 @@ Subprocess subprocess_run(const char *exe, char *args[], size_t arg_count, Subpr
             if (WIFEXITED(status)) {
                 result.return_code = WEXITSTATUS(status);
             } else {
-                fprintf(stderr, "Warning: test case '%s' exited unexpectedly.\n", exe);
+                print("Warning: test case '%s' exited unexpectedly.\n", exe);
             }
 
             // Since we're waiting until after waitpid to read from the pipe, we should always read the
@@ -364,3 +400,42 @@ char *get_debuggee_path()
 }
 
 #endif
+
+/* Logging */
+void print_v(const char *fmt, va_list va)
+{
+    vprintf(fmt, va);
+    fflush(stdout);
+}
+
+void print(const char *fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+
+    printf("\n");
+    print_v(fmt, va);
+
+    va_end(va);
+}
+
+void append_to_last_printed_line(const char *fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+
+    print_v(fmt, va);
+
+    va_end(va);
+}
+
+void replace_last_printed_line(const char *fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+
+    printf("\r");
+    print_v(fmt, va);
+
+    va_end(va);
+}
