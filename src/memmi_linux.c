@@ -1336,7 +1336,7 @@ static memmi_Status memmi_lnx_attach_to_thread(pid_t tid)
                     break;
                 } else {
                     // The thread received another signal, reinject it and try again.
-                    int signal = memmi_lnx_get_signal_from_wait_status(signal);
+                    int signal = memmi_lnx_get_signal_from_wait_status(status);
                     long reinject_result = ptrace(PTRACE_CONT, tid, 0, signal);
 
                     if (reinject_result == -1) {
