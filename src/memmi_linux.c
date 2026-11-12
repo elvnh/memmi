@@ -1141,9 +1141,11 @@ memmi_ProcessList memmi_get_running_processes(memmi_Allocator allocator)
 
 void memmi_close_process(memmi_Process process, memmi_Allocator allocator)
 {
-    // no-op on Linux
-    (void)process;
-    (void)allocator;
+    if (!memmi_process_is_null(process)) {
+        memmi_lnx_ProcessData *proc_data = memmi_lnx_get_process_data(process);
+
+        memmi_deallocate(allocator, proc_data, 1);
+    }
 }
 
 memmi_ReadMemory memmi_read_memory(memmi_Process process, void *dst, uintptr_t address, size_t size)
